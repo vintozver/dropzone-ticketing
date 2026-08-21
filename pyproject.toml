@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dropzone-ticketing"
+version = "0.1.0"
+description = "Ticketing software for the drop zone (skydiving)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "reportlab>=4.2,<5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
