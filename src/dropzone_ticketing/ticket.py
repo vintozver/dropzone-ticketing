@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import BinaryIO, Union
+
+from reportlab.graphics import renderPDF
+from reportlab.graphics.barcode.qr import QrCodeWidget
+from reportlab.graphics.shapes import Drawing
+from reportlab.lib.pagesizes import inch
+from reportlab.pdfgen import canvas
+
+
+PAGE_WIDTH = 5.25 * inch
+PAGE_HEIGHT = 1.93 * inch
+LEFT_SECTION_WIDTH = 1.4 * inch
+VERTICAL_MARGIN = 0.15 * inch
+PDT = timezone(timedelta(hours=-7), "PDT")
+
+
+@dataclass(frozen=True)
+class Ticket:
+    identifier: str
+    code: str
+    date_issued: datetime
+    owner: str
+
+    def produce_pdf(self, destination: Union[str, Path, BinaryIO]) -> None:
+        issued_utc = self._issued_utc()
+        issued_pdt = issued_utc.astimezone(PDT)
+
+        ticket_canvas = canvas.Canvas(
+            destination,
+            pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
+            pageCompression=0,
+        )
+        ticket_canvas.setTitle(f"Ticket {self.identifier}")
+        ticket_canvas.setFont("Helvetica", 8)
+
+        self._draw_left_section(ticket_canvas, issued_utc)
+        self._draw_right_section(ticket_canvas, issued_pdt)
+        self._draw_qr_code(ticket_canvas)
+
+        ticket_canvas.showPage()
+        ticket_canvas.save()
+
+    def _issued_utc(self) -> datetime:
+        if self.date_issued.tzinfo is None:
+            return self.date_issued.replace(tzinfo=timezone.utc)
+        return self.date_issued.astimezone(timezone.utc)
+
+    def _draw_left_section(self, ticket_canvas: canvas.Canvas, issued_utc: datetime) -> None:
+        x = 0.08 * inch
+        y = PAGE_HEIGHT - VERTICAL_MARGIN - 0.18 * inch
+        line_height = 0.18 * inch
+
+        ticket_canvas.drawString(x, y, self.owner)
+        ticket_canvas.drawString(x, y - line_height, self.code)
+        ticket_canvas.drawString(x, y - 2 * line_height, self._format_datetime(issued_utc, "UTC"))
+
+    def _draw_right_section(self, ticket_canvas: canvas.Canvas, issued_pdt: datetime) -> None:
+        x = LEFT_SECTION_WIDTH + 0.12 * inch
+        y = PAGE_HEIGHT - VERTICAL_MARGIN - 0.12 * inch
+        line_height = 0.16 * inch
+
+        ticket_canvas.setFont("Helvetica-Bold", 8)
+        ticket_canvas.drawString(x, y, "Skydive Toledo LLC jump ticket")
+        ticket_canvas.setFont("Helvetica", 7)
+
+        lines = [
+            "One jump 36$",
+            "Paid with card xxxx-0000",
+            f"Issued: {self._format_datetime(issued_pdt, 'PDT')}",
+            f"To: {self.owner}",
+            "Jumper:",
+            "_____________________",
+        ]
+        for index, line in enumerate(lines, start=1):
+            ticket_canvas.drawString(x, y - index * line_height, line)
+
+    def _draw_qr_code(self, ticket_canvas: canvas.Canvas) -> None:
+        qr_code = QrCodeWidget(self.code)
+        qr_size = 0.62 * inch
+        bounds = qr_code.getBounds()
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+
+        drawing = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
+        drawing.add(qr_code)
+        renderPDF.draw(drawing, ticket_canvas, PAGE_WIDTH - qr_size, VERTICAL_MARGIN)
+
+    @staticmethod
+    def _format_datetime(value: datetime, timezone_label: str) -> str:
+        return value.strftime("%Y-%m-%d %H:%M:%S ") + timezone_label
