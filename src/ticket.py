@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from importlib import resources
+from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, Union
 
@@ -9,6 +11,7 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.pagesizes import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 
@@ -16,6 +19,9 @@ PAGE_WIDTH = 5.25 * inch
 PAGE_HEIGHT = 1.93 * inch
 LEFT_SECTION_WIDTH = 1.4 * inch
 VERTICAL_MARGIN = 0.15 * inch
+HORIZONTAL_MARGIN = 0.08 * inch
+LOGO_RESOURCE = "logo.png"
+LOGO_WIDTH = 0.7 * inch
 PDT = timezone(timedelta(hours=-7), "PDT")
 
 
@@ -41,6 +47,7 @@ class Ticket:
         self._draw_left_section(ticket_canvas, issued_utc)
         self._draw_right_section(ticket_canvas, issued_pdt)
         self._draw_qr_code(ticket_canvas)
+        self._draw_logo(ticket_canvas)
 
         ticket_canvas.showPage()
         ticket_canvas.save()
@@ -91,5 +98,23 @@ class Ticket:
         renderPDF.draw(drawing, ticket_canvas, PAGE_WIDTH - qr_size, VERTICAL_MARGIN)
 
     @staticmethod
+    def _draw_logo(ticket_canvas: canvas.Canvas) -> None:
+        logo = ImageReader(BytesIO(load_logo_bytes()))
+        width, height = logo.getSize()
+        logo_height = LOGO_WIDTH * height / width
+        ticket_canvas.drawImage(
+            logo,
+            PAGE_WIDTH - HORIZONTAL_MARGIN - LOGO_WIDTH,
+            PAGE_HEIGHT - VERTICAL_MARGIN - logo_height,
+            width=LOGO_WIDTH,
+            height=logo_height,
+            mask="auto",
+        )
+
+    @staticmethod
     def _format_datetime(value: datetime, timezone_label: str) -> str:
         return value.strftime("%Y-%m-%d %H:%M:%S ") + timezone_label
+
+
+def load_logo_bytes() -> bytes:
+    return resources.files(__package__).joinpath(LOGO_RESOURCE).read_bytes()
