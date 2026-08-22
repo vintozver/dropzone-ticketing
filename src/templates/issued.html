@@ -3,7 +3,9 @@
 {% block content %}
   <h1>Tickets issued to {{ owner }}</h1>
   <ul>
-    {% for ticket in tickets %}<li><code>{{ ticket.code }}</code></li>{% endfor %}
+    <li>Tickets issued: {{ count }}</li>
+    <li>Purpose: {{ purpose }}</li>
+    <li>Payment: {{ payment }}</li>
   </ul>
-  <p><a href="/print?owner={{ owner|urlencode }}">Download active tickets as PDF</a></p>
+  <p><a href="{{ print_url }}">Download the tickets just issued as PDF</a></p>
 {% endblock %}
