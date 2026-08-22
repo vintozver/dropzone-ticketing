@@ -20,6 +20,7 @@ from pymongo.errors import DuplicateKeyError
 
 from . import PDF, Ticket
 from .model import mongoengine_alias
+from .model.ticket import Redemption
 
 
 MAX_TICKETS = 1000
@@ -148,6 +149,7 @@ def _issue(form: dict[str, str]):
 
 def _redeem(form: dict[str, str]):
     codes = split_codes(form.get("codes", ""))
+    reason = form.get("reason", "").strip() or None
     if not codes:
         return _render(
             "redeem.html",
@@ -169,7 +171,7 @@ def _redeem(form: dict[str, str]):
                 }
             )
         else:
-            ticket.redeemed = datetime.now(timezone.utc)
+            ticket.redeemed = Redemption(dt=datetime.now(timezone.utc), reason=reason)
             ticket.save()
             results.append({"code": code, "result": "redeemed OK"})
 
