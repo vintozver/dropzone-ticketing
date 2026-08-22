@@ -12,7 +12,7 @@ from reportlab.lib.pagesizes import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from . import ticket as _ticket
+from .model import ticket as _ticket
 
 
 PAGE_WIDTH = 5.25 * inch

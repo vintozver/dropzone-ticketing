@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import mongoengine
 
 from . import mongoengine_alias
@@ -25,3 +27,14 @@ class Ticket(mongoengine.Document):
         "collection": "tickets",
         "indexes": ["code"],
     }
+
+    def issued_utc(self) -> datetime:
+        """Return the UTC issue timestamp derived from the ticket's ``id``.
+
+        Raises:
+            ValueError: if the ticket has no ``id`` yet, i.e. it has never been
+                saved and therefore has no issue timestamp.
+        """
+        if self.id is None:
+            raise ValueError("ticket has no identifier yet, it was never saved")
+        return self.id.generation_time
