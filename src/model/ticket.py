@@ -32,9 +32,9 @@ class Ticket(mongoengine.Document):
         """Return the UTC issue timestamp derived from the ticket's ``id``.
 
         Raises:
-            ValueError: if the ticket has no ``id`` yet, i.e. it has never been
-                saved and therefore has no issue timestamp.
+            ValueError: if the ticket has no ``id`` yet, so no issue timestamp
+                can be derived.
         """
         if self.id is None:
-            raise ValueError("ticket has no identifier yet, it was never saved")
+            raise ValueError("ticket has no id; assign or save one before calling issued_utc()")
         return self.id.generation_time
