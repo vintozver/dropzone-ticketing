@@ -196,6 +196,27 @@ def _print_tickets(owner: str):
     )
 
 
+def _view_owners():
+    owners = sorted(Ticket.objects(redeemed=None).distinct("owner"))
+    return _render("tickets.html", owners=owners)
+
+
+def _view_owner_tickets(owner: str):
+    owner = owner.strip()
+    if not owner:
+        return _render("tickets.html", HTTPStatus.BAD_REQUEST, owners=[], error="Owner is required.")
+
+    tickets = [
+        {
+            "issued": ticket.issued_utc(),
+            "purpose": ticket.purpose,
+            "payment": ticket.payment,
+        }
+        for ticket in Ticket.objects(owner=owner, redeemed=None)
+    ]
+    return _render("tickets_owner.html", owner=owner, tickets=tickets)
+
+
 def _method_not_allowed(allowed: Iterable[str]):
     methods = ", ".join(allowed)
     status, headers, body = _render(
@@ -229,6 +250,14 @@ def _dispatch(environ: dict):
         if method == "POST":
             return _redeem(_read_form(environ))
         return _method_not_allowed(["GET", "POST"])
+
+    if path == "/tickets":
+        if method != "GET":
+            return _method_not_allowed(["GET"])
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+        if "owner" not in query:
+            return _view_owners()
+        return _view_owner_tickets(query["owner"][0])
 
     if path == "/print":
         if method == "GET":

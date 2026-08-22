@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Active tickets of {{ owner }}{% endblock %}
+{% block content %}
+  <h1>Active tickets of {{ owner }}</h1>
+  {% if tickets %}
+    <table>
+      <thead><tr><th>Issued</th><th>Purpose</th><th>Payment</th></tr></thead>
+      <tbody>
+        {% for ticket in tickets %}
+          <tr>
+            <td>{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+            <td>{{ ticket.purpose }}</td>
+            <td>{{ ticket.payment }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <form method="get" action="/print">
+      <input name="owner" type="hidden" value="{{ owner }}">
+      <button type="submit">Print active tickets</button>
+    </form>
+  {% else %}
+    <p>No active tickets found for this owner.</p>
+  {% endif %}
+  <p><a href="/tickets">Back to the owners list</a></p>
+{% endblock %}
