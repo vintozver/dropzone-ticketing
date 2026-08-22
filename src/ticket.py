@@ -71,9 +71,9 @@ class Ticket:
         y = PAGE_HEIGHT - VERTICAL_MARGIN - 0.12 * inch
         line_height = 0.16 * inch
 
-        ticket_canvas.setFont("Helvetica-Bold", 8)
+        ticket_canvas.setFont("Helvetica-Bold", 16)
         ticket_canvas.drawString(x, y, "Skydive Toledo LLC jump ticket")
-        ticket_canvas.setFont("Helvetica", 7)
+        ticket_canvas.setFont("Helvetica", 12)
 
         lines = [
             "One jump 36$",
@@ -88,7 +88,7 @@ class Ticket:
 
     def _draw_qr_code(self, ticket_canvas: canvas.Canvas) -> None:
         qr_code = QrCodeWidget(self.code)
-        qr_size = 0.62 * inch
+        qr_size = 1.0 * inch
         bounds = qr_code.getBounds()
         width = bounds[2] - bounds[0]
         height = bounds[3] - bounds[1]
