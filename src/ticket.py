@@ -21,7 +21,7 @@ LEFT_SECTION_WIDTH = 1.4 * inch
 VERTICAL_MARGIN = 0.15 * inch
 HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
-LOGO_WIDTH = 0.7 * inch
+LOGO_WIDTH = 1 * inch
 PDT = timezone(timedelta(hours=-7), "PDT")
 
 
@@ -32,25 +32,15 @@ class Ticket:
     date_issued: datetime
     owner: str
 
-    def produce_pdf(self, destination: Union[str, Path, BinaryIO]) -> None:
+    def append_pdf(self, destination: canvas.Canvas) -> None:
         issued_utc = self._issued_utc()
         issued_pdt = issued_utc.astimezone(PDT)
 
-        ticket_canvas = canvas.Canvas(
-            destination,
-            pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
-            pageCompression=0,
-        )
-        ticket_canvas.setTitle(f"Ticket {self.identifier}")
-        ticket_canvas.setFont("Helvetica", 8)
-
-        self._draw_left_section(ticket_canvas, issued_utc)
-        self._draw_right_section(ticket_canvas, issued_pdt)
-        self._draw_qr_code(ticket_canvas)
-        self._draw_logo(ticket_canvas)
-
-        ticket_canvas.showPage()
-        ticket_canvas.save()
+        self._draw_logo(destination)
+        self._draw_left_section(destination, issued_utc)
+        self._draw_right_section(destination, issued_pdt)
+        self._draw_qr_code(destination)
+        destination.showPage()
 
     def _issued_utc(self) -> datetime:
         if self.date_issued.tzinfo is None:
@@ -62,6 +52,7 @@ class Ticket:
         y = PAGE_HEIGHT - VERTICAL_MARGIN - 0.18 * inch
         line_height = 0.18 * inch
 
+        ticket_canvas.setFont("Helvetica", 8)
         ticket_canvas.drawString(x, y, self.owner)
         ticket_canvas.drawString(x, y - line_height, self.code)
         ticket_canvas.drawString(x, y - 2 * line_height, self._format_datetime(issued_utc, "UTC"))
@@ -72,7 +63,7 @@ class Ticket:
         line_height = 0.16 * inch
 
         ticket_canvas.setFont("Helvetica-Bold", 16)
-        ticket_canvas.drawString(x, y, "Skydive Toledo LLC jump ticket")
+        ticket_canvas.drawString(x, y, "Skydive Toledo LLC")
         ticket_canvas.setFont("Helvetica", 12)
 
         lines = [
@@ -109,6 +100,14 @@ class Ticket:
             width=LOGO_WIDTH,
             height=logo_height,
             mask="auto",
+        )
+        ticket_canvas.drawImage(
+            logo,
+            HORIZONTAL_MARGIN,
+            VERTICAL_MARGIN,
+            width=LOGO_WIDTH,
+            height=logo_height,
+            mask="auto"
         )
 
     @staticmethod
