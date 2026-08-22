@@ -5,15 +5,15 @@ import os
 import re
 import secrets
 import threading
+import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Callable, Iterable
 from urllib.parse import parse_qs
 
 from jinja2 import Environment, PackageLoader, select_autoescape
-from mongoengine.connection import _connections
+import mongoengine
 from mongoengine.errors import NotUniqueError
-from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 from . import PDF, Ticket
@@ -50,8 +50,7 @@ def _ensure_storage() -> None:
         return
     with _storage_lock:
         if not _storage_connected:
-            mongo_client = MongoClient(os.environ["MONGODB_CONNECTION_STR"])
-            _connections[mongoengine_alias] = mongo_client
+            mongoengine.register_connection(mongoengine_alias, host=os.environ["MONGODB_CONNECTION_STR"])
             _storage_connected = True
 
 
@@ -163,7 +162,6 @@ def _print_tickets(owner: str):
         HTTPStatus.OK,
         [
             ("Content-Type", "application/pdf"),
-            ("Content-Disposition", f'attachment; filename="{_safe_filename(owner)}"'),
         ],
         body,
     )
@@ -223,11 +221,12 @@ def application(environ: dict, start_response: Callable):
         status, headers, body = _dispatch(environ)
     except ValueError as error:
         status, headers, body = _render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
-    except Exception:
+    except Exception as exc:
         status, headers, body = _render(
             "error.html",
             HTTPStatus.INTERNAL_SERVER_ERROR,
-            message="The request could not be completed.",
+            message="The request could not be completed." ,
+            trace="".join(traceback.format_exception(exc))
         )
 
     headers.append(("Content-Length", str(len(body))))
