@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Print tickets{% endblock %}
+{% block content %}
+  <h1>Print active tickets</h1>
+  {% if error %}<p>{{ error }}</p>{% endif %}
+  {% if message %}<p>{{ message }}</p>{% endif %}
+  <form method="get">
+    <label>Owner <input name="owner" type="text" required value="{{ owner|default('') }}"></label>
+    <button type="submit">Download PDF</button>
+  </form>
+{% endblock %}
