@@ -12,7 +12,7 @@ class StorageTicketDocumentTest(unittest.TestCase):
     def test_document_defines_the_expected_fields(self) -> None:
         self.assertEqual(
             sorted(name for name in Ticket._fields if name != "id"),
-            ["code", "owner", "redeemed"],
+            ["code", "owner", "payment", "purpose", "redeemed"],
         )
 
     def test_primary_key_is_the_generated_object_id(self) -> None:
@@ -28,6 +28,12 @@ class StorageTicketDocumentTest(unittest.TestCase):
 
         self.assertIsInstance(fields["owner"], mongoengine.StringField)
         self.assertTrue(fields["owner"].required)
+
+        self.assertIsInstance(fields["payment"], mongoengine.StringField)
+        self.assertFalse(fields["payment"].required)
+
+        self.assertIsInstance(fields["purpose"], mongoengine.StringField)
+        self.assertFalse(fields["purpose"].required)
 
         self.assertIsInstance(fields["redeemed"], mongoengine.DateTimeField)
         self.assertFalse(fields["redeemed"].required)
