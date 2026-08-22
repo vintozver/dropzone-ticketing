@@ -8,7 +8,13 @@ from io import BytesIO
 from bson import ObjectId
 
 from dropzone_ticketing import PDF, Ticket
-from dropzone_ticketing.pdf import PAGE_HEIGHT, PAGE_WIDTH, load_logo_bytes
+from dropzone_ticketing.pdf import (
+    DEFAULT_PAYMENT,
+    DEFAULT_PURPOSE,
+    PAGE_HEIGHT,
+    PAGE_WIDTH,
+    load_logo_bytes,
+)
 
 
 def make_ticket(
@@ -57,6 +63,24 @@ class TicketPdfTest(unittest.TestCase):
         self.assertIn("(To: Jane Jumper) Tj", rendered)
         self.assertIn("(Jumper:) Tj", rendered)
         self.assertIn("(_____________________) Tj", rendered)
+        self.assertNotIn("One jump 36$", rendered)
+        self.assertNotIn("Paid with card xxxx-0000", rendered)
+
+    def test_ticket_pdf_uses_defaults_when_payment_and_purpose_are_absent(self) -> None:
+        output = BytesIO()
+        ticket = make_ticket(
+            "NOPURPOSE",
+            "Jane Jumper",
+            datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
+        )
+
+        pdf = PDF(output)
+        pdf.append(ticket)
+        pdf.render()
+
+        rendered = output.getvalue().decode("latin1")
+        self.assertIn(f"({DEFAULT_PURPOSE}) Tj", rendered)
+        self.assertIn(f"(Paid: {DEFAULT_PAYMENT}) Tj", rendered)
 
     def test_issue_timestamp_is_derived_from_the_identifier(self) -> None:
         issued = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
