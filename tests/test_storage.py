@@ -11,34 +11,29 @@ class StorageTicketDocumentTest(unittest.TestCase):
     def test_document_defines_the_expected_fields(self) -> None:
         self.assertEqual(
             sorted(name for name in Ticket._fields if name != "id"),
-            ["code", "date_issued", "identifier", "owner", "redeemed", "redeemed_at"],
+            ["code", "owner", "redeemed"],
         )
+
+    def test_primary_key_is_the_generated_object_id(self) -> None:
+        self.assertIsInstance(Ticket._fields["id"], mongoengine.ObjectIdField)
+        self.assertEqual(Ticket._meta["id_field"], "id")
 
     def test_field_types_and_constraints(self) -> None:
         fields = Ticket._fields
 
-        self.assertIsInstance(fields["identifier"], mongoengine.StringField)
-        self.assertTrue(fields["identifier"].required)
-        self.assertTrue(fields["identifier"].unique)
-
         self.assertIsInstance(fields["code"], mongoengine.StringField)
         self.assertTrue(fields["code"].required)
-
-        self.assertIsInstance(fields["date_issued"], mongoengine.DateTimeField)
-        self.assertTrue(fields["date_issued"].required)
+        self.assertTrue(fields["code"].unique)
 
         self.assertIsInstance(fields["owner"], mongoengine.StringField)
         self.assertTrue(fields["owner"].required)
 
-        self.assertIsInstance(fields["redeemed"], mongoengine.BooleanField)
-        self.assertFalse(fields["redeemed"].default)
-
-        self.assertIsInstance(fields["redeemed_at"], mongoengine.DateTimeField)
-        self.assertTrue(fields["redeemed_at"].null)
+        self.assertIsInstance(fields["redeemed"], mongoengine.DateTimeField)
+        self.assertFalse(fields["redeemed"].required)
 
     def test_collection_metadata(self) -> None:
         self.assertEqual(Ticket._meta["collection"], "tickets")
-        self.assertIn("identifier", Ticket._meta["indexes"])
+        self.assertIn("code", Ticket._meta["indexes"])
 
 
 if __name__ == "__main__":
