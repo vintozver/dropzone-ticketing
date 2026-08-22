@@ -9,8 +9,6 @@ from bson import ObjectId
 
 from dropzone_ticketing import PDF, Ticket
 from dropzone_ticketing.pdf import (
-    DEFAULT_PAYMENT,
-    DEFAULT_PURPOSE,
     PAGE_HEIGHT,
     PAGE_WIDTH,
     load_logo_bytes,
@@ -21,8 +19,8 @@ def make_ticket(
     code: str,
     owner: str,
     issued: datetime,
-    payment: str = "",
-    purpose: str = "",
+    payment: str = "cash",
+    purpose: str = "One jump 36$",
 ) -> Ticket:
     """Build an unsaved ticket whose id encodes the given issue timestamp."""
     return Ticket(
@@ -66,22 +64,6 @@ class TicketPdfTest(unittest.TestCase):
         self.assertNotIn("One jump 36$", rendered)
         self.assertNotIn("Paid with card xxxx-0000", rendered)
 
-    def test_ticket_pdf_uses_defaults_when_payment_and_purpose_are_absent(self) -> None:
-        output = BytesIO()
-        ticket = make_ticket(
-            "NOPURPOSE",
-            "Jane Jumper",
-            datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
-        )
-
-        pdf = PDF(output)
-        pdf.append(ticket)
-        pdf.render()
-
-        rendered = output.getvalue().decode("latin1")
-        self.assertIn(f"({DEFAULT_PURPOSE}) Tj", rendered)
-        self.assertIn(f"(Paid: {DEFAULT_PAYMENT}) Tj", rendered)
-
     def test_issue_timestamp_is_derived_from_the_identifier(self) -> None:
         issued = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         ticket = make_ticket("XYZ789", "John Jumper", issued)
@@ -89,7 +71,12 @@ class TicketPdfTest(unittest.TestCase):
         self.assertEqual(ticket.issued_utc(), issued)
 
     def test_issued_utc_requires_an_identifier(self) -> None:
-        ticket = Ticket(code="NOID01", owner="John Jumper")
+        ticket = Ticket(
+            code="NOID01",
+            owner="John Jumper",
+            payment="cash",
+            purpose="One jump 36$",
+        )
 
         with self.assertRaises(ValueError):
             ticket.issued_utc()

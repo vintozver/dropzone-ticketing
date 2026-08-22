@@ -88,6 +88,24 @@ def _issue(form: dict[str, str]):
             payment=payment,
             purpose=purpose,
         )
+    if not payment:
+        return _render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Payment is required.",
+            owner=owner,
+            payment=payment,
+            purpose=purpose,
+        )
+    if not purpose:
+        return _render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Purpose is required.",
+            owner=owner,
+            payment=payment,
+            purpose=purpose,
+        )
 
     try:
         count = int(form.get("count", ""))

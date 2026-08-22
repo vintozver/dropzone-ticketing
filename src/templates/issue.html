@@ -6,9 +6,9 @@
   <form method="post">
     <label>Owner <input name="owner" type="text" required value="{{ owner|default('') }}"></label>
     <label>Count <input name="count" type="number" min="1" max="1000" required></label>
-    <label>Payment <input name="payment" type="text" value="{{ payment|default('') }}"></label>
+    <label>Payment <input name="payment" type="text" required value="{{ payment|default('') }}"></label>
     <p>for example, cash or credit card; be sure to write down last 4 digits of the card number or account as necessary</p>
-    <label>Purpose <input name="purpose" type="text" value="{{ purpose|default('') }}"></label>
+    <label>Purpose <input name="purpose" type="text" required value="{{ purpose|default('') }}"></label>
     <p>for example, King Air full altitude, C182 hop-and-hop, balloon ride, bonfire, dinner admission. Write down the price if necessary.</p>
     <button type="submit">Issue</button>
   </form>

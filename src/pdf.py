@@ -23,8 +23,6 @@ HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
 PDT = timezone(timedelta(hours=-7), "PDT")
-DEFAULT_PAYMENT = "unspecified"
-DEFAULT_PURPOSE = "unspecified"
 
 
 class PDF(object):
@@ -72,8 +70,8 @@ class PDF(object):
         self.canvas.setFont("Helvetica", 12)
 
         lines = [
-            ticket.purpose or DEFAULT_PURPOSE,
-            f"Paid: {ticket.payment or DEFAULT_PAYMENT}",
+            ticket.purpose,
+            f"Paid: {ticket.payment}",
             f"Issued: {self._format_datetime(issued_pdt, 'PDT')}",
             f"To: {ticket.owner}",
             "Jumper:",

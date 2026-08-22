@@ -139,10 +139,49 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b"Issue tickets", response["body"])
 
     def test_issue_rejects_out_of_range_count(self) -> None:
-        response = self.request("/issue", "POST", {"owner": "Jane", "count": "1001"})
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1001",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            },
+        )
 
         self.assertEqual(response["status"], "400 Bad Request")
         self.assertIn(b"between 1 and 1000", response["body"])
+
+    def test_issue_rejects_missing_payment(self) -> None:
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": " ",
+                "purpose": "C182 hop-and-hop",
+            },
+        )
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertIn(b"Payment is required.", response["body"])
+
+    def test_issue_rejects_missing_purpose(self) -> None:
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": "cash",
+                "purpose": " ",
+            },
+        )
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertIn(b"Purpose is required.", response["body"])
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")

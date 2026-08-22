@@ -30,10 +30,10 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertTrue(fields["owner"].required)
 
         self.assertIsInstance(fields["payment"], mongoengine.StringField)
-        self.assertFalse(fields["payment"].required)
+        self.assertTrue(fields["payment"].required)
 
         self.assertIsInstance(fields["purpose"], mongoengine.StringField)
-        self.assertFalse(fields["purpose"].required)
+        self.assertTrue(fields["purpose"].required)
 
         self.assertIsInstance(fields["redeemed"], mongoengine.DateTimeField)
         self.assertFalse(fields["redeemed"].required)
