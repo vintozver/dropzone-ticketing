@@ -9,7 +9,11 @@
         <tr>
           <td><code>{{ item.code }}</code></td>
           <td>{{ item.result }}</td>
-          <td>{{ item.redeemed|default('', true) }}</td>
+          <td>
+            {% if item.redeemed %}
+              {{ item.redeemed.dt }}{% if item.redeemed.reason %} ({{ item.redeemed.reason }}){% endif %}
+            {% endif %}
+          </td>
         </tr>
       {% endfor %}
     </tbody>

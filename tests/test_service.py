@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
+from dropzone_ticketing.model.ticket import Redemption
 
 
 class ServiceHelperTest(unittest.TestCase):
@@ -61,7 +62,9 @@ class ServiceHelperTest(unittest.TestCase):
     def test_redeem_reports_each_result(self, ticket_class) -> None:
         redeemed_at = datetime(2026, 8, 22, tzinfo=timezone.utc)
         active = MagicMock(redeemed=None)
-        already_redeemed = MagicMock(redeemed=redeemed_at)
+        already_redeemed = MagicMock(
+            redeemed=Redemption(dt=redeemed_at, reason="previous jump")
+        )
         tickets = {
             "active": active,
             "used": already_redeemed,
@@ -71,14 +74,28 @@ class ServiceHelperTest(unittest.TestCase):
             first=lambda: tickets[code]
         )
 
-        status, _headers, body = service._redeem({"codes": "active used missing"})
+        status, _headers, body = service._redeem(
+            {"codes": "active used missing", "reason": " jump "}
+        )
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(b"redeemed OK", body)
         self.assertIn(b"already redeemed", body)
         self.assertIn(b"not found", body)
+        self.assertIn(b"2026-08-22", body)
+        self.assertIn(b"previous jump", body)
         active.save.assert_called_once_with()
-        self.assertIsNotNone(active.redeemed)
+        self.assertEqual(active.redeemed.dt.tzinfo, timezone.utc)
+        self.assertEqual(active.redeemed.reason, "jump")
+
+    @patch.object(service, "Ticket")
+    def test_redeem_omits_blank_reason(self, ticket_class) -> None:
+        active = MagicMock(redeemed=None)
+        ticket_class.objects.return_value.first.return_value = active
+
+        service._redeem({"codes": "active", "reason": "  "})
+
+        self.assertIsNone(active.redeemed.reason)
 
     @patch.object(service, "Ticket")
     def test_issue_confirms_the_just_issued_tickets(self, ticket_class) -> None:

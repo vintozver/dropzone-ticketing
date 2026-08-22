@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import unittest
 
 import mongoengine
 
 from dropzone_ticketing.model import mongoengine_alias
-from dropzone_ticketing.model.ticket import Ticket
+from dropzone_ticketing.model.ticket import Redemption, Ticket
 
 
 class StorageTicketDocumentTest(unittest.TestCase):
@@ -35,8 +36,22 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertIsInstance(fields["purpose"], mongoengine.StringField)
         self.assertTrue(fields["purpose"].required)
 
-        self.assertIsInstance(fields["redeemed"], mongoengine.DateTimeField)
+        self.assertIsInstance(fields["redeemed"], mongoengine.EmbeddedDocumentField)
         self.assertFalse(fields["redeemed"].required)
+        self.assertIs(fields["redeemed"].document_type_obj, Redemption)
+
+        redeemed_fields = Redemption._fields
+        self.assertIsInstance(redeemed_fields["dt"], mongoengine.DateTimeField)
+        self.assertTrue(redeemed_fields["dt"].required)
+        self.assertIsInstance(redeemed_fields["reason"], mongoengine.StringField)
+        self.assertFalse(redeemed_fields["reason"].required)
+
+    def test_redemption_requires_datetime_and_omits_absent_reason(self) -> None:
+        with self.assertRaises(mongoengine.ValidationError):
+            Redemption().validate()
+
+        redemption = Redemption(dt=datetime(2026, 8, 22, tzinfo=timezone.utc))
+        self.assertNotIn("reason", redemption.to_mongo())
 
     def test_collection_metadata(self) -> None:
         self.assertEqual(Ticket._meta["collection"], "tickets")

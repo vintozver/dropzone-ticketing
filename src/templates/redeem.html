@@ -5,6 +5,8 @@
   {% if error %}<p>{{ error }}</p>{% endif %}
   <form method="post">
     <label>Ticket codes<br><textarea name="codes" rows="10" cols="40" required></textarea></label><br>
+    <label>Reason<br><input name="reason" type="text"></label>
+    <small>optional , for example: jump or something else, for your records</small><br>
     <button type="submit">Redeem</button>
   </form>
 {% endblock %}

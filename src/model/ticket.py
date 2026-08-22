@@ -7,6 +7,13 @@ import mongoengine
 from . import mongoengine_alias
 
 
+class Redemption(mongoengine.EmbeddedDocument):
+    """Details recorded when a ticket is redeemed."""
+
+    dt = mongoengine.DateTimeField(required=True)
+    reason = mongoengine.StringField(required=False)
+
+
 class Ticket(mongoengine.Document):
     """A ticket record persisted in MongoDB.
 
@@ -14,15 +21,15 @@ class Ticket(mongoengine.Document):
     also carries the issue timestamp via
     :attr:`~bson.objectid.ObjectId.generation_time`.
 
-    ``redeemed`` holds the redemption timestamp and is unset while the ticket
-    has not been redeemed yet.
+    ``redeemed`` holds redemption details and is unset while the ticket has not
+    been redeemed yet.
     """
 
     code = mongoengine.StringField(required=True, unique=True)
     owner = mongoengine.StringField(required=True)
     payment = mongoengine.StringField(required=True)
     purpose = mongoengine.StringField(required=True)
-    redeemed = mongoengine.DateTimeField(required=False)
+    redeemed = mongoengine.EmbeddedDocumentField(Redemption, required=False)
 
     meta = {
         "db_alias": mongoengine_alias,
