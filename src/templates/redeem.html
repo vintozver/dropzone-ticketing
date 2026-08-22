@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Redeem tickets{% endblock %}
+{% block content %}
+  <h1>Redeem tickets</h1>
+  {% if error %}<p>{{ error }}</p>{% endif %}
+  <form method="post">
+    <label>Ticket codes<br><textarea name="codes" rows="10" cols="40" required></textarea></label><br>
+    <button type="submit">Redeem</button>
+  </form>
+{% endblock %}

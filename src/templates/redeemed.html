@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Redemption results{% endblock %}
+{% block content %}
+  <h1>Redemption results</h1>
+  <table>
+    <thead><tr><th>Code</th><th>Result</th><th>Previously redeemed</th></tr></thead>
+    <tbody>
+      {% for item in results %}
+        <tr>
+          <td><code>{{ item.code }}</code></td>
+          <td>{{ item.result }}</td>
+          <td>{{ item.redeemed|default('', true) }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

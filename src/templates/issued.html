@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Tickets issued{% endblock %}
+{% block content %}
+  <h1>Tickets issued to {{ owner }}</h1>
+  <ul>
+    {% for ticket in tickets %}<li><code>{{ ticket.code }}</code></li>{% endfor %}
+  </ul>
+  <p><a href="/print?owner={{ owner|urlencode }}">Download active tickets as PDF</a></p>
+{% endblock %}
