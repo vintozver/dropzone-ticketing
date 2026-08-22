@@ -53,6 +53,10 @@ class Ticket(mongoengine.Document):
         return f"Ticket {self.identifier} ({self.owner})"
 
     def redeem(self, when: datetime) -> None:
-        """Mark the ticket as redeemed at the given UTC timestamp."""
+        """Mark the ticket as redeemed at the given UTC timestamp.
+
+        Only the in-memory document is updated; call :meth:`save` to persist
+        the change.
+        """
         self.redeemed = True
         self.redeemed_at = when

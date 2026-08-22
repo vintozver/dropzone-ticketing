@@ -34,7 +34,7 @@ class PDF(object):
             pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
             pageCompression=0,
         )
-        self.canvas.setTitle(f"Tickets")
+        self.canvas.setTitle("Tickets")
 
     def append(self, ticket: _ticket.Ticket) -> None:
         """Render ``ticket`` onto a new page of the document."""

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 @dataclass(frozen=True)
 class Ticket:
-    """A single issued ticket, as rendered onto a PDF page."""
+    """Immutable data record of a single issued ticket."""
 
     identifier: str
     code: str
