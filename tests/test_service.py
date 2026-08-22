@@ -90,6 +90,33 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
         self.assertIn(b"No active tickets found", body)
 
+    @patch.object(service, "Ticket")
+    def test_view_owners_lists_only_owners_with_active_tickets(self, ticket_class) -> None:
+        ticket_class.objects.return_value.distinct.return_value = ["Zoe", "Jane"]
+
+        status, _headers, body = service._view_owners()
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        ticket_class.objects.assert_called_once_with(redeemed=None)
+        ticket_class.objects.return_value.distinct.assert_called_once_with("owner")
+        self.assertLess(body.index(b"Jane"), body.index(b"Zoe"))
+
+    @patch.object(service, "Ticket")
+    def test_view_owner_tickets_hides_the_ticket_code(self, ticket_class) -> None:
+        ticket = MagicMock(payment="cash", purpose="C182 hop-and-hop", code="secret-code")
+        ticket.issued_utc.return_value = datetime(2026, 8, 22, tzinfo=timezone.utc)
+        ticket_class.objects.return_value = [ticket]
+
+        status, _headers, body = service._view_owner_tickets("Jane")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        ticket_class.objects.assert_called_once_with(owner="Jane", redeemed=None)
+        self.assertIn(b"2026-08-22 00:00:00 UTC", body)
+        self.assertIn(b"C182 hop-and-hop", body)
+        self.assertIn(b"cash", body)
+        self.assertNotIn(b"secret-code", body)
+        self.assertIn(b"Print active tickets", body)
+
     @patch.object(service.mongoengine, "register_connection")
     def test_ensure_storage_registers_connection_from_env_var(self, register_connection) -> None:
         original_connected = service._storage_connected
