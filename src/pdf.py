@@ -24,7 +24,7 @@ LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
 PDT = timezone(timedelta(hours=-7), "PDT")
 DEFAULT_PAYMENT = "unspecified"
-DEFAULT_PURPOSE = "Purpose not specified"
+DEFAULT_PURPOSE = "unspecified"
 
 
 class PDF(object):
