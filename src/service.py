@@ -9,8 +9,10 @@ import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Callable, Iterable
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlencode
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from jinja2 import Environment, PackageLoader, select_autoescape
 import mongoengine
 from mongoengine.errors import NotUniqueError
@@ -134,7 +136,14 @@ def _issue(form: dict[str, str]):
         else:
             raise RuntimeError("Could not generate a unique ticket code.")
 
-    return _render("issued.html", owner=owner, tickets=tickets)
+    return _render(
+        "issued.html",
+        owner=owner,
+        count=len(tickets),
+        payment=payment,
+        purpose=purpose,
+        print_url=_print_url(tickets),
+    )
 
 
 def _redeem(form: dict[str, str]):
@@ -172,14 +181,24 @@ def _safe_filename(owner: str) -> str:
     return f"tickets-{component or 'owner'}.pdf"
 
 
-def _print_tickets(owner: str):
-    owner = owner.strip()
-    if not owner:
-        return _render("print.html", HTTPStatus.BAD_REQUEST, error="Owner is required.")
+def _print_url(tickets: Iterable[Ticket]) -> str:
+    """Return the URL printing exactly the given tickets as a PDF."""
+    return "/print?" + urlencode([("id", str(ticket.id)) for ticket in tickets])
 
-    tickets = list(Ticket.objects(owner=owner, redeemed=None))
+
+def _print_tickets(ticket_ids: Iterable[str]):
+    object_ids = []
+    for ticket_id in ticket_ids:
+        try:
+            object_ids.append(ObjectId(ticket_id.strip()))
+        except (InvalidId, TypeError):
+            return _render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid ticket identifier.")
+    if not object_ids:
+        return _render("error.html", HTTPStatus.BAD_REQUEST, message="At least one ticket is required.")
+
+    tickets = list(Ticket.objects(id__in=object_ids))
     if not tickets:
-        return _render("print.html", owner=owner, message="No active tickets found for this owner.")
+        return _render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
     pdf = PDF(output)
@@ -208,6 +227,7 @@ def _view_owner_tickets(owner: str):
 
     tickets = [
         {
+            "id": str(ticket.id),
             "issued": ticket.issued_utc(),
             "purpose": ticket.purpose,
             "payment": ticket.payment,
@@ -260,14 +280,10 @@ def _dispatch(environ: dict):
         return _view_owner_tickets(query["owner"][0])
 
     if path == "/print":
-        if method == "GET":
-            query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-            if "owner" not in query:
-                return _render("print.html")
-            return _print_tickets(query["owner"][0])
-        if method == "POST":
-            return _print_tickets(_read_form(environ).get("owner", ""))
-        return _method_not_allowed(["GET", "POST"])
+        if method != "GET":
+            return _method_not_allowed(["GET"])
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+        return _print_tickets(query.get("id", []))
 
     return _render("error.html", HTTPStatus.NOT_FOUND, message="Page not found.")
 

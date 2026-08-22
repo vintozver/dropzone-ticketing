@@ -8,17 +8,14 @@
       <tbody>
         {% for ticket in tickets %}
           <tr>
-            <td>{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+            <td><a href="/print?id={{ ticket.id|urlencode }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
-    <form method="get" action="/print">
-      <input name="owner" type="hidden" value="{{ owner }}">
-      <button type="submit">Print active tickets</button>
-    </form>
+    <p>Follow an issue timestamp to print that ticket as PDF.</p>
   {% else %}
     <p>No active tickets found for this owner.</p>
   {% endif %}

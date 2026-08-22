@@ -34,7 +34,7 @@ class ServiceHelperTest(unittest.TestCase):
     def test_issue_retries_a_code_collision(self, ticket_class, generate_code) -> None:
         duplicate = MagicMock()
         duplicate.save.side_effect = NotUniqueError
-        saved = MagicMock(code="new-code")
+        saved = MagicMock(code="new-code", id="507f1f77bcf86cd799439011")
         ticket_class.side_effect = [duplicate, saved]
 
         status, _headers, body = service._issue(
@@ -47,7 +47,7 @@ class ServiceHelperTest(unittest.TestCase):
         )
 
         self.assertEqual(status, service.HTTPStatus.OK)
-        self.assertIn(b"new-code", body)
+        self.assertNotIn(b"new-code", body)
         self.assertEqual(generate_code.call_count, 2)
         self.assertEqual(
             ticket_class.call_args_list,
@@ -81,14 +81,69 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIsNotNone(active.redeemed)
 
     @patch.object(service, "Ticket")
-    def test_print_without_active_tickets_returns_html_message(self, ticket_class) -> None:
-        ticket_class.objects.return_value = []
+    def test_issue_confirms_the_just_issued_tickets(self, ticket_class) -> None:
+        tickets = [
+            MagicMock(code="code-1", id="507f1f77bcf86cd799439011"),
+            MagicMock(code="code-2", id="507f1f77bcf86cd799439012"),
+        ]
+        ticket_class.side_effect = tickets
 
-        status, headers, body = service._print_tickets("Jane")
+        status, _headers, body = service._issue(
+            {
+                "owner": "Jane",
+                "count": "2",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            }
+        )
 
         self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(b"Tickets issued: 2", body)
+        self.assertIn(b"C182 hop-and-hop", body)
+        self.assertIn(b"cash", body)
+        self.assertNotIn(b"code-1", body)
+        self.assertIn(
+            b"/print?id=507f1f77bcf86cd799439011&amp;id=507f1f77bcf86cd799439012",
+            body,
+        )
+
+    @patch.object(service, "Ticket")
+    def test_print_renders_only_the_requested_tickets(self, ticket_class) -> None:
+        ticket = MagicMock(code="secret-code", owner="Jane")
+        ticket_class.objects.return_value = [ticket]
+
+        with patch.object(service, "PDF") as pdf_class:
+            status, headers, _body = service._print_tickets(["507f1f77bcf86cd799439011"])
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(("Content-Type", "application/pdf"), headers)
+        ticket_class.objects.assert_called_once_with(
+            id__in=[service.ObjectId("507f1f77bcf86cd799439011")]
+        )
+        pdf_class.return_value.append.assert_called_once_with(ticket)
+
+    def test_print_rejects_an_invalid_ticket_id(self) -> None:
+        status, headers, body = service._print_tickets(["not-an-id"])
+
+        self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
-        self.assertIn(b"No active tickets found", body)
+        self.assertIn(b"Invalid ticket identifier.", body)
+
+    def test_print_requires_at_least_one_ticket(self) -> None:
+        status, _headers, body = service._print_tickets([])
+
+        self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
+        self.assertIn(b"At least one ticket is required.", body)
+
+    @patch.object(service, "Ticket")
+    def test_print_without_matching_tickets_is_not_found(self, ticket_class) -> None:
+        ticket_class.objects.return_value = []
+
+        status, headers, body = service._print_tickets(["507f1f77bcf86cd799439011"])
+
+        self.assertEqual(status, service.HTTPStatus.NOT_FOUND)
+        self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
+        self.assertIn(b"No tickets found.", body)
 
     @patch.object(service, "Ticket")
     def test_view_owners_lists_only_owners_with_active_tickets(self, ticket_class) -> None:
@@ -103,7 +158,12 @@ class ServiceHelperTest(unittest.TestCase):
 
     @patch.object(service, "Ticket")
     def test_view_owner_tickets_hides_the_ticket_code(self, ticket_class) -> None:
-        ticket = MagicMock(payment="cash", purpose="C182 hop-and-hop", code="secret-code")
+        ticket = MagicMock(
+            payment="cash",
+            purpose="C182 hop-and-hop",
+            code="secret-code",
+            id="507f1f77bcf86cd799439011",
+        )
         ticket.issued_utc.return_value = datetime(2026, 8, 22, tzinfo=timezone.utc)
         ticket_class.objects.return_value = [ticket]
 
@@ -115,7 +175,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
         self.assertNotIn(b"secret-code", body)
-        self.assertIn(b"Print active tickets", body)
+        self.assertIn(b'href="/print?id=507f1f77bcf86cd799439011"', body)
 
     @patch.object(service.mongoengine, "register_connection")
     def test_ensure_storage_registers_connection_from_env_var(self, register_connection) -> None:
@@ -209,6 +269,17 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "400 Bad Request")
         self.assertIn(b"Purpose is required.", response["body"])
+
+    def test_print_page_is_removed(self) -> None:
+        response = self.request("/print")
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertNotIn(b"Print tickets", response["body"])
+
+    def test_navigation_does_not_link_the_print_page(self) -> None:
+        response = self.request("/")
+
+        self.assertNotIn(b'href="/print"', response["body"])
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")
