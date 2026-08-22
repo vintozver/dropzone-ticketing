@@ -70,8 +70,8 @@ class PDF(object):
         self.canvas.setFont("Helvetica", 12)
 
         lines = [
-            "One jump 36$",
-            "Paid with card xxxx-0000",
+            ticket.purpose,
+            f"Paid: {ticket.payment}",
             f"Issued: {self._format_datetime(issued_pdt, 'PDT')}",
             f"To: {ticket.owner}",
             "Jumper:",

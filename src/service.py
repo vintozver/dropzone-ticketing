@@ -77,8 +77,35 @@ def _read_form(environ: dict) -> dict[str, str]:
 
 def _issue(form: dict[str, str]):
     owner = form.get("owner", "").strip()
+    payment = form.get("payment", "").strip()
+    purpose = form.get("purpose", "").strip()
     if not owner:
-        return _render("issue.html", HTTPStatus.BAD_REQUEST, error="Owner is required.", owner=owner)
+        return _render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Owner is required.",
+            owner=owner,
+            payment=payment,
+            purpose=purpose,
+        )
+    if not payment:
+        return _render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Payment is required.",
+            owner=owner,
+            payment=payment,
+            purpose=purpose,
+        )
+    if not purpose:
+        return _render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Purpose is required.",
+            owner=owner,
+            payment=payment,
+            purpose=purpose,
+        )
 
     try:
         count = int(form.get("count", ""))
@@ -90,12 +117,14 @@ def _issue(form: dict[str, str]):
             HTTPStatus.BAD_REQUEST,
             error=f"Count must be between 1 and {MAX_TICKETS}.",
             owner=owner,
+            payment=payment,
+            purpose=purpose,
         )
 
     tickets = []
     for _ in range(count):
         for _attempt in range(MAX_CODE_ATTEMPTS):
-            ticket = Ticket(code=generate_code(), owner=owner)
+            ticket = Ticket(code=generate_code(), owner=owner, payment=payment, purpose=purpose)
             try:
                 ticket.save()
             except (NotUniqueError, DuplicateKeyError):

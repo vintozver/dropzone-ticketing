@@ -37,14 +37,24 @@ class ServiceHelperTest(unittest.TestCase):
         saved = MagicMock(code="new-code")
         ticket_class.side_effect = [duplicate, saved]
 
-        status, _headers, body = service._issue({"owner": "Jane", "count": "1"})
+        status, _headers, body = service._issue(
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            }
+        )
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(b"new-code", body)
         self.assertEqual(generate_code.call_count, 2)
         self.assertEqual(
             ticket_class.call_args_list,
-            [call(code="duplicate-code", owner="Jane"), call(code="new-code", owner="Jane")],
+            [
+                call(code="duplicate-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop"),
+                call(code="new-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop"),
+            ],
         )
 
     @patch.object(service, "Ticket")
@@ -80,26 +90,23 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
         self.assertIn(b"No active tickets found", body)
 
-    @patch.object(service, "MongoClient")
-    def test_ensure_storage_registers_client_from_env_var(self, mongo_client_class) -> None:
-        mongo_client = MagicMock()
-        mongo_client_class.return_value = mongo_client
-
+    @patch.object(service.mongoengine, "register_connection")
+    def test_ensure_storage_registers_connection_from_env_var(self, register_connection) -> None:
         original_connected = service._storage_connected
         service._storage_connected = False
         try:
-            with patch.dict(
-                "os.environ", {"MONGODB_CONNECTION_STR": "mongodb://example/test"}
-            ), patch.object(service, "_connections", {}) as connections:
+            with patch.dict("os.environ", {"MONGODB_CONNECTION_STR": "mongodb://example/test"}):
                 service._ensure_storage()
 
-                mongo_client_class.assert_called_once_with("mongodb://example/test")
-                self.assertIs(connections[service.mongoengine_alias], mongo_client)
+                register_connection.assert_called_once_with(
+                    service.mongoengine_alias,
+                    host="mongodb://example/test",
+                )
                 self.assertTrue(service._storage_connected)
 
                 # A second call should be a no-op and must not reconnect.
                 service._ensure_storage()
-                mongo_client_class.assert_called_once()
+                register_connection.assert_called_once()
         finally:
             service._storage_connected = original_connected
 
@@ -132,10 +139,49 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b"Issue tickets", response["body"])
 
     def test_issue_rejects_out_of_range_count(self) -> None:
-        response = self.request("/issue", "POST", {"owner": "Jane", "count": "1001"})
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1001",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            },
+        )
 
         self.assertEqual(response["status"], "400 Bad Request")
         self.assertIn(b"between 1 and 1000", response["body"])
+
+    def test_issue_rejects_missing_payment(self) -> None:
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": " ",
+                "purpose": "C182 hop-and-hop",
+            },
+        )
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertIn(b"Payment is required.", response["body"])
+
+    def test_issue_rejects_missing_purpose(self) -> None:
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": "cash",
+                "purpose": " ",
+            },
+        )
+
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertIn(b"Purpose is required.", response["body"])
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")

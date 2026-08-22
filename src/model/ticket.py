@@ -20,6 +20,8 @@ class Ticket(mongoengine.Document):
 
     code = mongoengine.StringField(required=True, unique=True)
     owner = mongoengine.StringField(required=True)
+    payment = mongoengine.StringField(required=True)
+    purpose = mongoengine.StringField(required=True)
     redeemed = mongoengine.DateTimeField(required=False)
 
     meta = {

@@ -8,12 +8,28 @@ from io import BytesIO
 from bson import ObjectId
 
 from dropzone_ticketing import PDF, Ticket
-from dropzone_ticketing.pdf import PAGE_HEIGHT, PAGE_WIDTH, load_logo_bytes
+from dropzone_ticketing.pdf import (
+    PAGE_HEIGHT,
+    PAGE_WIDTH,
+    load_logo_bytes,
+)
 
 
-def make_ticket(code: str, owner: str, issued: datetime) -> Ticket:
+def make_ticket(
+    code: str,
+    owner: str,
+    issued: datetime,
+    payment: str = "cash",
+    purpose: str = "One jump 36$",
+) -> Ticket:
     """Build an unsaved ticket whose id encodes the given issue timestamp."""
-    return Ticket(id=ObjectId.from_datetime(issued), code=code, owner=owner)
+    return Ticket(
+        id=ObjectId.from_datetime(issued),
+        code=code,
+        owner=owner,
+        payment=payment,
+        purpose=purpose,
+    )
 
 
 class TicketPdfTest(unittest.TestCase):
@@ -23,6 +39,8 @@ class TicketPdfTest(unittest.TestCase):
             "ABC123",
             "Jane Jumper",
             datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
+            payment="credit card xxxx-1234",
+            purpose="King Air full altitude 36$",
         )
 
         pdf = PDF(output)
@@ -38,11 +56,13 @@ class TicketPdfTest(unittest.TestCase):
         self.assertIn("(2026-08-21 20:30:00 UTC) Tj", rendered)
         self.assertIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", rendered)
         self.assertIn("(Skydive Toledo LLC) Tj", rendered)
-        self.assertIn("(One jump 36$) Tj", rendered)
-        self.assertIn("(Paid with card xxxx-0000) Tj", rendered)
+        self.assertIn("(King Air full altitude 36$) Tj", rendered)
+        self.assertIn("(Paid: credit card xxxx-1234) Tj", rendered)
         self.assertIn("(To: Jane Jumper) Tj", rendered)
         self.assertIn("(Jumper:) Tj", rendered)
         self.assertIn("(_____________________) Tj", rendered)
+        self.assertNotIn("One jump 36$", rendered)
+        self.assertNotIn("Paid with card xxxx-0000", rendered)
 
     def test_issue_timestamp_is_derived_from_the_identifier(self) -> None:
         issued = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -51,7 +71,12 @@ class TicketPdfTest(unittest.TestCase):
         self.assertEqual(ticket.issued_utc(), issued)
 
     def test_issued_utc_requires_an_identifier(self) -> None:
-        ticket = Ticket(code="NOID01", owner="John Jumper")
+        ticket = Ticket(
+            code="NOID01",
+            owner="John Jumper",
+            payment="cash",
+            purpose="One jump 36$",
+        )
 
         with self.assertRaises(ValueError):
             ticket.issued_utc()
