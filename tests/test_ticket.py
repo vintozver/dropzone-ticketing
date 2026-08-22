@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 
 from dropzone_ticketing import Ticket
-from dropzone_ticketing.ticket import PAGE_HEIGHT, PAGE_WIDTH
+from dropzone_ticketing.ticket import PAGE_HEIGHT, PAGE_WIDTH, load_logo_bytes
 
 
 class TicketPdfTest(unittest.TestCase):
@@ -50,6 +50,27 @@ class TicketPdfTest(unittest.TestCase):
         pdf = output.getvalue().decode("latin1")
         self.assertIn("(2026-01-15 12:00:00 UTC) Tj", pdf)
         self.assertIn("(Issued: 2026-01-15 05:00:00 PDT) Tj", pdf)
+
+
+class TicketLogoTest(unittest.TestCase):
+    def test_logo_resource_is_available_as_png(self) -> None:
+        logo = load_logo_bytes()
+
+        self.assertTrue(logo.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_ticket_pdf_embeds_the_logo_image(self) -> None:
+        output = BytesIO()
+        ticket = Ticket(
+            identifier="ticket-3",
+            code="LOGO01",
+            date_issued=datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
+            owner="Jane Jumper",
+        )
+
+        ticket.produce_pdf(output)
+
+        pdf = output.getvalue().decode("latin1")
+        self.assertIn("/Subtype /Image", pdf)
 
 
 if __name__ == "__main__":

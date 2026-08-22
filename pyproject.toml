@@ -16,3 +16,5 @@ dependencies = [
 packages = ["dropzone_ticketing"]
 package-dir = {"dropzone_ticketing" = "src"}
 
+[tool.setuptools.package-data]
+dropzone_ticketing = ["logo.png"]
