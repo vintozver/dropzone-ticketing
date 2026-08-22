@@ -5,8 +5,8 @@ import unittest
 from datetime import datetime, timezone
 from io import BytesIO
 
-from dropzone_ticketing import Ticket
-from dropzone_ticketing.ticket import PAGE_HEIGHT, PAGE_WIDTH, load_logo_bytes
+from dropzone_ticketing import PDF, Ticket
+from dropzone_ticketing.pdf import PAGE_HEIGHT, PAGE_WIDTH, load_logo_bytes
 
 
 class TicketPdfTest(unittest.TestCase):
@@ -19,22 +19,24 @@ class TicketPdfTest(unittest.TestCase):
             owner="Jane Jumper",
         )
 
-        ticket.produce_pdf(output)
+        pdf = PDF(output)
+        pdf.append(ticket)
+        pdf.render()
 
-        pdf = output.getvalue().decode("latin1")
-        self.assertTrue(pdf.startswith("%PDF-"))
-        self.assertEqual(len(re.findall(r"/Type /Page\b", pdf)), 1)
-        self.assertIn(f"/MediaBox [ 0 0 {PAGE_WIDTH:g} {PAGE_HEIGHT:g} ]", pdf)
-        self.assertIn("(Jane Jumper) Tj", pdf)
-        self.assertIn("(ABC123) Tj", pdf)
-        self.assertIn("(2026-08-21 20:30:00 UTC) Tj", pdf)
-        self.assertIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", pdf)
-        self.assertIn("(Skydive Toledo LLC jump ticket) Tj", pdf)
-        self.assertIn("(One jump 36$) Tj", pdf)
-        self.assertIn("(Paid with card xxxx-0000) Tj", pdf)
-        self.assertIn("(To: Jane Jumper) Tj", pdf)
-        self.assertIn("(Jumper:) Tj", pdf)
-        self.assertIn("(_____________________) Tj", pdf)
+        rendered = output.getvalue().decode("latin1")
+        self.assertTrue(rendered.startswith("%PDF-"))
+        self.assertEqual(len(re.findall(r"/Type /Page\b", rendered)), 1)
+        self.assertIn(f"/MediaBox [ 0 0 {PAGE_WIDTH:g} {PAGE_HEIGHT:g} ]", rendered)
+        self.assertIn("(Jane Jumper) Tj", rendered)
+        self.assertIn("(ABC123) Tj", rendered)
+        self.assertIn("(2026-08-21 20:30:00 UTC) Tj", rendered)
+        self.assertIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", rendered)
+        self.assertIn("(Skydive Toledo LLC) Tj", rendered)
+        self.assertIn("(One jump 36$) Tj", rendered)
+        self.assertIn("(Paid with card xxxx-0000) Tj", rendered)
+        self.assertIn("(To: Jane Jumper) Tj", rendered)
+        self.assertIn("(Jumper:) Tj", rendered)
+        self.assertIn("(_____________________) Tj", rendered)
 
     def test_naive_date_issued_is_treated_as_utc(self) -> None:
         output = BytesIO()
@@ -45,11 +47,13 @@ class TicketPdfTest(unittest.TestCase):
             owner="John Jumper",
         )
 
-        ticket.produce_pdf(output)
+        pdf = PDF(output)
+        pdf.append(ticket)
+        pdf.render()
 
-        pdf = output.getvalue().decode("latin1")
-        self.assertIn("(2026-01-15 12:00:00 UTC) Tj", pdf)
-        self.assertIn("(Issued: 2026-01-15 05:00:00 PDT) Tj", pdf)
+        rendered = output.getvalue().decode("latin1")
+        self.assertIn("(2026-01-15 12:00:00 UTC) Tj", rendered)
+        self.assertIn("(Issued: 2026-01-15 05:00:00 PDT) Tj", rendered)
 
 
 class TicketLogoTest(unittest.TestCase):
@@ -67,10 +71,12 @@ class TicketLogoTest(unittest.TestCase):
             owner="Jane Jumper",
         )
 
-        ticket.produce_pdf(output)
+        pdf = PDF(output)
+        pdf.append(ticket)
+        pdf.render()
 
-        pdf = output.getvalue().decode("latin1")
-        self.assertIn("/Subtype /Image", pdf)
+        rendered = output.getvalue().decode("latin1")
+        self.assertIn("/Subtype /Image", rendered)
 
 
 if __name__ == "__main__":
