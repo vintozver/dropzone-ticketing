@@ -4,7 +4,8 @@ import unittest
 
 import mongoengine
 
-from dropzone_ticketing.storage import Ticket
+from dropzone_ticketing.model import mongoengine_alias
+from dropzone_ticketing.model.ticket import Ticket
 
 
 class StorageTicketDocumentTest(unittest.TestCase):
@@ -34,6 +35,7 @@ class StorageTicketDocumentTest(unittest.TestCase):
     def test_collection_metadata(self) -> None:
         self.assertEqual(Ticket._meta["collection"], "tickets")
         self.assertIn("code", Ticket._meta["indexes"])
+        self.assertIs(Ticket._meta["db_alias"], mongoengine_alias)
 
 
 if __name__ == "__main__":

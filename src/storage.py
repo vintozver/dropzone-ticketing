@@ -5,6 +5,8 @@ from typing import Any
 import mongoengine
 import pymongo
 
+from .model import mongoengine_alias
+
 
 DEFAULT_DATABASE = "dropzone_ticketing"
 DEFAULT_HOST = "mongodb://localhost:27017"
@@ -18,32 +20,12 @@ def connect_storage(
     """Connect to the MongoDB instance backing the ticket storage.
 
     Thin wrapper around :func:`mongoengine.connect` so that callers do not have
-    to import mongoengine themselves.
+    to import mongoengine themselves. The connection is registered under the
+    :data:`~dropzone_ticketing.model.mongoengine_alias` used by the documents.
     """
-    mongoengine.connect(db=db, host=host, **kwargs)
+    mongoengine.connect(db=db, host=host, alias=mongoengine_alias, **kwargs)
 
 
-def get_client(alias: str = mongoengine.DEFAULT_CONNECTION_NAME) -> pymongo.MongoClient:
-    """Return the underlying pymongo client of an established connection."""
-    return mongoengine.get_connection(alias)
-
-
-class Ticket(mongoengine.Document):
-    """A ticket record persisted in MongoDB.
-
-    The automatically assigned ``id`` (``ObjectIdField``) is the primary key and
-    also carries the issue timestamp via
-    :attr:`~bson.objectid.ObjectId.generation_time`.
-
-    ``redeemed`` holds the redemption timestamp and is unset while the ticket
-    has not been redeemed yet.
-    """
-
-    code = mongoengine.StringField(required=True, unique=True)
-    owner = mongoengine.StringField(required=True)
-    redeemed = mongoengine.DateTimeField(required=False)
-
-    meta = {
-        "collection": "tickets",
-        "indexes": ["code"],
-    }
+def get_client() -> pymongo.MongoClient:
+    """Return the underlying pymongo client of the established connection."""
+    return mongoengine.get_connection(mongoengine_alias)

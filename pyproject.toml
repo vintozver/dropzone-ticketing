@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["dropzone_ticketing"]
+packages = ["dropzone_ticketing", "dropzone_ticketing.model"]
 package-dir = {"dropzone_ticketing" = "src"}
 
 [tool.setuptools.package-data]
