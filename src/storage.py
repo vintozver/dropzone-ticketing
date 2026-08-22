@@ -34,6 +34,9 @@ class Ticket(mongoengine.Document):
     The automatically assigned ``id`` (``ObjectIdField``) is the primary key and
     also carries the issue timestamp via
     :attr:`~bson.objectid.ObjectId.generation_time`.
+
+    ``redeemed`` holds the redemption timestamp and is unset while the ticket
+    has not been redeemed yet.
     """
 
     code = mongoengine.StringField(required=True, unique=True)
