@@ -80,6 +80,29 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(("Content-Type", "text/html; charset=utf-8"), headers)
         self.assertIn(b"No active tickets found", body)
 
+    @patch.object(service, "MongoClient")
+    def test_ensure_storage_registers_client_from_env_var(self, mongo_client_class) -> None:
+        mongo_client = MagicMock()
+        mongo_client_class.return_value = mongo_client
+
+        original_connected = service._storage_connected
+        service._storage_connected = False
+        try:
+            with patch.dict(
+                "os.environ", {"MONGODB_CONNECTION_STR": "mongodb://example/test"}
+            ), patch.object(service, "_connections", {}) as connections:
+                service._ensure_storage()
+
+                mongo_client_class.assert_called_once_with("mongodb://example/test")
+                self.assertIs(connections[service.mongoengine_alias], mongo_client)
+                self.assertTrue(service._storage_connected)
+
+                # A second call should be a no-op and must not reconnect.
+                service._ensure_storage()
+                mongo_client_class.assert_called_once()
+        finally:
+            service._storage_connected = original_connected
+
 
 class ServiceApplicationTest(unittest.TestCase):
     def request(self, path: str, method: str = "GET", form: Optional[dict] = None):
