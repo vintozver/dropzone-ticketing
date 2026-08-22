@@ -11,11 +11,13 @@ from typing import Callable, Iterable
 from urllib.parse import parse_qs
 
 from jinja2 import Environment, PackageLoader, select_autoescape
+from mongoengine.connection import _connections
 from mongoengine.errors import NotUniqueError
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 from . import PDF, Ticket
-from .storage import DEFAULT_DATABASE, DEFAULT_HOST, connect_storage
+from .model import mongoengine_alias
 
 
 MAX_TICKETS = 1000
@@ -48,10 +50,8 @@ def _ensure_storage() -> None:
         return
     with _storage_lock:
         if not _storage_connected:
-            connect_storage(
-                db=os.environ.get("DROPZONE_MONGO_DB", DEFAULT_DATABASE),
-                host=os.environ.get("DROPZONE_MONGO_HOST", DEFAULT_HOST),
-            )
+            mongo_client = MongoClient(os.environ["MONGODB_CONNECTION_STR"])
+            _connections[mongoengine_alias] = mongo_client
             _storage_connected = True
 
 
