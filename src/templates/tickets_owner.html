@@ -16,6 +16,7 @@
       </tbody>
     </table>
     <p>Follow an issue timestamp to print that ticket as PDF.</p>
+    <p><a href="/print?owner={{ owner|urlencode }}">Print all active tickets of this owner as PDF</a></p>
   {% else %}
     <p>No active tickets found for this owner.</p>
   {% endif %}

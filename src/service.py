@@ -186,17 +186,30 @@ def _print_url(tickets: Iterable[Ticket]) -> str:
     return "/print?" + urlencode([("id", str(ticket.id)) for ticket in tickets])
 
 
-def _print_tickets(ticket_ids: Iterable[str]):
-    object_ids = []
-    for ticket_id in ticket_ids:
-        try:
-            object_ids.append(ObjectId(ticket_id.strip()))
-        except (InvalidId, TypeError):
-            return _render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid ticket identifier.")
-    if not object_ids:
-        return _render("error.html", HTTPStatus.BAD_REQUEST, message="At least one ticket is required.")
+def _print_tickets(ticket_ids: Iterable[str], owner: str | None = None):
+    ticket_ids = list(ticket_ids)
+    if owner is not None:
+        if ticket_ids:
+            return _render(
+                "error.html",
+                HTTPStatus.BAD_REQUEST,
+                message="Supply either ticket identifiers or an owner, not both.",
+            )
+        owner = owner.strip()
+        if not owner:
+            return _render("error.html", HTTPStatus.BAD_REQUEST, message="Owner is required.")
+        tickets = list(Ticket.objects(owner=owner, redeemed=None))
+    else:
+        object_ids = []
+        for ticket_id in ticket_ids:
+            try:
+                object_ids.append(ObjectId(ticket_id.strip()))
+            except (InvalidId, TypeError):
+                return _render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid ticket identifier.")
+        if not object_ids:
+            return _render("error.html", HTTPStatus.BAD_REQUEST, message="At least one ticket is required.")
 
-    tickets = list(Ticket.objects(id__in=object_ids))
+        tickets = list(Ticket.objects(id__in=object_ids))
     if not tickets:
         return _render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
@@ -283,7 +296,8 @@ def _dispatch(environ: dict):
         if method != "GET":
             return _method_not_allowed(["GET"])
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-        return _print_tickets(query.get("id", []))
+        owner = query["owner"][0] if "owner" in query else None
+        return _print_tickets(query.get("id", []), owner)
 
     return _render("error.html", HTTPStatus.NOT_FOUND, message="Page not found.")
 

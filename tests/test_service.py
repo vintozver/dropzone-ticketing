@@ -146,6 +146,43 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"No tickets found.", body)
 
     @patch.object(service, "Ticket")
+    def test_print_renders_all_active_tickets_of_an_owner(self, ticket_class) -> None:
+        tickets = [MagicMock(code="code-1", owner="Jane"), MagicMock(code="code-2", owner="Jane")]
+        ticket_class.objects.return_value = tickets
+
+        with patch.object(service, "PDF") as pdf_class:
+            status, headers, _body = service._print_tickets([], "Jane")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(("Content-Type", "application/pdf"), headers)
+        ticket_class.objects.assert_called_once_with(owner="Jane", redeemed=None)
+        self.assertEqual(
+            pdf_class.return_value.append.call_args_list,
+            [call(tickets[0]), call(tickets[1])],
+        )
+
+    def test_print_rejects_an_owner_together_with_ticket_ids(self) -> None:
+        status, _headers, body = service._print_tickets(["507f1f77bcf86cd799439011"], "Jane")
+
+        self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
+        self.assertIn(b"Supply either ticket identifiers or an owner, not both.", body)
+
+    def test_print_rejects_a_blank_owner(self) -> None:
+        status, _headers, body = service._print_tickets([], " ")
+
+        self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
+        self.assertIn(b"Owner is required.", body)
+
+    @patch.object(service, "Ticket")
+    def test_print_without_active_owner_tickets_is_not_found(self, ticket_class) -> None:
+        ticket_class.objects.return_value = []
+
+        status, _headers, body = service._print_tickets([], "Jane")
+
+        self.assertEqual(status, service.HTTPStatus.NOT_FOUND)
+        self.assertIn(b"No tickets found.", body)
+
+    @patch.object(service, "Ticket")
     def test_view_owners_lists_only_owners_with_active_tickets(self, ticket_class) -> None:
         ticket_class.objects.return_value.distinct.return_value = ["Zoe", "Jane"]
 
@@ -176,6 +213,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"cash", body)
         self.assertNotIn(b"secret-code", body)
         self.assertIn(b'href="/print?id=507f1f77bcf86cd799439011"', body)
+        self.assertIn(b'href="/print?owner=Jane"', body)
 
     @patch.object(service.mongoengine, "register_connection")
     def test_ensure_storage_registers_connection_from_env_var(self, register_connection) -> None:
