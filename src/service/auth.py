@@ -354,12 +354,15 @@ def register(environ: dict):
             response=response,
         )
         credential_data = bytes(auth_data.credential_data)
+        credential_id = auth_data.credential_data.credential_id
+        if _find_credential(_b64encode(credential_id)) is not None:
+            return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
         user = User.objects(id=username).first()
         if user is None:
             user = User(id=username)
         user.fido2_credentials.append(
             Fido2Credential(
-                credential_id=auth_data.credential_data.credential_id,
+                credential_id=credential_id,
                 credential_data=credential_data,
             )
         )

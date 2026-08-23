@@ -18,4 +18,7 @@ class User(mongoengine.Document):
     id = mongoengine.StringField(primary_key=True)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
 
-    meta = {"db_alias": mongoengine_alias}
+    meta = {
+        "db_alias": mongoengine_alias,
+        "indexes": [{"fields": ["fido2_credentials.credential_id"], "unique": True}],
+    }
