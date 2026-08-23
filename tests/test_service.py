@@ -14,6 +14,12 @@ from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption
 
 
+def b64(value: bytes) -> str:
+    import base64
+
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
 class ServiceHelperTest(unittest.TestCase):
     def test_generated_code_is_printable_ascii_with_exact_length(self) -> None:
         for _ in range(100):
@@ -237,7 +243,7 @@ class ServiceHelperTest(unittest.TestCase):
         original_connected = service._storage_connected
         service._storage_connected = False
         try:
-            with patch.dict("os.environ", {"MONGODB_CONNECTION_STR": "mongodb://example/test"}):
+            with patch.dict("os.environ", {"MONGODB_CONNECTION_STRING": "mongodb://example/test"}):
                 service._ensure_storage()
 
                 register_connection.assert_called_once_with(
@@ -254,7 +260,7 @@ class ServiceHelperTest(unittest.TestCase):
 
 
 class ServiceApplicationTest(unittest.TestCase):
-    def request(self, path: str, method: str = "GET", form: Optional[dict] = None):
+    def request(self, path: str, method: str = "GET", form: Optional[dict] = None, authenticated: bool = True):
         body = urlencode(form or {}).encode()
         environ = {
             "PATH_INFO": path,
@@ -268,8 +274,11 @@ class ServiceApplicationTest(unittest.TestCase):
         def start_response(status, headers):
             response["status"] = status
             response["headers"] = dict(headers)
+            response["raw_headers"] = headers
 
-        with patch.object(service, "_ensure_storage"):
+        with patch.object(service, "_ensure_storage"), patch.object(
+            service._auth_module, "_is_authenticated", return_value=authenticated
+        ):
             response["body"] = b"".join(service.application(environ, start_response))
         return response
 
@@ -336,6 +345,12 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertNotIn(b'href="/print"', response["body"])
 
+    def test_protected_routes_redirect_to_authentication(self) -> None:
+        response = self.request("/issue", authenticated=False)
+
+        self.assertEqual(response["status"], "303 See Other")
+        self.assertEqual(response["headers"]["Location"], "/authn")
+
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")
 
@@ -346,6 +361,127 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "405 Method Not Allowed")
         self.assertEqual(response["headers"]["Allow"], "GET, POST")
+
+
+class ServiceAuthnTest(unittest.TestCase):
+    def request(self, path: str, method: str = "GET", form: Optional[dict] = None, cookie: str = ""):
+        body = urlencode(form or {}).encode()
+        environ = {
+            "PATH_INFO": path,
+            "QUERY_STRING": "",
+            "REQUEST_METHOD": method,
+            "CONTENT_LENGTH": str(len(body)),
+            "wsgi.input": io.BytesIO(body),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+        response = {}
+
+        def start_response(status, headers):
+            response["status"] = status
+            response["headers"] = dict(headers)
+            response["raw_headers"] = headers
+
+        with patch.object(service, "_ensure_storage"):
+            response["body"] = b"".join(service.application(environ, start_response))
+        return response
+
+    def test_authn_page_requires_yubikey_allowlist_configuration(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            response = self.request("/authn")
+
+        self.assertEqual(response["status"], "503 Service Unavailable")
+
+    def test_authn_sets_a_challenge_cookie_when_configured(self) -> None:
+        with patch.dict("os.environ", {"AUTHN_YUBIKEY_IDS": "1234567"}):
+            response = self.request("/authn")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertIn("authn_challenge=", response["headers"]["Set-Cookie"])
+        self.assertIn(b"Authenticate with YubiKey", response["body"])
+
+    def test_authn_completes_with_verified_allowed_yubikey(self) -> None:
+        challenge = b"challenge"
+        cookie = "authn_challenge=" + service._auth_module._signed(
+            {"challenge": b64(challenge), "issued": service._auth_module.time()}
+        )
+        with patch.dict("os.environ", {"AUTHN_YUBIKEY_IDS": "1234567"}), patch.object(
+            service._auth_module, "_verify_yubikey_attestation", return_value="1234567"
+        ) as verify:
+            response = self.request(
+                "/authn",
+                "POST",
+                {"attestationObject": b64(b"attestation"), "clientDataJSON": b64(b"client")},
+                cookie,
+            )
+
+        self.assertEqual(response["status"], "303 See Other")
+        self.assertEqual(response["headers"]["Location"], "/")
+        self.assertIn("authn_session=", "\n".join(value for name, value in response["raw_headers"] if name == "Set-Cookie"))
+        verify.assert_called_once()
+
+    def test_authn_rejects_unverifiable_attestation(self) -> None:
+        challenge = b"challenge"
+        cookie = "authn_challenge=" + service._auth_module._signed(
+            {"challenge": b64(challenge), "issued": service._auth_module.time()}
+        )
+        with patch.dict("os.environ", {"AUTHN_YUBIKEY_IDS": "1234567"}), patch.object(
+            service._auth_module, "_verify_yubikey_attestation", side_effect=ValueError
+        ):
+            response = self.request(
+                "/authn",
+                "POST",
+                {"attestationObject": b64(b"attestation"), "clientDataJSON": b64(b"client")},
+                cookie,
+            )
+
+        self.assertEqual(response["status"], "403 Forbidden")
+
+    def test_authn_does_not_swallow_unexpected_attestation_errors(self) -> None:
+        challenge = b"challenge"
+        cookie = "authn_challenge=" + service._auth_module._signed(
+            {"challenge": b64(challenge), "issued": service._auth_module.time()}
+        )
+        body = urlencode({"attestationObject": b64(b"attestation"), "clientDataJSON": b64(b"client")}).encode()
+        environ = {
+            "PATH_INFO": "/authn",
+            "QUERY_STRING": "",
+            "REQUEST_METHOD": "POST",
+            "CONTENT_LENGTH": str(len(body)),
+            "wsgi.input": io.BytesIO(body),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.dict("os.environ", {"AUTHN_YUBIKEY_IDS": "1234567"}), patch.object(
+            service._auth_module, "_verify_yubikey_attestation", side_effect=RuntimeError("unexpected")
+        ):
+            with self.assertRaises(RuntimeError):
+                service._auth_module.complete_authn(environ)
+
+    def test_verify_rejects_disallowed_yubikey_serial_number(self) -> None:
+        verifier = service._auth_module._YubiKeyAttestationVerifier(frozenset({"1234567"}))
+        cert = MagicMock()
+        cert.subject.get_attributes_for_oid.return_value = [SimpleNamespace(value="7654321")]
+        cert.subject.__iter__.return_value = iter([SimpleNamespace(value="Yubico")])
+        cert.issuer.__iter__.return_value = iter([SimpleNamespace(value="Yubico")])
+
+        with patch.object(service._auth_module.x509, "load_der_x509_certificate", return_value=cert):
+            with self.assertRaises(service._auth_module.UntrustedAttestation):
+                verifier.ca_lookup(SimpleNamespace(trust_path=[b"cert"]), MagicMock())
+
+    def test_verify_rejects_non_yubikey_attestation_certificate(self) -> None:
+        verifier = service._auth_module._YubiKeyAttestationVerifier(frozenset({"1234567"}))
+        cert = MagicMock()
+        cert.subject.get_attributes_for_oid.return_value = [SimpleNamespace(value="1234567")]
+        cert.subject.__iter__.return_value = iter([SimpleNamespace(value="Other")])
+        cert.issuer.__iter__.return_value = iter([SimpleNamespace(value="Other")])
+
+        with patch.object(service._auth_module.x509, "load_der_x509_certificate", return_value=cert):
+            with self.assertRaises(service._auth_module.UntrustedAttestation):
+                verifier.ca_lookup(SimpleNamespace(trust_path=[b"cert"]), MagicMock())
 
 
 if __name__ == "__main__":
