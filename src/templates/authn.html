@@ -13,7 +13,7 @@
 const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
 function decode(value) {
-  const padded = value + "====".slice((value.length + 3) % 4);
+  const padded = value + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
