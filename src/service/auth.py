@@ -352,7 +352,8 @@ def register(environ: dict):
     except (binascii.Error, ValueError):
         return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
-    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn")]
+    auth_path = "/register" if environ.get("PATH_INFO") == "/register" else "/authn"
+    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path=auth_path)]
     return status, headers, body
 
 
