@@ -1,30 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Authenticate{% endblock %}
+{% block title %}Register FIDO2 credential{% endblock %}
 {% block content %}
-<h2>{% if mode == "register" %}Register FIDO2 credential{% else %}Authenticate{% endif %}</h2>
-{% if mode == "register" %}
+<h2>Register FIDO2 credential</h2>
 <p>Registration mode is enabled. Authentication is disabled.</p>
-{% else %}
-<p>Use a registered FIDO2 credential to sign in.</p>
-{% endif %}
-<form id="authn-form" method="{% if mode == "register" and not registration_options %}get{% else %}post{% endif %}" action="{{ auth_path }}">
-  {% if mode == "register" %}
+<form id="authn-form" method="{% if registration_options %}post{% else %}get{% endif %}" action="/register">
   <label>Username <input name="username" id="username" value="{{ username }}" required {% if registration_options %}readonly{% endif %}></label>
-  {% endif %}
   <input type="hidden" name="id" id="id">
   <input type="hidden" name="rawId" id="rawId">
   <input type="hidden" name="attestationObject" id="attestationObject">
   <input type="hidden" name="clientDataJSON" id="clientDataJSON">
-  <input type="hidden" name="authenticatorData" id="authenticatorData">
-  <input type="hidden" name="signature" id="signature">
-  <button type="submit">{% if mode == "register" %}Register credential{% else %}Authenticate{% endif %}</button>
+  <button type="submit">Register credential</button>
 </form>
 <p id="authn-error" role="alert"></p>
 <script>
-const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
-const mode = "{{ mode }}";
-const allowCredentials = {{ allow_credentials | tojson }};
 const registrationOptions = {{ registration_options | tojson }};
 function decode(value) {
   const padded = value + "=".repeat((4 - value.length % 4) % 4);
@@ -38,10 +27,10 @@ function encode(value) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 document.getElementById("authn-form").addEventListener("submit", async event => {
-  if (mode === "register" && !registrationOptions) return;
+  if (!registrationOptions) return;
   event.preventDefault();
   try {
-    const credential = mode === "register" ? await navigator.credentials.create({
+    const credential = await navigator.credentials.create({
       publicKey: Object.fromEntries(Object.entries(registrationOptions.publicKey).map(([key, value]) => {
         if (key === "challenge" || (key === "user" && value.id)) {
           if (key === "user") return [key, {...value, id: decode(value.id)}];
@@ -50,26 +39,14 @@ document.getElementById("authn-form").addEventListener("submit", async event => 
         if (key === "excludeCredentials") return [key, value.map(credential => ({...credential, id: decode(credential.id)}))];
         return [key, value];
       }))
-    }) : await navigator.credentials.get({
-       publicKey: {
-         challenge: decode(challenge),
-         rpId,
-         allowCredentials: allowCredentials.map(id => ({type: "public-key", id: decode(id)})),
-         timeout: 60000
-       }
     });
     document.getElementById("id").value = credential.id;
     document.getElementById("rawId").value = encode(credential.rawId);
     document.getElementById("clientDataJSON").value = encode(credential.response.clientDataJSON);
-    if (mode === "register") {
     document.getElementById("attestationObject").value = encode(credential.response.attestationObject);
-    } else {
-    document.getElementById("authenticatorData").value = encode(credential.response.authenticatorData);
-    document.getElementById("signature").value = encode(credential.response.signature);
-    }
     event.target.submit();
   } catch (error) {
-    document.getElementById("authn-error").textContent = mode === "register" ? "Registration failed. " + error : "Authentication failed.";
+    document.getElementById("authn-error").textContent = "Registration failed. " + error;
   }
 });
 </script>

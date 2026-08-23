@@ -3,7 +3,7 @@ from __future__ import annotations
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import auth
+from . import auth, register
 from .http import method_not_allowed, render
 
 def dispatch(environ: dict, handlers):
@@ -19,9 +19,9 @@ def dispatch(environ: dict, handlers):
 
     if path == "/register":
         if method == "GET":
-            return auth.begin_authn(environ)
+            return register.begin_register(environ)
         if method == "POST":
-            return auth.register(environ)
+            return register.complete_register(environ)
         return method_not_allowed(["GET", "POST"])
 
     if path == "/logout":

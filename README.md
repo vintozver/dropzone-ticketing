@@ -6,7 +6,7 @@ Ticketing software for the drop zone (skydiving)
 Set `MONGODB_CONNECTION_STRING` to the MongoDB connection string used by the
 web service. Protected routes require FIDO2 authentication with a credential registered in
 MongoDB. To register credentials, set `AUTH_REGISTER` while starting the
-service, then open `/authn`, enter a username, and press “Register credential”.
+service, then open `/register`, enter a username, and press “Register credential”.
 Registration mode disables authentication and should only be enabled during
 initial setup.
 

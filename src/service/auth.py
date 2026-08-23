@@ -9,16 +9,11 @@ import traceback
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
-from urllib.parse import parse_qs, quote
+from urllib.parse import quote
 
 from fido2.server import Fido2Server
 from fido2.webauthn import (
     PublicKeyCredentialRpEntity,
-    PublicKeyCredentialUserEntity,
-    AuthenticatorAttestationResponse,
-    AttestationObject,
-    RegistrationResponse,
-    CollectedClientData,
 )
 
 from .config import authn_config, session_secret
@@ -29,6 +24,8 @@ AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
+
+
 def _b64encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
@@ -93,39 +90,17 @@ def _origin(environ: dict) -> str:
     return f"{scheme}://{_request_host(environ)}"
 
 
-def _challenge_from_cookie(environ: dict) -> bytes | None:
-    payload = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
-    if not payload or time() - float(payload.get("issued", 0)) > _CHALLENGE_TTL_SECONDS:
-        return None
-    challenge = payload.get("challenge")
-    if not isinstance(challenge, str):
-        return None
-    try:
-        return _b64decode(challenge)
-    except ValueError:
-        return None
-
-
-def _registration_from_cookie(environ: dict) -> tuple[dict[str, object], str] | None:
+def _authn_state_from_cookie(environ: dict) -> dict[str, object] | None:
     payload = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
     if not payload or time() - float(payload.get("issued", 0)) > _CHALLENGE_TTL_SECONDS:
         return None
     state = payload.get("state")
-    username = payload.get("username")
-    if not isinstance(state, dict) or not isinstance(username, str):
+    if isinstance(state, dict):
+        return state
+    challenge = payload.get("challenge")
+    if not isinstance(challenge, str):
         return None
-    return state, username
-
-
-def _json_options(options: object) -> object:
-    if isinstance(options, bytes):
-        return _b64encode(options)
-    if isinstance(options, dict):
-        return {key: _json_options(value) for key, value in options.items()}
-    if isinstance(options, (list, tuple)):
-        return [_json_options(value) for value in options]
-    value = getattr(options, "value", None)
-    return value if value is not None else options
+    return {"challenge": challenge, "user_verification": None}
 
 
 def _is_authenticated(environ: dict) -> bool:
@@ -158,74 +133,35 @@ def _find_credential(encoded_id: str) -> Fido2Credential | None:
 
 
 def begin_authn(environ: dict):
-    registration_options = None
-
-    if authn_config().register:
-        mode = "register"
-        username = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("username", [""])[0].strip()
-        if username:
-            server = _server(environ)
-            existing_user = User.objects(id=username).only("fido2_credentials").first()
-            credentials = (
-                [_credential_data(credential) for credential in existing_user.fido2_credentials]
-                if existing_user is not None
-                else []
-            )
-            options, state = server.register_begin(
-                PublicKeyCredentialUserEntity(
-                    id=secrets.token_bytes(16),
-                    name=username,
-                    display_name=username,
-                ),
-                credentials,
-                user_verification="discouraged",
-            )
-            registration_options = _json_options(dict(options))
-    else:
-        mode = "authenticate"
-        challenge = secrets.token_bytes(32)
-        server = _server(environ)
-        credentials = [
-            credential
-            for user in User.objects().only("fido2_credentials")
-            for credential in user.fido2_credentials
-        ]
-        options, _state = server.authenticate_begin(
-            [_credential_data(credential) for credential in credentials],
-            challenge=challenge,
-        )
-        allow_credentials = [
-            _b64encode(credential.credential_id)
-            for credential in credentials
-        ]
-        username = ""
-    auth_path = "/register" if mode == "register" and environ.get("PATH_INFO") == "/register" else "/authn"
-    status, headers, body = render(
-        "authn.html",
-        challenge=_b64encode(challenge) if mode == "authenticate" else "",
-        rp_id=_rp_id(environ),
-        mode=mode,
-        allow_credentials=allow_credentials if not authn_config().register else [],
-        username=username,
-        registration_options=registration_options,
-        auth_path=auth_path,
+    challenge = secrets.token_bytes(32)
+    server = _server(environ)
+    credentials = [
+        credential
+        for user in User.objects().only("fido2_credentials")
+        for credential in user.fido2_credentials
+    ]
+    _options, _state = server.authenticate_begin(
+        [_credential_data(credential) for credential in credentials],
+        challenge=challenge,
     )
-    if mode == "authenticate":
-        payload = {"challenge": _b64encode(challenge), "issued": time()}
-    elif registration_options is not None:
-        payload = {"state": state, "username": username, "issued": time()}
-    else:
-        payload = None
-    if payload is not None:
-        headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path=auth_path))
+    allow_credentials = [
+        _b64encode(credential.credential_id)
+        for credential in credentials
+    ]
+    status, headers, body = render(
+        "auth.html",
+        challenge=_b64encode(challenge),
+        rp_id=_rp_id(environ),
+        allow_credentials=allow_credentials,
+    )
+    payload = {"state": _state, "issued": time()}
+    headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     return status, headers, body
 
 
 def complete_authn(environ: dict):
-    if authn_config().register:
-        return register(environ)
-    challenge = _challenge_from_cookie(environ)
-    if challenge is None:
+    state = _authn_state_from_cookie(environ)
+    if state is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication challenge is missing or expired.")
     form = read_form(environ)
     try:
@@ -247,7 +183,7 @@ def complete_authn(environ: dict):
         server = _server(environ)
         stored = _credential_data(credential)
         server.authenticate_complete(
-            {"challenge": _b64encode(challenge), "user_verification": None},
+            state,
             [stored],
             response=response,
         )
@@ -272,53 +208,6 @@ def _credential_data(credential: Fido2Credential):
     from fido2.webauthn import AttestedCredentialData
 
     return AttestedCredentialData(credential.credential_data)
-
-
-def register(environ: dict):
-    if not authn_config().register:
-        return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
-    form = read_form(environ)
-    username = form.get("username", "").strip()
-    if not username:
-        return error(HTTPStatus.BAD_REQUEST, "Username is required.")
-    registration = _registration_from_cookie(environ)
-    if registration is None:
-        return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
-    state, state_username = registration
-    if not hmac.compare_digest(username, state_username):
-        return error(HTTPStatus.FORBIDDEN, "Registration username does not match the challenge.")
-    try:
-        server = _server(environ)
-        auth_data = server.register_complete(
-            state,
-            response=RegistrationResponse(
-                id=form.get("id", ""),
-                response=AuthenticatorAttestationResponse(
-                    client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=AttestationObject(_b64decode(form.get("attestationObject", ""))),
-                ),
-            ),
-        )
-        credential_data = bytes(auth_data.credential_data)
-        credential_id = auth_data.credential_data.credential_id
-        if _find_credential(_b64encode(credential_id)) is not None:
-            return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user = User.objects(id=username).first()
-        if user is None:
-            user = User(id=username)
-        user.fido2_credentials.append(
-            Fido2Credential(
-                credential_id=credential_id,
-                credential_data=credential_data,
-            )
-        )
-        user.save()
-    except (binascii.Error, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
-    status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
-    auth_path = "/register" if environ.get("PATH_INFO") == "/register" else "/authn"
-    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path=auth_path)]
-    return status, headers, body
 
 
 def logout():
