@@ -496,6 +496,95 @@ class ServiceAuthnTest(unittest.TestCase):
             with self.assertRaises(service._auth_module.UntrustedAttestation):
                 verifier.ca_lookup(SimpleNamespace(trust_path=[b"cert"]), MagicMock())
 
+    def test_registration_begin_uses_server_options_and_persists_state(self) -> None:
+        auth = service._auth_module
+        state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
+        options = {
+            "publicKey": {
+                "challenge": b"server challenge",
+                "rp": {"name": "dropzone-ticketing", "id": "example.test"},
+                "user": {"id": b"user id", "name": "Jane", "displayName": "Jane"},
+                "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
+            }
+        }
+        server = MagicMock()
+        server.register_begin.return_value = options, state
+        user_class = MagicMock()
+        user_class.objects.return_value.only.return_value.first.return_value = None
+        environ = {
+            "PATH_INFO": "/register",
+            "QUERY_STRING": "username=Jane",
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=True)), patch.object(
+            auth, "_server", return_value=server
+        ), patch.object(auth, "User", user_class):
+            _status, headers, body = auth.begin_authn(environ)
+
+        registration_user, credentials = server.register_begin.call_args.args[:2]
+        self.assertEqual(registration_user.name, "Jane")
+        self.assertEqual(registration_user.display_name, "Jane")
+        self.assertIsInstance(registration_user.id, bytes)
+        self.assertEqual(credentials, [])
+        self.assertEqual(server.register_begin.call_args.kwargs["user_verification"], "discouraged")
+        cookie = next(value for name, value in headers if name == "Set-Cookie")
+        payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
+        self.assertEqual(payload["state"], state)
+        self.assertEqual(payload["username"], "Jane")
+        self.assertIn(b64(b"server challenge").encode(), body)
+        self.assertNotIn(b"crypto.getRandomValues", body)
+
+    def test_registration_complete_uses_state_from_cookie(self) -> None:
+        auth = service._auth_module
+        state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
+        cookie = "authn_challenge=" + auth._signed(
+            {"state": state, "username": "Jane", "issued": auth.time()}
+        )
+        class CredentialData:
+            credential_id = b"credential"
+
+            def __bytes__(self):
+                return b"serialized credential"
+
+        credential_data = CredentialData()
+        server = MagicMock()
+        server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
+        user = MagicMock()
+        user.fido2_credentials = []
+        user_class = MagicMock()
+        user_class.objects.return_value.first.return_value = None
+        user_class.return_value = user
+        environ = {
+            "PATH_INFO": "/register",
+            "REQUEST_METHOD": "POST",
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(
+                urlencode(
+                    {
+                        "username": "Jane",
+                        "id": "credential",
+                        "rawId": b64(b"credential"),
+                        "clientDataJSON": b64(b"client data"),
+                        "attestationObject": b64(b"attestation"),
+                    }
+                ).encode()
+            ),
+            "HTTP_COOKIE": cookie,
+        }
+        environ["CONTENT_LENGTH"] = str(environ["wsgi.input"].getbuffer().nbytes)
+
+        with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=True)), patch.object(
+            auth, "_server", return_value=server
+        ), patch.object(auth, "User", user_class), patch.object(auth, "_find_credential", return_value=None):
+            status, _headers, _body = auth.register(environ)
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(server.register_complete.call_args.args[0], state)
+        self.assertEqual(server.register_complete.call_args.kwargs["response"]["rawId"], b64(b"credential"))
+        user.save.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
