@@ -404,7 +404,7 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["headers"]["Allow"], "GET, POST")
 
     def test_registration_mode_blocks_non_registration_routes(self) -> None:
-        with patch.object(service._auth_module, "authn_config", return_value=SimpleNamespace(register=True)):
+        with patch("dropzone_ticketing.service.routes.authn_config", return_value=SimpleNamespace(register=True)):
             response = self.request("/authn", authenticated=False)
 
         self.assertEqual(response["status"], "403 Forbidden")
