@@ -90,17 +90,17 @@ def _origin(environ: dict) -> str:
     return f"{scheme}://{_request_host(environ)}"
 
 
-def _challenge_from_cookie(environ: dict) -> bytes | None:
+def _authn_state_from_cookie(environ: dict) -> dict[str, object] | None:
     payload = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
     if not payload or time() - float(payload.get("issued", 0)) > _CHALLENGE_TTL_SECONDS:
         return None
+    state = payload.get("state")
+    if isinstance(state, dict):
+        return state
     challenge = payload.get("challenge")
     if not isinstance(challenge, str):
         return None
-    try:
-        return _b64decode(challenge)
-    except ValueError:
-        return None
+    return {"challenge": challenge, "user_verification": None}
 
 
 def _is_authenticated(environ: dict) -> bool:
@@ -154,14 +154,14 @@ def begin_authn(environ: dict):
         rp_id=_rp_id(environ),
         allow_credentials=allow_credentials,
     )
-    payload = {"challenge": _b64encode(challenge), "issued": time()}
+    payload = {"challenge": _b64encode(challenge), "state": _state, "issued": time()}
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     return status, headers, body
 
 
 def complete_authn(environ: dict):
-    challenge = _challenge_from_cookie(environ)
-    if challenge is None:
+    state = _authn_state_from_cookie(environ)
+    if state is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication challenge is missing or expired.")
     form = read_form(environ)
     try:
@@ -183,7 +183,7 @@ def complete_authn(environ: dict):
         server = _server(environ)
         stored = _credential_data(credential)
         server.authenticate_complete(
-            {"challenge": _b64encode(challenge), "user_verification": None},
+            state,
             [stored],
             response=response,
         )
