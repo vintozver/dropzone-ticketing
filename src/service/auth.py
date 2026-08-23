@@ -90,8 +90,8 @@ def _cookie(name: str, value: str, *, max_age: int = _COOKIE_MAX_AGE_SECONDS, pa
     )
 
 
-def _clear_cookie(name: str) -> tuple[str, str]:
-    return ("Set-Cookie", f"{name}=; Max-Age=0; Path=/; HttpOnly; SameSite=Strict")
+def _clear_cookie(name: str, *, path: str = "/") -> tuple[str, str]:
+    return ("Set-Cookie", f"{name}=; Max-Age=0; Path={path}; HttpOnly; SameSite=Strict")
 
 
 def _request_host(environ: dict) -> str:
@@ -209,7 +209,11 @@ def complete_authn(environ: dict):
     except Exception:
         return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.")
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
-    headers = [("Location", "/"), _cookie(AUTHN_SESSION_COOKIE, _signed({"serial": serial, "issued": time()})), _clear_cookie(AUTHN_CHALLENGE_COOKIE)]
+    headers = [
+        ("Location", "/"),
+        _cookie(AUTHN_SESSION_COOKIE, _signed({"serial": serial, "issued": time()})),
+        _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn"),
+    ]
     return status, headers, body
 
 
