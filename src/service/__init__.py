@@ -73,10 +73,7 @@ def _is_authenticated(environ: dict) -> bool:
 
 
 def _require_auth(environ: dict):
-    if _is_authenticated(environ):
-        return None
-    status, _headers, body = _render("error.html", HTTPStatus.SEE_OTHER, message="Authentication required.")
-    return status, [("Location", "/authn")], body
+    return _auth_module.require_auth(environ)
 
 
 def _verify_yubikey_attestation(*args, **kwargs):

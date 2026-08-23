@@ -276,7 +276,9 @@ class ServiceApplicationTest(unittest.TestCase):
             response["headers"] = dict(headers)
             response["raw_headers"] = headers
 
-        with patch.object(service, "_ensure_storage"), patch.object(service, "_is_authenticated", return_value=authenticated):
+        with patch.object(service, "_ensure_storage"), patch.object(
+            service._auth_module, "_is_authenticated", return_value=authenticated
+        ):
             response["body"] = b"".join(service.application(environ, start_response))
         return response
 
