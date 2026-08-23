@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hmac
 import json
 import secrets
@@ -206,7 +207,7 @@ def complete_authn(environ: dict):
             _origin(environ),
             authn_config().allowed_yubikey_ids,
         )
-    except Exception:
+    except (binascii.Error, UntrustedAttestation, ValueError):
         return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.")
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [

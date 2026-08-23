@@ -438,6 +438,29 @@ class ServiceAuthnTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "403 Forbidden")
 
+    def test_authn_does_not_swallow_unexpected_attestation_errors(self) -> None:
+        challenge = b"challenge"
+        cookie = "authn_challenge=" + service._auth_module._signed(
+            {"challenge": b64(challenge), "issued": service._auth_module.time()}
+        )
+        body = urlencode({"attestationObject": b64(b"attestation"), "clientDataJSON": b64(b"client")}).encode()
+        environ = {
+            "PATH_INFO": "/authn",
+            "QUERY_STRING": "",
+            "REQUEST_METHOD": "POST",
+            "CONTENT_LENGTH": str(len(body)),
+            "wsgi.input": io.BytesIO(body),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.dict("os.environ", {"AUTHN_YUBIKEY_IDS": "1234567"}), patch.object(
+            service._auth_module, "_verify_yubikey_attestation", side_effect=RuntimeError("unexpected")
+        ):
+            with self.assertRaises(RuntimeError):
+                service._auth_module.complete_authn(environ)
+
     def test_verify_rejects_disallowed_yubikey_serial_number(self) -> None:
         verifier = service._auth_module._YubiKeyAttestationVerifier(frozenset({"1234567"}))
         cert = MagicMock()
