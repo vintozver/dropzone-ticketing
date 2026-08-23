@@ -7,9 +7,9 @@
 {% else %}
 <p>Use a registered FIDO2 credential to sign in.</p>
 {% endif %}
-<form id="authn-form" method="post" action="{{ auth_path }}">
+<form id="authn-form" method="{% if mode == "register" and not registration_options %}get{% else %}post{% endif %}" action="{{ auth_path }}">
   {% if mode == "register" %}
-  <label>Username <input name="username" id="username" required></label>
+  <label>Username <input name="username" id="username" value="{{ username }}" required {% if registration_options %}readonly{% endif %}></label>
   {% endif %}
   <input type="hidden" name="id" id="id">
   <input type="hidden" name="rawId" id="rawId">
@@ -25,6 +25,7 @@ const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
 const mode = "{{ mode }}";
 const allowCredentials = {{ allow_credentials | tojson }};
+const registrationOptions = {{ registration_options | tojson }};
 function decode(value) {
   const padded = value + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
@@ -37,18 +38,18 @@ function encode(value) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 document.getElementById("authn-form").addEventListener("submit", async event => {
+  if (mode === "register" && !registrationOptions) return;
   event.preventDefault();
   try {
     const credential = mode === "register" ? await navigator.credentials.create({
-      publicKey: {
-        challenge: decode(challenge),
-        rp: {name: "dropzone-ticketing", id: rpId},
-        user: {id: crypto.getRandomValues(new Uint8Array(16)), name: document.getElementById("username").value, displayName: document.getElementById("username").value},
-        pubKeyCredParams: [{type: "public-key", alg: -7}, {type: "public-key", alg: -257}],
-        authenticatorSelection: {authenticatorAttachment: "cross-platform"},
-        attestation: "direct",
-        timeout: 60000
-      }
+      publicKey: Object.fromEntries(Object.entries(registrationOptions.publicKey).map(([key, value]) => {
+        if (key === "challenge" || (key === "user" && value.id)) {
+          if (key === "user") return [key, {...value, id: decode(value.id)}];
+          return [key, decode(value)];
+        }
+        if (key === "excludeCredentials") return [key, value.map(credential => ({...credential, id: decode(credential.id)}))];
+        return [key, value];
+      }))
     }) : await navigator.credentials.get({
        publicKey: {
          challenge: decode(challenge),
