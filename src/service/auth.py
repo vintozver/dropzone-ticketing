@@ -251,7 +251,7 @@ def begin_authn(environ: dict):
         server = _server(environ)
         credentials = [
             credential
-            for user in User.objects()
+            for user in User.objects().only("fido2_credentials")
             for credential in user.fido2_credentials
         ]
         options, _state = server.authenticate_begin(

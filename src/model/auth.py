@@ -16,6 +16,6 @@ class User(mongoengine.Document):
     """A user and their registered WebAuthn credentials."""
 
     id = mongoengine.StringField(primary_key=True)
-    fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential)
+    fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
 
     meta = {"db_alias": mongoengine_alias}
