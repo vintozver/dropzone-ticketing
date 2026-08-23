@@ -391,6 +391,7 @@ class ServiceAuthnTest(unittest.TestCase):
     def test_authn_begin_sets_challenge_cookie_without_registration_options(self) -> None:
         auth = service._auth_module
         server = MagicMock()
+        server.authenticate_begin.return_value = {}, {}
         credential = SimpleNamespace(credential_id=b"credential")
         user = SimpleNamespace(fido2_credentials=[credential])
         user_class = MagicMock()
