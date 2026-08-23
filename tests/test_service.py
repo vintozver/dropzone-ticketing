@@ -391,7 +391,8 @@ class ServiceAuthnTest(unittest.TestCase):
     def test_authn_begin_sets_challenge_cookie_without_registration_options(self) -> None:
         auth = service._auth_module
         server = MagicMock()
-        server.authenticate_begin.return_value = {}, {}
+        state = {"challenge": b64(b"server challenge"), "user_verification": None}
+        server.authenticate_begin.return_value = {}, state
         credential = SimpleNamespace(credential_id=b"credential")
         user = SimpleNamespace(fido2_credentials=[credential])
         user_class = MagicMock()
@@ -410,7 +411,7 @@ class ServiceAuthnTest(unittest.TestCase):
         server.authenticate_begin.assert_called_once_with(["credential data"], challenge=ANY)
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
-        self.assertIn("challenge", payload)
+        self.assertEqual(payload["state"], state)
         self.assertIn("Path=/authn", cookie)
         self.assertIn(b"navigator.credentials.get", body)
         self.assertNotIn(b"registrationOptions", body)

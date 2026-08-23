@@ -154,7 +154,7 @@ def begin_authn(environ: dict):
         rp_id=_rp_id(environ),
         allow_credentials=allow_credentials,
     )
-    payload = {"challenge": _b64encode(challenge), "state": _state, "issued": time()}
+    payload = {"state": _state, "issued": time()}
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     return status, headers, body
 
