@@ -1,17 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Authenticate{% endblock %}
 {% block content %}
-<h2>Authenticate</h2>
-<p>Use an allowed YubiKey to sign in.</p>
+<h2>{% if mode == "register" %}Register FIDO2 credential{% else %}Authenticate{% endif %}</h2>
+{% if mode == "register" %}
+<p>Registration mode is enabled. Authentication is disabled.</p>
+{% else %}
+<p>Use a registered FIDO2 credential to sign in.</p>
+{% endif %}
 <form id="authn-form" method="post" action="/authn">
+  {% if mode == "register" %}
+  <label>Username <input name="username" id="username" required></label>
+  {% endif %}
+  <input type="hidden" name="id" id="id">
+  <input type="hidden" name="rawId" id="rawId">
   <input type="hidden" name="attestationObject" id="attestationObject">
   <input type="hidden" name="clientDataJSON" id="clientDataJSON">
-  <button type="submit">Authenticate with YubiKey</button>
+  <input type="hidden" name="authenticatorData" id="authenticatorData">
+  <input type="hidden" name="signature" id="signature">
+  <button type="submit">{% if mode == "register" %}Register credential{% else %}Authenticate{% endif %}</button>
 </form>
 <p id="authn-error" role="alert"></p>
 <script>
 const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
+const mode = "{{ mode }}";
+const allowCredentials = {{ allow_credentials | tojson }};
 function decode(value) {
   const padded = value + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
@@ -26,7 +39,7 @@ function encode(value) {
 document.getElementById("authn-form").addEventListener("submit", async event => {
   event.preventDefault();
   try {
-    const credential = await navigator.credentials.create({
+    const credential = mode === "register" ? await navigator.credentials.create({
       publicKey: {
         challenge: decode(challenge),
         rp: {name: "dropzone-ticketing", id: rpId},
@@ -36,9 +49,23 @@ document.getElementById("authn-form").addEventListener("submit", async event => 
         attestation: "direct",
         timeout: 60000
       }
+    }) : await navigator.credentials.get({
+       publicKey: {
+         challenge: decode(challenge),
+         rpId,
+         allowCredentials: allowCredentials.map(id => ({type: "public-key", id: decode(id)})),
+         timeout: 60000
+       }
     });
-    document.getElementById("attestationObject").value = encode(credential.response.attestationObject);
+    document.getElementById("id").value = credential.id;
+    document.getElementById("rawId").value = encode(credential.rawId);
     document.getElementById("clientDataJSON").value = encode(credential.response.clientDataJSON);
+    if (mode === "register") {
+    document.getElementById("attestationObject").value = encode(credential.response.attestationObject);
+    } else {
+    document.getElementById("authenticatorData").value = encode(credential.response.authenticatorData);
+    document.getElementById("signature").value = encode(credential.response.signature);
+    }
     event.target.submit();
   } catch (error) {
     document.getElementById("authn-error").textContent = "Authentication failed.";

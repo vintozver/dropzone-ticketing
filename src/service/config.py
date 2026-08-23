@@ -15,16 +15,15 @@ _session_secret = secrets.token_bytes(32)
 
 @dataclass(frozen=True)
 class AuthnConfig:
-    allowed_yubikey_ids: frozenset[str]
+    register: bool
 
 
-def allowed_yubikey_ids() -> frozenset[str]:
-    value = os.environ.get("AUTHN_YUBIKEY_IDS", "")
-    return frozenset(part.strip() for part in value.split(",") if part.strip())
+def auth_register() -> bool:
+    return "AUTH_REGISTER" in os.environ
 
 
 def authn_config() -> AuthnConfig:
-    return AuthnConfig(allowed_yubikey_ids=allowed_yubikey_ids())
+    return AuthnConfig(register=auth_register())
 
 
 def session_secret() -> bytes:

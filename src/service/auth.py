@@ -14,10 +14,18 @@ from urllib.parse import quote
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from fido2.attestation import AttestationResult, AttestationVerifier, UntrustedAttestation
-from fido2.webauthn import AttestationObject, AuthenticatorData, CollectedClientData
+from fido2.server import Fido2Server
+from fido2.webauthn import (
+    AttestationObject,
+    AuthenticatorData,
+    CollectedClientData,
+    PublicKeyCredentialRpEntity,
+    PublicKeyCredentialUserEntity,
+)
 
 from .config import authn_config, session_secret
 from .http import error, read_form, render
+from dropzone_ticketing.model.credential import Fido2Credential
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
@@ -124,12 +132,14 @@ def _challenge_from_cookie(environ: dict) -> bytes | None:
 
 
 def _is_authenticated(environ: dict) -> bool:
+    if authn_config().register:
+        return True
     payload = _unsign(_cookies(environ).get(AUTHN_SESSION_COOKIE, ""))
     if not payload:
         return False
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
-    return isinstance(serial, str) and serial in authn_config().allowed_yubikey_ids and time() - issued <= _COOKIE_MAX_AGE_SECONDS
+    return isinstance(serial, str) and Fido2Credential.objects(credential_id=serial).first() is not None and time() - issued <= _COOKIE_MAX_AGE_SECONDS
 
 
 def _extract_serial(cert: x509.Certificate) -> str | None:
@@ -213,27 +223,73 @@ def _verify_yubikey_attestation(
 
 
 def begin_authn(environ: dict):
-    if not authn_config().allowed_yubikey_ids:
-        return error(HTTPStatus.SERVICE_UNAVAILABLE, "FIDO2 authentication is not configured.")
     challenge = secrets.token_bytes(32)
-    status, headers, body = render("authn.html", challenge=_b64encode(challenge), rp_id=_rp_id(environ))
+    if authn_config().register:
+        mode = "register"
+        options = None
+        username = ""
+    else:
+        mode = "authenticate"
+        server = _server(environ)
+        options, _state = server.authenticate_begin(
+            [*(_credential_data(credential) for credential in Fido2Credential.objects())],
+            challenge=challenge,
+        )
+        allow_credentials = [
+            _b64encode(credential.credential_data.credential_id)
+            for credential in Fido2Credential.objects()
+        ]
+        username = ""
+    status, headers, body = render(
+        "authn.html",
+        challenge=_b64encode(challenge),
+        rp_id=_rp_id(environ),
+        mode=mode,
+        allow_credentials=allow_credentials if not authn_config().register else [],
+        username=username,
+    )
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed({"challenge": _b64encode(challenge), "issued": time()}), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     return status, headers, body
 
 
 def complete_authn(environ: dict):
+    if authn_config().register:
+        return register(environ)
     challenge = _challenge_from_cookie(environ)
     if challenge is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication challenge is missing or expired.")
     form = read_form(environ)
     try:
-        serial = _verify_yubikey_attestation(
-            _b64decode(form.get("attestationObject", "")),
-            _b64decode(form.get("clientDataJSON", "")),
-            challenge,
-            _origin(environ),
-            authn_config().allowed_yubikey_ids,
+        response = {
+            "id": form.get("id", ""),
+            "rawId": form.get("rawId", ""),
+            "response": {
+                "clientDataJSON": form.get("clientDataJSON", ""),
+                "authenticatorData": form.get("authenticatorData", ""),
+                "signature": form.get("signature", ""),
+                "userHandle": form.get("userHandle", None),
+            },
+            "type": "public-key",
+        }
+        credential_id = _b64decode(form.get("rawId", ""))
+        credential = next(
+            (
+                item
+                for item in Fido2Credential.objects()
+                if _credential_data(item).credential_id == credential_id
+            ),
+            None,
         )
+        if credential is None:
+            raise ValueError("Unknown credential.")
+        server = _server(environ)
+        stored = _credential_data(credential)
+        server.authenticate_complete(
+            {"challenge": _b64encode(challenge), "user_verification": None},
+            [stored],
+            response=response,
+        )
+        serial = _b64encode(credential_id)
     except (binascii.Error, UntrustedAttestation, ValueError):
         return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.", traceback.format_exc())
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
@@ -245,6 +301,48 @@ def complete_authn(environ: dict):
     return status, headers, body
 
 
+def _server(environ: dict) -> Fido2Server:
+    rp = PublicKeyCredentialRpEntity("dropzone-ticketing", _rp_id(environ))
+    return Fido2Server(rp, verify_origin=lambda origin: origin == _origin(environ))
+
+
+def _credential_data(credential: Fido2Credential):
+    from fido2.webauthn import AttestedCredentialData
+
+    return AttestedCredentialData(credential.credential_data)
+
+
+def register(environ: dict):
+    if not authn_config().register:
+        return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
+    form = read_form(environ)
+    username = form.get("username", "").strip()
+    if not username:
+        return error(HTTPStatus.BAD_REQUEST, "Username is required.")
+    challenge = _challenge_from_cookie(environ)
+    if challenge is None:
+        return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
+    try:
+        server = _server(environ)
+        user = PublicKeyCredentialUserEntity(username=username, id=secrets.token_bytes(16), display_name=username)
+        response = {
+            "id": form.get("id", ""),
+            "rawId": form.get("rawId", ""),
+            "response": {"clientDataJSON": form.get("clientDataJSON", ""), "attestationObject": form.get("attestationObject", "")},
+            "type": "public-key",
+        }
+        auth_data = server.register_complete(
+            {"challenge": _b64encode(challenge), "user_verification": None},
+            response=response,
+        )
+        Fido2Credential(username=username, credential_data=bytes(auth_data.credential_data)).save()
+    except (binascii.Error, ValueError):
+        return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
+    status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
+    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn")]
+    return status, headers, body
+
+
 def logout():
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Signed out.")
     headers = [("Location", "/authn"), _clear_cookie(AUTHN_SESSION_COOKIE)]
@@ -252,6 +350,8 @@ def logout():
 
 
 def require_auth(environ: dict):
+    if authn_config().register:
+        return None
     if _is_authenticated(environ):
         return None
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication required.")
