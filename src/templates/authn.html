@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Authenticate{% endblock %}
+{% block content %}
+<h2>Authenticate</h2>
+<p>Use an allowed YubiKey to sign in.</p>
+<form id="authn-form" method="post" action="/authn">
+  <input type="hidden" name="attestationObject" id="attestationObject">
+  <input type="hidden" name="clientDataJSON" id="clientDataJSON">
+  <button type="submit">Authenticate with YubiKey</button>
+</form>
+<p id="authn-error" role="alert"></p>
+<script>
+const challenge = "{{ challenge }}";
+const rpId = "{{ rp_id }}";
+function decode(value) {
+  const padded = value + "====".slice((value.length + 3) % 4);
+  const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(binary, character => character.charCodeAt(0));
+}
+function encode(value) {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+document.getElementById("authn-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  try {
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge: decode(challenge),
+        rp: {name: "dropzone-ticketing", id: rpId},
+        user: {id: crypto.getRandomValues(new Uint8Array(16)), name: "YubiKey", displayName: "YubiKey"},
+        pubKeyCredParams: [{type: "public-key", alg: -7}, {type: "public-key", alg: -257}],
+        authenticatorSelection: {authenticatorAttachment: "cross-platform"},
+        attestation: "direct",
+        timeout: 60000
+      }
+    });
+    document.getElementById("attestationObject").value = encode(credential.response.attestationObject);
+    document.getElementById("clientDataJSON").value = encode(credential.response.clientDataJSON);
+    event.target.submit();
+  } catch (error) {
+    document.getElementById("authn-error").textContent = "Authentication failed.";
+  }
+});
+</script>
+{% endblock %}
