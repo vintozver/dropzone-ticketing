@@ -15,6 +15,10 @@ from fido2.server import Fido2Server
 from fido2.webauthn import (
     PublicKeyCredentialRpEntity,
     PublicKeyCredentialUserEntity,
+    AuthenticatorAttestationResponse,
+    AttestationObject,
+    RegistrationResponse,
+    CollectedClientData,
 )
 
 from .config import authn_config, session_secret
@@ -154,10 +158,11 @@ def _find_credential(encoded_id: str) -> Fido2Credential | None:
 
 
 def begin_authn(environ: dict):
+    registration_options = None
+
     if authn_config().register:
         mode = "register"
         username = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("username", [""])[0].strip()
-        registration_options = None
         if username:
             server = _server(environ)
             existing_user = User.objects(id=username).only("fido2_credentials").first()
@@ -284,15 +289,15 @@ def register(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Registration username does not match the challenge.")
     try:
         server = _server(environ)
-        response = {
-            "id": form.get("id", ""),
-            "rawId": form.get("rawId", ""),
-            "response": {"clientDataJSON": form.get("clientDataJSON", ""), "attestationObject": form.get("attestationObject", "")},
-            "type": "public-key",
-        }
         auth_data = server.register_complete(
             state,
-            response=response,
+            response=RegistrationResponse(
+                id=form.get("id", ""),
+                response=AuthenticatorAttestationResponse(
+                    client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
+                    attestation_object=AttestationObject(_b64decode(form.get("attestationObject", ""))),
+                ),
+            ),
         )
         credential_data = bytes(auth_data.credential_data)
         credential_id = auth_data.credential_data.credential_id
@@ -330,3 +335,6 @@ def require_auth(environ: dict):
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication required.")
     headers = [("Location", "/authn")]
     return status, headers, body
+
+import fido2.features
+fido2.features.webauthn_json_mapping.enabled = True
