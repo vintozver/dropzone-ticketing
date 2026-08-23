@@ -25,7 +25,7 @@ from fido2.webauthn import (
 
 from .config import authn_config, session_secret
 from .http import error, read_form, render
-from dropzone_ticketing.model.credential import Fido2Credential
+from dropzone_ticketing.model.auth import Fido2Credential, User
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
@@ -151,7 +151,13 @@ def _find_credential(encoded_id: str) -> Fido2Credential | None:
         credential_id = _b64decode(encoded_id)
     except (ValueError, binascii.Error):
         return None
-    return Fido2Credential.objects(credential_id=credential_id).first()
+    user = User.objects(fido2_credentials__credential_id=credential_id).first()
+    if user is None:
+        return None
+    return next(
+        (credential for credential in user.fido2_credentials if credential.credential_id == credential_id),
+        None,
+    )
 
 
 def _extract_serial(cert: x509.Certificate) -> str | None:
@@ -243,7 +249,11 @@ def begin_authn(environ: dict):
     else:
         mode = "authenticate"
         server = _server(environ)
-        credentials = list(Fido2Credential.objects())
+        credentials = [
+            credential
+            for user in User.objects()
+            for credential in user.fido2_credentials
+        ]
         options, _state = server.authenticate_begin(
             [_credential_data(credential) for credential in credentials],
             challenge=challenge,
@@ -344,11 +354,16 @@ def register(environ: dict):
             response=response,
         )
         credential_data = bytes(auth_data.credential_data)
-        Fido2Credential(
-            username=username,
-            credential_id=auth_data.credential_data.credential_id,
-            credential_data=credential_data,
-        ).save()
+        user = User.objects(id=username).first()
+        if user is None:
+            user = User(id=username)
+        user.fido2_credentials.append(
+            Fido2Credential(
+                credential_id=auth_data.credential_data.credential_id,
+                credential_data=credential_data,
+            )
+        )
+        user.save()
     except (binascii.Error, ValueError):
         return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")

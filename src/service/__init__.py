@@ -9,7 +9,7 @@ from typing import Callable
 import mongoengine
 from bson import ObjectId
 
-from dropzone_ticketing import Fido2Credential, PDF, Ticket
+from dropzone_ticketing import PDF, Ticket
 from dropzone_ticketing.model import mongoengine_alias
 
 from . import auth as _auth_module
