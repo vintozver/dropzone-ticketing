@@ -11,6 +11,21 @@
       <a href="/redeem">Redeem tickets</a>
       <a href="/tickets">View tickets</a>
     </nav>
+    <section>
+      {% if authenticated %}
+        <p>
+          Authentication: signed in as <strong>{{ current_user_id }}</strong>.
+          <form method="post" action="/logout" style="display:inline">
+            <button type="submit">Logout</button>
+          </form>
+        </p>
+      {% else %}
+        <p>Authentication: not signed in. <a href="/authn">Login</a></p>
+      {% endif %}
+      {% if registration_mode %}
+        <p>Registration-only mode is enabled.</p>
+      {% endif %}
+    </section>
     <main>{% block content %}{% endblock %}</main>
   </body>
 </html>

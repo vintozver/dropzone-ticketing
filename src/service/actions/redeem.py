@@ -6,7 +6,7 @@ from http import HTTPStatus
 from dropzone_ticketing.model.ticket import Redemption
 
 
-def redeem(form: dict[str, str], *, ticket_class, render, split_codes):
+def redeem(form: dict[str, str], *, ticket_class, render, split_codes, by_user: str | None = None):
     codes = split_codes(form.get("codes", ""))
     reason = form.get("reason", "").strip() or None
     if not codes:
@@ -20,7 +20,7 @@ def redeem(form: dict[str, str], *, ticket_class, render, split_codes):
         elif ticket.redeemed is not None:
             results.append({"code": code, "result": "already redeemed", "redeemed": ticket.redeemed})
         else:
-            ticket.redeemed = Redemption(dt=datetime.now(timezone.utc), reason=reason)
+            ticket.redeemed = Redemption(dt=datetime.now(timezone.utc), by_user=by_user, reason=reason)
             ticket.save()
             results.append({"code": code, "result": "redeemed OK"})
 

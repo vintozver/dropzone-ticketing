@@ -4,11 +4,12 @@
   <h1>Active tickets of {{ owner }}</h1>
   {% if tickets %}
     <table>
-      <thead><tr><th>Issued</th><th>Purpose</th><th>Payment</th></tr></thead>
+      <thead><tr><th>Issued</th><th>Issued by</th><th>Purpose</th><th>Payment</th></tr></thead>
       <tbody>
         {% for ticket in tickets %}
           <tr>
             <td><a href="/print?id={{ ticket.id|urlencode }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
+            <td>{{ ticket.issued_user or "unknown" }}</td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
           </tr>

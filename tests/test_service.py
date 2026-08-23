@@ -60,8 +60,8 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertEqual(
             ticket_class.call_args_list,
             [
-                call(code="duplicate-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop"),
-                call(code="new-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop"),
+                call(code="duplicate-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop", issued_user=None),
+                call(code="new-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop", issued_user=None),
             ],
         )
 
@@ -93,6 +93,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"previous jump", body)
         active.save.assert_called_once_with()
         self.assertEqual(active.redeemed.dt.tzinfo, timezone.utc)
+        self.assertIsNone(active.redeemed.by_user)
         self.assertEqual(active.redeemed.reason, "jump")
 
     @patch.object(service, "Ticket")
@@ -222,6 +223,7 @@ class ServiceHelperTest(unittest.TestCase):
         ticket = MagicMock(
             payment="cash",
             purpose="C182 hop-and-hop",
+            issued_user="issuer-1",
             code="secret-code",
             id="507f1f77bcf86cd799439011",
         )
@@ -233,6 +235,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertEqual(status, service.HTTPStatus.OK)
         ticket_class.objects.assert_called_once_with(owner="Jane", redeemed=None)
         self.assertIn(b"2026-08-22 00:00:00 UTC", body)
+        self.assertIn(b"issuer-1", body)
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
         self.assertNotIn(b"secret-code", body)
@@ -244,7 +247,7 @@ class ServiceHelperTest(unittest.TestCase):
         original_connected = service._storage_connected
         service._storage_connected = False
         try:
-            with patch.dict("os.environ", {"MONGODB_CONNECTION_STRING": "mongodb://example/test"}):
+            with patch.dict("os.environ", {"MONGODB_URI": "mongodb://example/test"}):
                 service._ensure_storage()
 
                 register_connection.assert_called_once_with(
@@ -258,6 +261,37 @@ class ServiceHelperTest(unittest.TestCase):
                 register_connection.assert_called_once()
         finally:
             service._storage_connected = original_connected
+
+    @patch.object(service, "Ticket")
+    def test_issue_records_issuing_user(self, ticket_class) -> None:
+        ticket_class.return_value = MagicMock()
+
+        service._issue(
+            {
+                "owner": "Jane",
+                "count": "1",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            },
+            "issuer-1",
+        )
+
+        ticket_class.assert_called_once_with(
+            code=ANY,
+            owner="Jane",
+            payment="cash",
+            purpose="C182 hop-and-hop",
+            issued_user="issuer-1",
+        )
+
+    @patch.object(service, "Ticket")
+    def test_redeem_records_redeeming_user(self, ticket_class) -> None:
+        active = MagicMock(redeemed=None)
+        ticket_class.objects.return_value.first.return_value = active
+
+        service._redeem({"codes": "active"}, "redeemer-1")
+
+        self.assertEqual(active.redeemed.by_user, "redeemer-1")
 
 
 class ServiceApplicationTest(unittest.TestCase):
@@ -289,6 +323,12 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["headers"]["Content-Type"], "text/html; charset=utf-8")
         self.assertIn(b"Issue tickets", response["body"])
+
+    def test_base_template_shows_authentication_status(self) -> None:
+        response = self.request("/", authenticated=False)
+
+        self.assertIn(b"Authentication: not signed in.", response["body"])
+        self.assertIn(b'href="/authn"', response["body"])
 
     def test_issue_rejects_out_of_range_count(self) -> None:
         response = self.request(
@@ -363,6 +403,13 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "405 Method Not Allowed")
         self.assertEqual(response["headers"]["Allow"], "GET, POST")
 
+    def test_registration_mode_blocks_non_registration_routes(self) -> None:
+        with patch("dropzone_ticketing.service.routes.authn_config", return_value=SimpleNamespace(register=True)):
+            response = self.request("/authn", authenticated=False)
+
+        self.assertEqual(response["status"], "403 Forbidden")
+        self.assertIn(b"registration-only mode", response["body"])
+
 
 class ServiceAuthnTest(unittest.TestCase):
     def request(self, path: str, method: str = "GET", form: Optional[dict] = None, cookie: str = ""):
@@ -393,7 +440,7 @@ class ServiceAuthnTest(unittest.TestCase):
         server = MagicMock()
         state = {"challenge": b64(b"server challenge"), "user_verification": None}
         server.authenticate_begin.return_value = {}, state
-        credential = SimpleNamespace(credential_id=b"credential")
+        credential = SimpleNamespace(id=b"credential")
         user = SimpleNamespace(fido2_credentials=[credential])
         user_class = MagicMock()
         user_class.objects.return_value.only.return_value = [user]
@@ -414,7 +461,7 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(payload["state"], state)
         self.assertIn("Path=/authn", cookie)
         self.assertIn(b"navigator.credentials.get", body)
-        self.assertNotIn(b"registrationOptions", body)
+        self.assertIn(b"registrationOptions = null", body)
         self.assertNotIn(b"Register credential", body)
 
     def test_authn_complete_uses_stored_credential_and_sets_session_cookie(self) -> None:
@@ -424,7 +471,7 @@ class ServiceAuthnTest(unittest.TestCase):
             {"challenge": b64(challenge), "issued": auth.time()}
         )
         server = MagicMock()
-        credential = SimpleNamespace(credential_id=b"credential")
+        credential = SimpleNamespace(id=b"credential")
 
         with patch.object(auth, "_server", return_value=server), patch.object(
             auth, "_find_credential", return_value=credential
@@ -551,6 +598,90 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(server.register_complete.call_args.args[0], state)
         self.assertEqual(server.register_complete.call_args.kwargs["response"], "registration response")
         registration_response.assert_called_once()
+        user.save.assert_called_once_with()
+
+    def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
+        auth = service._auth_module
+        server = MagicMock()
+        state = {"challenge": b64(b"server challenge"), "user_verification": None}
+        register_state = {"challenge": b64(b"register challenge"), "user_verification": "discouraged"}
+        server.authenticate_begin.return_value = {}, state
+        server.register_begin.return_value = {"publicKey": {"challenge": b"register challenge"}}, register_state
+        user = SimpleNamespace(
+            id="Jane",
+            fido2_credentials=[SimpleNamespace(id=b"abcdefgh", dt=datetime(2026, 8, 22, tzinfo=timezone.utc))],
+        )
+        environ = {
+            "PATH_INFO": "/authn",
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.object(auth, "_server", return_value=server), patch.object(
+            auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
+        ), patch.object(auth, "_session_user", return_value=user), patch.object(
+            auth, "_credential_data", return_value="credential data"
+        ):
+            _status, headers, body = auth.begin_authn(environ)
+
+        self.assertIn(b"Your registered credentials", body)
+        self.assertIn(b"61626364", body)
+        self.assertIn(b"65666768", body)
+        self.assertIn(b"Register additional credential", body)
+        cookie = next(value for name, value in headers if name == "Set-Cookie")
+        payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
+        self.assertEqual(payload["register_state"], register_state)
+        self.assertEqual(payload["register_user"], "Jane")
+
+    def test_authn_register_complete_attaches_credential_to_current_user(self) -> None:
+        auth = service._auth_module
+        state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
+        cookie = "authn_challenge=" + auth._signed(
+            {"register_state": state, "register_user": "Jane", "issued": auth.time()}
+        )
+
+        class CredentialData:
+            credential_id = b"credential"
+
+            def __bytes__(self):
+                return b"serialized credential"
+
+        credential_data = CredentialData()
+        server = MagicMock()
+        server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
+        user = MagicMock(id="Jane", fido2_credentials=[])
+        environ = {
+            "PATH_INFO": "/authn/register",
+            "REQUEST_METHOD": "POST",
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(
+                urlencode(
+                    {
+                        "id": "credential",
+                        "rawId": b64(b"credential"),
+                        "clientDataJSON": b64(b"client data"),
+                        "attestationObject": b64(b"attestation"),
+                    }
+                ).encode()
+            ),
+            "HTTP_COOKIE": cookie,
+        }
+        environ["CONTENT_LENGTH"] = str(environ["wsgi.input"].getbuffer().nbytes)
+
+        with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=False)), patch.object(
+            auth, "_session_user", return_value=user
+        ), patch.object(auth, "_server", return_value=server), patch.object(
+            auth, "_find_credential", return_value=None
+        ), patch.object(auth, "CollectedClientData", return_value="client data"), patch.object(
+            auth, "AttestationObject", return_value="attestation"
+        ), patch.object(
+            auth, "AuthenticatorAttestationResponse", return_value="attestation response"
+        ), patch.object(auth, "RegistrationResponse", return_value="registration response"):
+            response = auth.complete_authn_register(environ)
+
+        self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(user.fido2_credentials[0].id, b"credential")
+        self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
         user.save.assert_called_once_with()
 
 

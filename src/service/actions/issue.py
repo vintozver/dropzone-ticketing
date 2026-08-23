@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 from ..config import MAX_CODE_ATTEMPTS, MAX_TICKETS
 
 
-def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_url):
+def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_url, issued_user: str | None = None):
     owner = form.get("owner", "").strip()
     payment = form.get("payment", "").strip()
     purpose = form.get("purpose", "").strip()
@@ -36,7 +36,13 @@ def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_ur
     tickets = []
     for _ in range(count):
         for _attempt in range(MAX_CODE_ATTEMPTS):
-            ticket = ticket_class(code=generate_code(), owner=owner, payment=payment, purpose=purpose)
+            ticket = ticket_class(
+                code=generate_code(),
+                owner=owner,
+                payment=payment,
+                purpose=purpose,
+                issued_user=issued_user,
+            )
             try:
                 ticket.save()
             except (NotUniqueError, DuplicateKeyError):

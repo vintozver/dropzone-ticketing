@@ -18,12 +18,12 @@ class AuthnConfig:
     register: bool
 
 
-def auth_register() -> bool:
-    return "AUTH_REGISTER" in os.environ
+def registration_mode() -> bool:
+    return "REGISTRATION_MODE" in os.environ
 
 
 def authn_config() -> AuthnConfig:
-    return AuthnConfig(register=auth_register())
+    return AuthnConfig(register=registration_mode())
 
 
 def session_secret() -> bytes:
@@ -33,5 +33,5 @@ def session_secret() -> bytes:
     return _session_secret
 
 
-def mongodb_connection_string() -> str:
-    return os.environ["MONGODB_CONNECTION_STRING"]
+def mongodb_uri() -> str:
+    return os.environ["MONGODB_URI"]

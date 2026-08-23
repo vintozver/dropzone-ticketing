@@ -4,11 +4,20 @@ from http import HTTPStatus
 from urllib.parse import parse_qs
 
 from . import auth, register
+from .config import authn_config
 from .http import method_not_allowed, render
 
 def dispatch(environ: dict, handlers):
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET").upper()
+    registration_mode = authn_config().register
+
+    if registration_mode and path != "/register":
+        return render(
+            "error.html",
+            HTTPStatus.FORBIDDEN,
+            message="Application is running in registration-only mode.",
+        )
 
     if path == "/authn":
         if method == "GET":
@@ -16,6 +25,11 @@ def dispatch(environ: dict, handlers):
         if method == "POST":
             return auth.complete_authn(environ)
         return method_not_allowed(["GET", "POST"])
+
+    if path == "/authn/register":
+        if method == "POST":
+            return auth.complete_authn_register(environ)
+        return method_not_allowed(["POST"])
 
     if path == "/register":
         if method == "GET":
@@ -42,7 +56,7 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "GET":
             return render("issue.html")
-        return handlers._issue(handlers._read_form(environ))
+        return handlers._issue(handlers._read_form(environ), handlers._current_user_id(environ))
 
     if path == "/redeem":
         if method not in {"GET", "POST"}:
@@ -52,7 +66,7 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "GET":
             return render("redeem.html")
-        return handlers._redeem(handlers._read_form(environ))
+        return handlers._redeem(handlers._read_form(environ), handlers._current_user_id(environ))
 
     if path == "/tickets":
         if method != "GET":

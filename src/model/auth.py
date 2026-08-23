@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import mongoengine
 
 from . import mongoengine_alias
@@ -8,8 +10,9 @@ from . import mongoengine_alias
 class Fido2Credential(mongoengine.EmbeddedDocument):
     """A WebAuthn credential registered for a ticketing user."""
 
-    credential_id = mongoengine.BinaryField(required=True)
-    credential_data = mongoengine.BinaryField(required=True)
+    id = mongoengine.BinaryField(required=True, primary_key=True, db_field="_id")
+    data = mongoengine.BinaryField(required=True)
+    dt = mongoengine.DateTimeField(required=True, default=lambda: datetime.now(timezone.utc))
 
 
 class User(mongoengine.Document):
@@ -20,5 +23,5 @@ class User(mongoengine.Document):
 
     meta = {
         "db_alias": mongoengine_alias,
-        "indexes": [{"fields": ["fido2_credentials.credential_id"], "unique": True}],
+        "indexes": [{"fields": ["fido2_credentials._id"], "unique": True}],
     }
