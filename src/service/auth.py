@@ -139,7 +139,26 @@ def _is_authenticated(environ: dict) -> bool:
         return False
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
-    return isinstance(serial, str) and Fido2Credential.objects(credential_id=serial).first() is not None and time() - issued <= _COOKIE_MAX_AGE_SECONDS
+    return (
+        isinstance(serial, str)
+        and _find_credential(serial) is not None
+        and time() - issued <= _COOKIE_MAX_AGE_SECONDS
+    )
+
+
+def _find_credential(encoded_id: str) -> Fido2Credential | None:
+    try:
+        credential_id = _b64decode(encoded_id)
+    except (ValueError, binascii.Error):
+        return None
+    return next(
+        (
+            item
+            for item in Fido2Credential.objects()
+            if _credential_data(item).credential_id == credential_id
+        ),
+        None,
+    )
 
 
 def _extract_serial(cert: x509.Certificate) -> str | None:
@@ -272,14 +291,7 @@ def complete_authn(environ: dict):
             "type": "public-key",
         }
         credential_id = _b64decode(form.get("rawId", ""))
-        credential = next(
-            (
-                item
-                for item in Fido2Credential.objects()
-                if _credential_data(item).credential_id == credential_id
-            ),
-            None,
-        )
+        credential = _find_credential(form.get("rawId", ""))
         if credential is None:
             raise ValueError("Unknown credential.")
         server = _server(environ)

@@ -43,7 +43,7 @@ document.getElementById("authn-form").addEventListener("submit", async event => 
       publicKey: {
         challenge: decode(challenge),
         rp: {name: "dropzone-ticketing", id: rpId},
-        user: {id: crypto.getRandomValues(new Uint8Array(16)), name: "YubiKey", displayName: "YubiKey"},
+        user: {id: crypto.getRandomValues(new Uint8Array(16)), name: document.getElementById("username").value, displayName: document.getElementById("username").value},
         pubKeyCredParams: [{type: "public-key", alg: -7}, {type: "public-key", alg: -257}],
         authenticatorSelection: {authenticatorAttachment: "cross-platform"},
         attestation: "direct",
