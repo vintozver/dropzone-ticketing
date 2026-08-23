@@ -17,6 +17,13 @@ def dispatch(environ: dict, handlers):
             return auth.complete_authn(environ)
         return method_not_allowed(["GET", "POST"])
 
+    if path == "/register":
+        if method == "GET":
+            return auth.begin_authn(environ)
+        if method == "POST":
+            return auth.register(environ)
+        return method_not_allowed(["GET", "POST"])
+
     if path == "/logout":
         if method != "POST":
             return method_not_allowed(["POST"])

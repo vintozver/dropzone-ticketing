@@ -4,13 +4,16 @@ Ticketing software for the drop zone (skydiving)
 ## Web service
 
 Set `MONGODB_CONNECTION_STRING` to the MongoDB connection string used by the
-web service. Protected routes require FIDO2 authentication with a YubiKey whose
-attestation certificate serial number is listed in `AUTHN_YUBIKEY_IDS` as a
-comma-separated list, for example:
+web service. Protected routes require FIDO2 authentication with a credential registered in
+MongoDB. To register credentials, set `AUTH_REGISTER` while starting the
+service, then open `/authn`, enter a username, and press “Register credential”.
+Registration mode disables authentication and should only be enabled during
+initial setup.
 
 ```console
 export MONGODB_CONNECTION_STRING=mongodb://localhost:27017/dropzone_ticketing
-export AUTHN_YUBIKEY_IDS=1234567,7654321
+# Only during credential registration:
+export AUTH_REGISTER=1
 ```
 
 For local development, the following command starts the WSGI application on port

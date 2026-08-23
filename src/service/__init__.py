@@ -76,10 +76,6 @@ def _require_auth(environ: dict):
     return _auth_module.require_auth(environ)
 
 
-def _verify_yubikey_attestation(*args, **kwargs):
-    return _auth_module._verify_yubikey_attestation(*args, **kwargs)
-
-
 def _method_not_allowed(allowed):
     from .http import method_not_allowed
 
