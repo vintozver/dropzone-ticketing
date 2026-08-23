@@ -5,6 +5,7 @@ import binascii
 import hmac
 import json
 import secrets
+import traceback
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
@@ -22,6 +23,7 @@ AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
+_YUBIKEY_SERIAL_OID = x509.ObjectIdentifier("1.3.6.1.4.1.41482.3.7")
 _YUBICO_FIDO_ROOT_CA = b"""-----BEGIN CERTIFICATE-----
 MIIDHjCCAgagAwIBAgIEG0BT9zANBgkqhkiG9w0BAQsFADAuMSwwKgYDVQQDEyNZ
 dWJpY28gVTJGIFJvb3QgQ0EgU2VyaWFsIDQ1NzIwMDYzMTAgFw0xNDA4MDEwMDAw
@@ -131,6 +133,31 @@ def _is_authenticated(environ: dict) -> bool:
 
 
 def _extract_serial(cert: x509.Certificate) -> str | None:
+    def _decode_der_integer(encoded: bytes) -> int | None:
+        if len(encoded) < 3 or encoded[0] != 0x02:
+            return None
+        offset = 2
+        first_length = encoded[1]
+        if first_length & 0x80:
+            length_octets = first_length & 0x7F
+            if length_octets == 0 or len(encoded) <= 2 + length_octets:
+                return None
+            length = int.from_bytes(encoded[2 : 2 + length_octets], "big")
+            offset = 2 + length_octets
+        else:
+            length = first_length
+        if length <= 0 or offset + length != len(encoded):
+            return None
+        return int.from_bytes(encoded[offset : offset + length], "big")
+
+    try:
+        extension = cert.extensions.get_extension_for_oid(_YUBIKEY_SERIAL_OID).value
+        if isinstance(extension, x509.UnrecognizedExtension):
+            serial = _decode_der_integer(extension.value)
+            if serial is not None:
+                return str(serial)
+    except x509.ExtensionNotFound:
+        pass
     values = cert.subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
     if not values:
         return None
@@ -208,7 +235,7 @@ def complete_authn(environ: dict):
             authn_config().allowed_yubikey_ids,
         )
     except (binascii.Error, UntrustedAttestation, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.")
+        return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.", traceback.format_exc())
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [
         ("Location", "/"),

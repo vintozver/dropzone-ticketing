@@ -437,6 +437,8 @@ class ServiceAuthnTest(unittest.TestCase):
             )
 
         self.assertEqual(response["status"], "403 Forbidden")
+        self.assertIn(b"FIDO2 authentication failed.", response["body"])
+        self.assertIn(b"ValueError", response["body"])
 
     def test_authn_does_not_swallow_unexpected_attestation_errors(self) -> None:
         challenge = b"challenge"
@@ -471,6 +473,17 @@ class ServiceAuthnTest(unittest.TestCase):
         with patch.object(service._auth_module.x509, "load_der_x509_certificate", return_value=cert):
             with self.assertRaises(service._auth_module.UntrustedAttestation):
                 verifier.ca_lookup(SimpleNamespace(trust_path=[b"cert"]), MagicMock())
+
+    def test_extract_serial_reads_integer_from_yubikey_extension(self) -> None:
+        cert = MagicMock()
+        cert.extensions.get_extension_for_oid.return_value = SimpleNamespace(
+            value=service._auth_module.x509.UnrecognizedExtension(
+                service._auth_module.x509.ObjectIdentifier("1.3.6.1.4.1.41482.3.7"),
+                b"\x02\x03\x12\xd6\x87",
+            )
+        )
+
+        self.assertEqual(service._auth_module._extract_serial(cert), "1234567")
 
     def test_verify_rejects_non_yubikey_attestation_certificate(self) -> None:
         verifier = service._auth_module._YubiKeyAttestationVerifier(frozenset({"1234567"}))
