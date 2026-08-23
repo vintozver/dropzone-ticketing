@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import traceback
+from contextlib import contextmanager
+from contextvars import ContextVar
 from http import HTTPStatus
 from typing import Callable
 from urllib.parse import parse_qs
@@ -13,10 +15,22 @@ _templates = Environment(
     loader=PackageLoader("dropzone_ticketing", "templates"),
     autoescape=select_autoescape(["html"]),
 )
+_request_context: ContextVar[dict[str, object]] = ContextVar("request_context", default={})
+
+
+@contextmanager
+def request_context(**context: object):
+    token = _request_context.set(context)
+    try:
+        yield
+    finally:
+        _request_context.reset(token)
 
 
 def render(template_name: str, status: HTTPStatus = HTTPStatus.OK, **context: object):
-    body = _templates.get_template(template_name).render(**context).encode("utf-8")
+    merged_context = dict(_request_context.get())
+    merged_context.update(context)
+    body = _templates.get_template(template_name).render(**merged_context).encode("utf-8")
     return status, [("Content-Type", "text/html; charset=utf-8")], body
 
 

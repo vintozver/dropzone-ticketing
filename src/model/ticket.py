@@ -11,6 +11,7 @@ class Redemption(mongoengine.EmbeddedDocument):
     """Details recorded when a ticket is redeemed."""
 
     dt = mongoengine.DateTimeField(required=True)
+    by_user = mongoengine.StringField(required=False)
     reason = mongoengine.StringField(required=False)
 
 
@@ -29,6 +30,7 @@ class Ticket(mongoengine.Document):
     owner = mongoengine.StringField(required=True)
     payment = mongoengine.StringField(required=True)
     purpose = mongoengine.StringField(required=True)
+    issued_user = mongoengine.StringField(required=False)
     redeemed = mongoengine.EmbeddedDocumentField(Redemption, required=False)
 
     meta = {

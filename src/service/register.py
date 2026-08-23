@@ -4,6 +4,7 @@ import binascii
 import hmac
 import secrets
 import traceback
+from datetime import datetime, timezone
 from http import HTTPStatus
 from time import time
 from urllib.parse import parse_qs
@@ -127,8 +128,9 @@ def complete_register(environ: dict):
             user = User(id=username)
         user.fido2_credentials.append(
             Fido2Credential(
-                credential_id=credential_id,
-                credential_data=credential_data,
+                id=credential_id,
+                data=credential_data,
+                dt=datetime.now(timezone.utc),
             )
         )
         user.save()

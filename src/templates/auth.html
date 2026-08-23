@@ -12,10 +12,36 @@
   <button type="submit">Authenticate</button>
 </form>
 <p id="authn-error" role="alert"></p>
+{% if user_credentials %}
+<h3>Your registered credentials</h3>
+<table>
+  <thead><tr><th>Credential ID</th><th>Registered at</th></tr></thead>
+  <tbody>
+    {% for credential in user_credentials %}
+      <tr>
+        <td><code>{{ credential.id }}</code></td>
+        <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% if user_credentials and registration_options %}
+<h3>Add a new credential</h3>
+<form id="register-form" method="post" action="/authn/register">
+  <input type="hidden" name="id" id="register-id">
+  <input type="hidden" name="rawId" id="register-rawId">
+  <input type="hidden" name="attestationObject" id="register-attestationObject">
+  <input type="hidden" name="clientDataJSON" id="register-clientDataJSON">
+  <button type="submit">Register additional credential</button>
+</form>
+<p id="register-error" role="alert"></p>
+{% endif %}
 <script>
 const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
 const allowCredentials = {{ allow_credentials | tojson }};
+const registrationOptions = {{ registration_options | tojson }};
 function decode(value) {
   const padded = value + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
@@ -48,5 +74,30 @@ document.getElementById("authn-form").addEventListener("submit", async event => 
     document.getElementById("authn-error").textContent = "Authentication failed.";
   }
 });
+const registerForm = document.getElementById("register-form");
+if (registerForm && registrationOptions) {
+  registerForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    try {
+      const credential = await navigator.credentials.create({
+        publicKey: Object.fromEntries(Object.entries(registrationOptions.publicKey).map(([key, value]) => {
+          if (key === "challenge" || (key === "user" && value.id)) {
+            if (key === "user") return [key, {...value, id: decode(value.id)}];
+            return [key, decode(value)];
+          }
+          if (key === "excludeCredentials") return [key, value.map(item => ({...item, id: decode(item.id)}))];
+          return [key, value];
+        }))
+      });
+      document.getElementById("register-id").value = credential.id;
+      document.getElementById("register-rawId").value = encode(credential.rawId);
+      document.getElementById("register-clientDataJSON").value = encode(credential.response.clientDataJSON);
+      document.getElementById("register-attestationObject").value = encode(credential.response.attestationObject);
+      event.target.submit();
+    } catch (error) {
+      document.getElementById("register-error").textContent = "Registration failed.";
+    }
+  });
+}
 </script>
 {% endblock %}

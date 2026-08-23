@@ -3,17 +3,17 @@ Ticketing software for the drop zone (skydiving)
 
 ## Web service
 
-Set `MONGODB_CONNECTION_STRING` to the MongoDB connection string used by the
+Set `MONGODB_URI` to the MongoDB connection string used by the
 web service. Protected routes require FIDO2 authentication with a credential registered in
-MongoDB. To register credentials, set `AUTH_REGISTER` while starting the
+MongoDB. To register credentials, set `REGISTRATION_MODE` while starting the
 service, then open `/register`, enter a username, and press “Register credential”.
 Registration mode disables authentication and should only be enabled during
 initial setup.
 
 ```console
-export MONGODB_CONNECTION_STRING=mongodb://localhost:27017/dropzone_ticketing
+export MONGODB_URI=mongodb://localhost:27017/dropzone_ticketing
 # Only during credential registration:
-export AUTH_REGISTER=1
+export REGISTRATION_MODE=1
 ```
 
 For local development, the following command starts the WSGI application on port
