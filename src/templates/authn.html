@@ -7,7 +7,7 @@
 {% else %}
 <p>Use a registered FIDO2 credential to sign in.</p>
 {% endif %}
-<form id="authn-form" method="post" action="/authn">
+<form id="authn-form" method="post" action="{{ auth_path }}">
   {% if mode == "register" %}
   <label>Username <input name="username" id="username" required></label>
   {% endif %}
@@ -68,7 +68,7 @@ document.getElementById("authn-form").addEventListener("submit", async event => 
     }
     event.target.submit();
   } catch (error) {
-    document.getElementById("authn-error").textContent = "Authentication failed.";
+    document.getElementById("authn-error").textContent = mode === "register" ? "Registration failed." : "Authentication failed.";
   }
 });
 </script>

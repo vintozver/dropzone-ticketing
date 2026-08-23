@@ -151,14 +151,7 @@ def _find_credential(encoded_id: str) -> Fido2Credential | None:
         credential_id = _b64decode(encoded_id)
     except (ValueError, binascii.Error):
         return None
-    return next(
-        (
-            item
-            for item in Fido2Credential.objects()
-            if _credential_data(item).credential_id == credential_id
-        ),
-        None,
-    )
+    return Fido2Credential.objects(credential_id=credential_id).first()
 
 
 def _extract_serial(cert: x509.Certificate) -> str | None:
@@ -250,15 +243,17 @@ def begin_authn(environ: dict):
     else:
         mode = "authenticate"
         server = _server(environ)
+        credentials = list(Fido2Credential.objects())
         options, _state = server.authenticate_begin(
-            [*(_credential_data(credential) for credential in Fido2Credential.objects())],
+            [_credential_data(credential) for credential in credentials],
             challenge=challenge,
         )
         allow_credentials = [
-            _b64encode(credential.credential_data.credential_id)
-            for credential in Fido2Credential.objects()
+            _b64encode(credential.credential_id)
+            for credential in credentials
         ]
         username = ""
+    auth_path = "/register" if mode == "register" and environ.get("PATH_INFO") == "/register" else "/authn"
     status, headers, body = render(
         "authn.html",
         challenge=_b64encode(challenge),
@@ -266,8 +261,9 @@ def begin_authn(environ: dict):
         mode=mode,
         allow_credentials=allow_credentials if not authn_config().register else [],
         username=username,
+        auth_path=auth_path,
     )
-    headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed({"challenge": _b64encode(challenge), "issued": time()}), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
+    headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed({"challenge": _b64encode(challenge), "issued": time()}), max_age=_CHALLENGE_TTL_SECONDS, path=auth_path))
     return status, headers, body
 
 
@@ -347,7 +343,12 @@ def register(environ: dict):
             {"challenge": _b64encode(challenge), "user_verification": None},
             response=response,
         )
-        Fido2Credential(username=username, credential_data=bytes(auth_data.credential_data)).save()
+        credential_data = bytes(auth_data.credential_data)
+        Fido2Credential(
+            username=username,
+            credential_id=auth_data.credential_data.credential_id,
+            credential_data=credential_data,
+        ).save()
     except (binascii.Error, ValueError):
         return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
