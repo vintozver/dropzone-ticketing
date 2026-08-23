@@ -20,8 +20,8 @@ def render(template_name: str, status: HTTPStatus = HTTPStatus.OK, **context: ob
     return status, [("Content-Type", "text/html; charset=utf-8")], body
 
 
-def error(status: HTTPStatus, message: str):
-    return render("error.html", status, message=message)
+def error(status: HTTPStatus, message: str, trace: str = ""):
+    return render("error.html", status, message=message, trace=trace)
 
 
 def read_form(environ: dict) -> dict[str, str]:
