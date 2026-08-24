@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Redeemed tickets{% endblock %}
+{% block content %}
+  <h1>Redeemed tickets</h1>
+  <p>Showing tickets redeemed yesterday and today (UTC).</p>
+  {% if owners %}
+    {% for owner in owners %}
+      <h2>{{ owner.owner }}</h2>
+      <ul>
+        <li>Redeemed today: {{ owner.today_count }}</li>
+        <li>Redeemed yesterday: {{ owner.yesterday_count }}</li>
+      </ul>
+      <ul>
+        {% for ticket in owner.tickets %}
+          <li>{{ ticket.day }}: <span alt="{{ ticket.code }}" title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
+        {% endfor %}
+      </ul>
+    {% endfor %}
+  {% else %}
+    <p>No tickets were redeemed yesterday or today.</p>
+  {% endif %}
+{% endblock %}

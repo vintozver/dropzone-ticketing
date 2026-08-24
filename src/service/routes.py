@@ -79,6 +79,22 @@ def dispatch(environ: dict, handlers):
             return handlers._view_owners()
         return handlers._view_owner_tickets(query["owner"][0])
 
+    if path == "/reports/redeemed":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._view_redeemed_tickets()
+
+    if path == "/reports/issued":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._view_issued_tickets()
+
     if path == "/print":
         if method != "GET":
             return method_not_allowed(["GET"])

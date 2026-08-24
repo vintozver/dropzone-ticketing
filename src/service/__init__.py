@@ -17,8 +17,10 @@ from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
 from .actions.print_tickets import safe_filename as _safe_filename
 from .actions.redeem import redeem as _redeem_action
+from .actions.view_issued_tickets import view_issued_tickets as _view_issued_tickets_action
 from .actions.view_owner_tickets import view_owner_tickets as _view_owner_tickets_action
 from .actions.view_owners import view_owners as _view_owners_action
+from .actions.view_redeemed_tickets import view_redeemed_tickets as _view_redeemed_tickets_action
 from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
 from .http import (
     exception_response,
@@ -78,6 +80,14 @@ def _view_owners():
 
 def _view_owner_tickets(owner: str):
     return _view_owner_tickets_action(owner, ticket_class=Ticket, render=_render)
+
+
+def _view_redeemed_tickets():
+    return _view_redeemed_tickets_action(ticket_class=Ticket, render=_render)
+
+
+def _view_issued_tickets():
+    return _view_issued_tickets_action(ticket_class=Ticket, render=_render)
 
 
 def _is_authenticated(environ: dict) -> bool:
