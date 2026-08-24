@@ -327,8 +327,14 @@ class ServiceApplicationTest(unittest.TestCase):
     def test_base_template_shows_authentication_status(self) -> None:
         response = self.request("/", authenticated=False)
 
-        self.assertIn(b"Authentication: not signed in.", response["body"])
-        self.assertIn(b'href="/authn"', response["body"])
+        self.assertIn(b'<a href="/authn">Sign in</a>', response["body"])
+
+    def test_base_template_shows_signed_in_user(self) -> None:
+        with patch.object(service._auth_module, "current_user_id", return_value="jane"):
+            response = self.request("/", authenticated=True)
+
+        self.assertIn(b'Signed in as <a href="/authn">jane</a>', response["body"])
+        self.assertNotIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_issue_rejects_out_of_range_count(self) -> None:
         response = self.request(
