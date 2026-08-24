@@ -50,8 +50,8 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
                 "tooltip": "; ".join(
                     [
                         f"Reason: {redeemed.reason or 'unknown'}",
-                        f"Redeemed by: {redeemed.by_user or 'unknown'}",
-                        f"Redeemed at: {_format_datetime(redeemed.dt)}",
+                        f"By: {redeemed.by_user or 'unknown'}",
+                        f"At: {_format_datetime(redeemed.dt)}",
                     ]
                 ),
             }

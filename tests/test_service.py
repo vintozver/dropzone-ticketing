@@ -341,8 +341,9 @@ class ServiceHelperTest(unittest.TestCase):
         )
         self.assertIn(b"Redeemed today: 1", body)
         self.assertIn(b"Redeemed yesterday: 1", body)
-        self.assertIn(b"<code title=\"Reason: jump; Redeemed by: redeemer-1; Redeemed at: 2026-08-24 09:00:00 UTC\">today-code</code>", body)
-        self.assertIn(b"Reason: unknown; Redeemed by: unknown; Redeemed at: 2026-08-23 20:00:00 UTC", body)
+        self.assertIn(b'<span alt="today-code" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">2</span>', body)
+        self.assertIn(b'<span alt="yesterday-code" title="Reason: unknown; By: unknown; At: 2026-08-23 20:00:00 UTC">1</span>', body)
+        self.assertNotIn(b">today-code</span>", body)
 
     def test_issued_report_limits_to_last_500_and_handles_missing_redemption(self) -> None:
         class Query:

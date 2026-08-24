@@ -12,7 +12,7 @@
       </ul>
       <ul>
         {% for ticket in owner.tickets %}
-          <li>{{ ticket.day }}: <code title="{{ ticket.tooltip }}">{{ ticket.code }}</code></li>
+          <li>{{ ticket.day }}: <span alt="{{ ticket.code }}" title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
         {% endfor %}
       </ul>
     {% endfor %}
