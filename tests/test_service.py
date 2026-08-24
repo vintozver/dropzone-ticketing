@@ -8,11 +8,14 @@ from typing import Optional
 from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
+from bson import ObjectId
 from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption
 from dropzone_ticketing.service import register as register_module
+from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
+from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
 
 
 def b64(value: bytes) -> str:
@@ -293,6 +296,103 @@ class ServiceHelperTest(unittest.TestCase):
 
         self.assertEqual(active.redeemed.by_user, "redeemer-1")
 
+    def test_redeemed_report_groups_today_and_yesterday_by_owner(self) -> None:
+        today = datetime(2026, 8, 24, 10, tzinfo=timezone.utc)
+        query_args = {}
+
+        query = [
+            SimpleNamespace(
+                owner="Jane",
+                code="today-code",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, tzinfo=timezone.utc),
+                    by_user="redeemer-1",
+                    reason="jump",
+                ),
+            ),
+            SimpleNamespace(
+                owner="Jane",
+                code="yesterday-code",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 23, 20, tzinfo=timezone.utc),
+                    by_user=None,
+                    reason=None,
+                ),
+            ),
+        ]
+
+        def objects(**kwargs):
+            query_args.update(kwargs)
+            return query
+
+        status, _headers, body = view_redeemed_tickets(
+            ticket_class=SimpleNamespace(objects=objects),
+            render=service._render,
+            now=today,
+        )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertEqual(
+            query_args,
+            {
+                "redeemed__dt__gte": datetime(2026, 8, 23, tzinfo=timezone.utc),
+                "redeemed__dt__lt": datetime(2026, 8, 25, tzinfo=timezone.utc),
+            },
+        )
+        self.assertIn(b"Redeemed today: 1", body)
+        self.assertIn(b"Redeemed yesterday: 1", body)
+        self.assertIn(b"<code title=\"Reason: jump; Redeemed by: redeemer-1; Redeemed at: 2026-08-24 09:00:00 UTC\">today-code</code>", body)
+        self.assertIn(b"Reason: unknown; Redeemed by: unknown; Redeemed at: 2026-08-23 20:00:00 UTC", body)
+
+    def test_issued_report_limits_to_last_500_and_handles_missing_redemption(self) -> None:
+        class Query:
+            def order_by(self, *fields):
+                self.order_by_fields = fields
+                return self
+
+            def limit(self, count):
+                self.limit_count = count
+                return [
+                    SimpleNamespace(
+                        owner="Jane",
+                        purpose="C182 hop-and-hop",
+                        payment="cash",
+                        redeemed=Redemption(
+                            dt=datetime(2026, 8, 24, 9, tzinfo=timezone.utc),
+                            by_user="redeemer-1",
+                            reason="jump",
+                        ),
+                        issued_utc=lambda: ObjectId("64e3b8000000000000000000").generation_time,
+                    ),
+                    SimpleNamespace(
+                        owner="Zoe",
+                        purpose="packing",
+                        payment="card",
+                        redeemed=None,
+                        issued_utc=lambda: ObjectId("64e3a0000000000000000000").generation_time,
+                    ),
+                ]
+
+        query = Query()
+
+        status, _headers, body = view_issued_tickets(
+            ticket_class=SimpleNamespace(objects=query),
+            render=service._render,
+        )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertEqual(query.order_by_fields, ("-id",))
+        self.assertEqual(query.limit_count, 500)
+        self.assertIn(b"Jane", body)
+        self.assertIn(b"C182 hop-and-hop", body)
+        self.assertIn(b"cash", body)
+        self.assertIn(b"2026-08-24 09:00:00 UTC", body)
+        self.assertIn(b"redeemer-1", body)
+        self.assertIn(b"jump", body)
+        self.assertIn(b"Zoe", body)
+        self.assertIn(b"not redeemed", body)
+        self.assertIn(b"unknown", body)
+
 
 class ServiceApplicationTest(unittest.TestCase):
     def request(self, path: str, method: str = "GET", form: Optional[dict] = None, authenticated: bool = True):
@@ -323,6 +423,8 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["headers"]["Content-Type"], "text/html; charset=utf-8")
         self.assertIn(b"Issue tickets", response["body"])
+        self.assertIn(b'href="/reports/redeemed"', response["body"])
+        self.assertIn(b'href="/reports/issued"', response["body"])
 
     def test_base_template_shows_authentication_status(self) -> None:
         response = self.request("/", authenticated=False)
@@ -391,6 +493,26 @@ class ServiceApplicationTest(unittest.TestCase):
         response = self.request("/")
 
         self.assertNotIn(b'href="/print"', response["body"])
+
+    def test_report_links_are_only_on_home_page(self) -> None:
+        response = self.request("/issue")
+
+        self.assertNotIn(b'href="/reports/redeemed"', response["body"])
+        self.assertNotIn(b'href="/reports/issued"', response["body"])
+
+    def test_redeemed_report_route_uses_handler(self) -> None:
+        with patch.object(service, "_view_redeemed_tickets", return_value=(service.HTTPStatus.OK, [], b"report")):
+            response = self.request("/reports/redeemed")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"], b"report")
+
+    def test_issued_report_route_uses_handler(self) -> None:
+        with patch.object(service, "_view_issued_tickets", return_value=(service.HTTPStatus.OK, [], b"report")):
+            response = self.request("/reports/issued")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"], b"report")
 
     def test_protected_routes_redirect_to_authentication(self) -> None:
         response = self.request("/issue", authenticated=False)
