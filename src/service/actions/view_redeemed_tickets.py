@@ -60,6 +60,4 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
     return render(
         "report_redeemed_tickets.html",
         owners=sorted(owner_groups.values(), key=lambda group: group["owner"]),
-        today=today,
-        yesterday=yesterday,
     )
