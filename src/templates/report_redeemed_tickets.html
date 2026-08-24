@@ -8,15 +8,15 @@
       <h2>{{ owner.owner }}</h2>
       <ul>
         <li>
-	Today: {{ owner.today_count }}
+	Today:
         {% for ticket in owner.today_tickets %}
-          <li>{{ ticket.day }}: <span title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
+        <span title="{{ ticket.tooltip }}">{{ loop.index }}</span>
         {% endfor %}
 	</li>
         <li>
-	Yesterday: {{ owner.yesterday_count }}
+	Yesterday:
         {% for ticket in owner.yesterday_tickets %}
-          <li>{{ ticket.day }}: <span title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
+        <span title="{{ ticket.tooltip }}">{{ loop.index }}</span> 
         {% endfor %}
 	</li>
       </ul>
