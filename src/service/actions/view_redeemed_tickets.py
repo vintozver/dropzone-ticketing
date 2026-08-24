@@ -29,7 +29,7 @@ def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, da
 
 def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
     yesterday, today, tomorrow = _day_boundaries(now)
-    owner_groups = defaultdict(lambda: {"owner": "", "today_count": 0, "yesterday_count": 0, "tickets": []})
+    owner_groups = defaultdict(lambda: {"owner": "", "today_count": 0, "yesterday_count": 0, "yesterday_tickets": [], "today_tickets": []})
 
     tickets = sorted(
         ticket_class.objects(redeemed__dt__gte=yesterday, redeemed__dt__lt=tomorrow),
@@ -43,10 +43,8 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
         redeemed_dt = _as_utc(redeemed.dt)
         day = "today" if redeemed_dt >= today else "yesterday"
         group[f"{day}_count"] += 1
-        group["tickets"].append(
+        group[f"{day}_tickets"].append(
             {
-                "code": ticket.code,
-                "day": day,
                 "tooltip": "; ".join(
                     [
                         f"Reason: {redeemed.reason or 'unknown'}",

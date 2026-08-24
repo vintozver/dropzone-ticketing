@@ -7,13 +7,18 @@
     {% for owner in owners %}
       <h2>{{ owner.owner }}</h2>
       <ul>
-        <li>Redeemed today: {{ owner.today_count }}</li>
-        <li>Redeemed yesterday: {{ owner.yesterday_count }}</li>
-      </ul>
-      <ul>
-        {% for ticket in owner.tickets %}
-          <li>{{ ticket.day }}: <span alt="{{ ticket.code }}" title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
+        <li>
+	Today: {{ owner.today_count }}
+        {% for ticket in owner.today_tickets %}
+          <li>{{ ticket.day }}: <span title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
         {% endfor %}
+	</li>
+        <li>
+	Yesterday: {{ owner.yesterday_count }}
+        {% for ticket in owner.yesterday_tickets %}
+          <li>{{ ticket.day }}: <span title="{{ ticket.tooltip }}">{{ loop.index }}</span></li>
+        {% endfor %}
+	</li>
       </ul>
     {% endfor %}
   {% else %}
