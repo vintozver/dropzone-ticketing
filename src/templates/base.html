@@ -7,25 +7,21 @@
   <body>
     <nav>
       <a href="/">Home</a>
+      {% if not authenticated %}
+        <a href="/authn">Sign in</a>
+      {% endif %}
       <a href="/issue">Issue tickets</a>
       <a href="/redeem">Redeem tickets</a>
       <a href="/tickets">View tickets</a>
-    </nav>
-    <section>
       {% if authenticated %}
-        <p>
-          Authentication: signed in as <strong>{{ current_user_id }}</strong>.
-          <form method="post" action="/logout" style="display:inline">
-            <button type="submit">Logout</button>
-          </form>
-        </p>
-      {% else %}
-        <p>Authentication: not signed in. <a href="/authn">Login</a></p>
+        Signed in as <a href="/authn">{{ current_user_id }}</a>
       {% endif %}
-      {% if registration_mode %}
+    </nav>
+    {% if registration_mode %}
+      <section>
         <p>Registration-only mode is enabled.</p>
-      {% endif %}
-    </section>
+      </section>
+    {% endif %}
     <main>{% block content %}{% endblock %}</main>
   </body>
 </html>
