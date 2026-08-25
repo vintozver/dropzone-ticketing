@@ -964,6 +964,7 @@ class ServiceConfigTest(unittest.TestCase):
             secret = config.session_secret()
         self.assertNotEqual(secret, b"shhh")
         self.assertEqual(len(secret), 32)
+        self.assertEqual(config.session_secret(), secret)
 
     def test_missing_mongodb_uri_is_reported(self) -> None:
         self.patch_config({})
