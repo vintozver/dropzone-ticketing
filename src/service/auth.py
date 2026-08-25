@@ -15,6 +15,7 @@ from urllib.parse import quote
 from bson import ObjectId
 from bson.errors import InvalidId
 from fido2.server import Fido2Server
+from fido2 import cbor
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
@@ -229,6 +230,26 @@ def _credential_display_id(credential: Fido2Credential) -> str:
     return f"{hex_value[:8]}…{hex_value[-8:]}"
 
 
+def _attestation_display(credential: Fido2Credential) -> str | None:
+    attestation_object = getattr(credential, "attestation_object", None)
+    if not attestation_object:
+        return None
+
+    def json_value(value: object):
+        if isinstance(value, bytes):
+            return _b64encode(value)
+        if isinstance(value, dict):
+            return {str(key): json_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [json_value(item) for item in value]
+        return value
+
+    try:
+        return json.dumps(json_value(cbor.decode(bytes(attestation_object))), indent=2, sort_keys=True)
+    except (TypeError, ValueError):
+        return _b64encode(bytes(attestation_object))
+
+
 def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
@@ -266,6 +287,8 @@ def begin_authn(environ: dict):
             {
                 "id": _credential_display_id(credential),
                 "dt": credential.dt,
+                "attestation_object": _attestation_display(credential),
+                "encoded_id": _b64encode(credential.id),
             }
             for credential in user.fido2_credentials
         ]
@@ -283,7 +306,6 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "google_credentials", [])
         ],
         google_csrf=google_csrf,
-        current_user_id=str(user.id) if user is not None else "",
         current_display_name=user.display_name if user is not None else "",
     )
     payload = {"state": _state, "issued": time()}
@@ -360,13 +382,14 @@ def complete_authn_register(environ: dict):
     form = read_form(environ)
     try:
         server = _server(environ)
+        attestation_object = _b64decode(form.get("attestationObject", ""))
         auth_data = server.register_complete(
             state,
             response=RegistrationResponse(
                 id=form.get("id", ""),
                 response=AuthenticatorAttestationResponse(
                     client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=AttestationObject(_b64decode(form.get("attestationObject", ""))),
+                    attestation_object=AttestationObject(attestation_object),
                 ),
             ),
         )
@@ -378,6 +401,7 @@ def complete_authn_register(environ: dict):
             Fido2Credential(
                 id=credential_id,
                 data=credential_data,
+                attestation_object=attestation_object,
                 dt=datetime.now(timezone.utc),
             )
         )
@@ -404,6 +428,27 @@ def update_display_name(environ: dict):
     if len(display_name) > 200:
         return error(HTTPStatus.BAD_REQUEST, "Display name is too long.")
     user.display_name = display_name or None
+    user.save()
+    return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
+
+
+def remove_fido2_credential(environ: dict):
+    user = _session_user(environ)
+    if user is None:
+        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
+    form = read_form(environ)
+    token = form.get("csrf", "")
+    expected = _cookies(environ).get("google_csrf", "")
+    if not token or not expected or not secrets.compare_digest(token, expected):
+        return error(HTTPStatus.FORBIDDEN, "Invalid request.")
+    try:
+        credential_id = _b64decode(form.get("credential_id", ""))
+    except (ValueError, binascii.Error):
+        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
+    credentials = user.fido2_credentials
+    user.fido2_credentials = [credential for credential in credentials if credential.id != credential_id]
+    if len(user.fido2_credentials) == len(credentials):
+        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
     user.save()
     return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
 

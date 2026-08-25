@@ -125,13 +125,14 @@ def complete_register(environ: dict):
         return error(HTTPStatus.BAD_REQUEST, "User ID is invalid.")
     try:
         server = _server(environ)
+        attestation_object = _b64decode(form.get("attestationObject", ""))
         auth_data = server.register_complete(
             state,
             response=RegistrationResponse(
                 id=form.get("id", ""),
                 response=AuthenticatorAttestationResponse(
                     client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=AttestationObject(_b64decode(form.get("attestationObject", ""))),
+                    attestation_object=AttestationObject(attestation_object),
                 ),
             ),
         )
@@ -148,6 +149,7 @@ def complete_register(environ: dict):
             Fido2Credential(
                 id=credential_id,
                 data=credential_data,
+                attestation_object=attestation_object,
                 dt=datetime.now(timezone.utc),
             )
         )

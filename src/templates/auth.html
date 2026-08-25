@@ -5,7 +5,6 @@
 <section>
   <h2>Profile</h2>
   <form method="post" action="/authn/display-name">
-    <label>User ID <input type="text" value="{{ current_user_id }}" readonly></label>
     <label>Display name <input type="text" name="display_name" value="{{ current_display_name|default('') }}"></label>
     <button type="submit">Save</button>
   </form>
@@ -14,13 +13,27 @@
   <h2>My FIDO2 credentials</h2>
   {% if user_credentials %}
   <table>
-    <thead><tr><th>Credential ID</th><th>Registered at</th></tr></thead>
+    <thead><tr><th>Credential ID</th><th>Registered at</th><th></th></tr></thead>
     <tbody>
       {% for credential in user_credentials %}
         <tr>
           <td><code>{{ credential.id }}</code></td>
-          <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}</td>
+          <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}
+            {% if credential.attestation_object %}<a href="#" class="toggle-attestation">+</a>{% endif %}
+          </td>
+          <td>
+            <form method="post" action="/authn/fido2/remove">
+              <input type="hidden" name="credential_id" value="{{ credential.encoded_id }}">
+              <input type="hidden" name="csrf" value="{{ google_csrf }}">
+              <button type="submit">Remove</button>
+            </form>
+          </td>
         </tr>
+        {% if credential.attestation_object %}
+        <tr class="attestation-object" hidden>
+          <td colspan="3"><pre>{{ credential.attestation_object }}</pre></td>
+        </tr>
+        {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -88,6 +101,13 @@ const challenge = "{{ challenge }}";
 const rpId = "{{ rp_id }}";
 const allowCredentials = {{ allow_credentials | tojson }};
 const registrationOptions = {{ registration_options | tojson }};
+document.querySelectorAll(".toggle-attestation").forEach(link => {
+  link.addEventListener("click", event => {
+    event.preventDefault();
+    const details = link.closest("tr").nextElementSibling;
+    details.hidden = !details.hidden;
+  });
+});
 function decode(value) {
   const padded = value + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));

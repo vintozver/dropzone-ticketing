@@ -37,6 +37,11 @@ def dispatch(environ: dict, handlers):
             return auth.update_display_name(environ)
         return method_not_allowed(["POST"])
 
+    if path == "/authn/fido2/remove":
+        if method == "POST":
+            return auth.remove_fido2_credential(environ)
+        return method_not_allowed(["POST"])
+
     if path == "/authn/google":
         if method == "GET":
             return google.begin(environ)

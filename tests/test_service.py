@@ -814,6 +814,7 @@ class ServiceAuthnTest(unittest.TestCase):
         registration_response.assert_called_once()
         user_class.objects.assert_called_once_with(id=ObjectId(user_id))
         user_class.assert_called_once_with(id=ObjectId(user_id), display_name="Jane Sky")
+        self.assertEqual(user.fido2_credentials[0].attestation_object, b"attestation")
         user.save.assert_called_once_with()
 
     def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
@@ -899,7 +900,35 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
+        self.assertEqual(user.fido2_credentials[0].attestation_object, b"attestation")
         user.save.assert_called_once_with()
+
+    def test_authn_remove_fido2_credential_requires_csrf_and_persists(self) -> None:
+        auth = service._auth_module
+        credential = SimpleNamespace(id=b"credential")
+        user = MagicMock(fido2_credentials=[credential])
+        body = urlencode({"credential_id": b64(b"credential"), "csrf": "token"}).encode()
+        environ = {
+            "CONTENT_LENGTH": str(len(body)),
+            "wsgi.input": io.BytesIO(body),
+            "HTTP_COOKIE": "google_csrf=token",
+        }
+
+        with patch.object(auth, "_session_user", return_value=user):
+            status, headers, _body = auth.remove_fido2_credential(environ)
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "/authn")
+        self.assertEqual(user.fido2_credentials, [])
+        user.save.assert_called_once_with()
+
+    def test_authn_displays_decoded_attestation_object(self) -> None:
+        auth = service._auth_module
+        self.assertEqual(
+            auth._attestation_display(SimpleNamespace(attestation_object=b"\xa1cfoocbar")),
+            '{\n  "foo": "bar"\n}',
+        )
+        self.assertIsNone(auth._attestation_display(SimpleNamespace()))
 
     def test_display_name_update_persists_for_authenticated_user(self) -> None:
         auth = service._auth_module
