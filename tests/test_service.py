@@ -899,8 +899,10 @@ class ServiceGoogleTest(unittest.TestCase):
         user_class.objects.assert_called_once_with(google_credentials__email="jane@example.test")
         self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
         self.assertEqual(dict(headers)["Location"], "/authn")
-        cleared = next(value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value)
-        self.assertIn("SameSite=Lax", cleared)
+        cleared_state_cookie = next(
+            value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value
+        )
+        self.assertIn("SameSite=Lax", cleared_state_cookie)
         session_cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_session=" in value)
         self.assertIn("SameSite=Strict", session_cookie)
 
