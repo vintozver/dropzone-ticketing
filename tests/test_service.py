@@ -700,12 +700,13 @@ class ServiceAuthnTest(unittest.TestCase):
 
     def test_registration_begin_uses_server_options_and_persists_state(self) -> None:
         auth = register_module
+        user_id = "507f1f77bcf86cd799439011"
         state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
         options = {
             "publicKey": {
                 "challenge": b"server challenge",
                 "rp": {"name": "dropzone-ticketing", "id": "example.test"},
-                "user": {"id": b"user id", "name": "Jane", "displayName": "Jane"},
+                "user": {"id": b"user id", "name": user_id, "displayName": "Jane"},
                 "pubKeyCredParams": [{"type": "public-key", "alg": -7}],
             }
         }
@@ -715,7 +716,7 @@ class ServiceAuthnTest(unittest.TestCase):
         user_class.objects.return_value.only.return_value.first.return_value = None
         environ = {
             "PATH_INFO": "/register",
-            "QUERY_STRING": "username=Jane",
+            "QUERY_STRING": f"user_id={user_id}&display_name=Jane",
             "HTTP_HOST": "example.test",
             "wsgi.url_scheme": "https",
         }
@@ -726,23 +727,41 @@ class ServiceAuthnTest(unittest.TestCase):
             _status, headers, body = auth.begin_register(environ)
 
         registration_user, credentials = server.register_begin.call_args.args[:2]
-        self.assertEqual(registration_user.name, "Jane")
+        self.assertEqual(registration_user.name, user_id)
         self.assertEqual(registration_user.display_name, "Jane")
-        self.assertIsInstance(registration_user.id, bytes)
+        self.assertEqual(registration_user.id, ObjectId(user_id).binary)
         self.assertEqual(credentials, [])
         self.assertEqual(server.register_begin.call_args.kwargs["user_verification"], "discouraged")
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
         self.assertEqual(payload["state"], state)
-        self.assertEqual(payload["username"], "Jane")
+        self.assertEqual(payload["user_id"], user_id)
         self.assertIn(b64(b"server challenge").encode(), body)
         self.assertNotIn(b"crypto.getRandomValues", body)
 
+    def test_registration_begin_renders_generated_user_id_when_missing(self) -> None:
+        auth = register_module
+        environ = {
+            "PATH_INFO": "/register",
+            "QUERY_STRING": "",
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=True)):
+            _status, _headers, body = auth.begin_register(environ)
+
+        self.assertRegex(
+            body.decode(),
+            r'<input type="hidden" name="user_id" id="user_id" value="[0-9a-f]{24}">',
+        )
+
     def test_registration_complete_uses_state_from_cookie(self) -> None:
         auth = register_module
+        user_id = "507f1f77bcf86cd799439012"
         state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
         cookie = "authn_challenge=" + auth._signed(
-            {"state": state, "username": "Jane", "issued": auth.time()}
+            {"state": state, "user_id": user_id, "issued": auth.time()}
         )
         class CredentialData:
             credential_id = b"credential"
@@ -765,7 +784,7 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.input": io.BytesIO(
                 urlencode(
                     {
-                        "username": "Jane",
+                        "user_id": user_id,
                         "display_name": "Jane Sky",
                         "id": "credential",
                         "rawId": b64(b"credential"),
@@ -793,7 +812,8 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(server.register_complete.call_args.args[0], state)
         self.assertEqual(server.register_complete.call_args.kwargs["response"], "registration response")
         registration_response.assert_called_once()
-        user_class.assert_called_once_with(display_name="Jane Sky")
+        user_class.objects.assert_called_once_with(id=ObjectId(user_id))
+        user_class.assert_called_once_with(id=ObjectId(user_id), display_name="Jane Sky")
         user.save.assert_called_once_with()
 
     def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
