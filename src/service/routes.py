@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
@@ -29,6 +30,11 @@ def dispatch(environ: dict, handlers):
     if path == "/authn/register":
         if method == "POST":
             return auth.complete_authn_register(environ)
+        return method_not_allowed(["POST"])
+
+    if path == "/authn/display-name":
+        if method == "POST":
+            return auth.update_display_name(environ)
         return method_not_allowed(["POST"])
 
     if path == "/authn/google":
@@ -71,7 +77,7 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "GET":
             return render("issue.html")
-        return handlers._issue(handlers._read_form(environ), handlers._current_user_id(environ))
+        return handlers._issue(handlers._read_form(environ), handlers._current_user_ref(environ))
 
     if path == "/redeem":
         if method not in {"GET", "POST"}:
@@ -90,9 +96,22 @@ def dispatch(environ: dict, handlers):
         if auth_response is not None:
             return auth_response
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-        if "owner" not in query:
+        user_id = query.get("user_id", [None])[0]
+        display_name = query.get("display_name", [None])[0]
+        if user_id is None and display_name is None:
             return handlers._view_owners()
-        return handlers._view_owner_tickets(query["owner"][0])
+        return handlers._view_owner_tickets(user_id, display_name)
+
+    if path == "/users/search":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("q", [""])[0]
+        return HTTPStatus.OK, [("Content-Type", "application/json; charset=utf-8")], json.dumps(
+            handlers._search_users(query)
+        ).encode("utf-8")
 
     if path == "/reports/redeemed":
         if method != "GET":
@@ -117,7 +136,8 @@ def dispatch(environ: dict, handlers):
         if auth_response is not None:
             return auth_response
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-        owner = query["owner"][0] if "owner" in query else None
-        return handlers._print_tickets(query.get("id", []), owner)
+        user_id = query["user_id"][0] if "user_id" in query else None
+        display_name = query["display_name"][0] if "display_name" in query else None
+        return handlers._print_tickets(query.get("id", []), user_id, display_name)
 
     return render("error.html", HTTPStatus.NOT_FOUND, message="Page not found.")

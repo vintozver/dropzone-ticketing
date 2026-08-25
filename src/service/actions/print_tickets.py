@@ -9,8 +9,8 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 
-def safe_filename(owner: str) -> str:
-    component = re.sub(r"[^A-Za-z0-9._-]+", "-", owner).strip(".-_")
+def safe_filename(label: str) -> str:
+    component = re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip(".-_")
     return f"tickets-{component or 'owner'}.pdf"
 
 
@@ -18,15 +18,31 @@ def print_url(tickets) -> str:
     return "/print?" + urlencode([("id", str(ticket.id)) for ticket in tickets])
 
 
-def print_tickets(ticket_ids, owner: str | None = None, *, ticket_class, pdf_class, render):
+def print_tickets(ticket_ids, user_id: str | None = None, display_name: str | None = None, *, ticket_class, pdf_class, render):
     ticket_ids = list(ticket_ids)
-    if owner is not None:
+    user_id = (user_id or "").strip()
+    display_name = (display_name or "").strip()
+    if user_id or display_name:
         if ticket_ids:
-            return render("error.html", HTTPStatus.BAD_REQUEST, message="Supply either ticket identifiers or an owner, not both.")
-        owner = owner.strip()
-        if not owner:
-            return render("error.html", HTTPStatus.BAD_REQUEST, message="Owner is required.")
-        tickets = list(ticket_class.objects(owner=owner, redeemed=None))
+            return render(
+                "error.html",
+                HTTPStatus.BAD_REQUEST,
+                message="Supply either ticket identifiers or a user filter, not both.",
+            )
+        if bool(user_id) == bool(display_name):
+            return render(
+                "error.html",
+                HTTPStatus.BAD_REQUEST,
+                message="Exactly one of user_id or display_name is required.",
+            )
+        if user_id:
+            try:
+                object_id = ObjectId(user_id)
+            except (InvalidId, TypeError):
+                return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid user_id.")
+            tickets = list(ticket_class.objects(issued_to__id=object_id, redeemed=None))
+        else:
+            tickets = list(ticket_class.objects(issued_to__id=None, issued_to__display_name=display_name, redeemed=None))
     else:
         object_ids = []
         for ticket_id in ticket_ids:

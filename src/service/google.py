@@ -94,7 +94,7 @@ def begin(environ: dict):
     payload = {
         "state": state,
         "issued": time(),
-        "user": user.id if user else None,
+        "user": str(user.id) if user else None,
         "code_verifier": code_verifier,
     }
     redirect_uri = google_redirect_uri(environ)
@@ -155,7 +155,7 @@ def complete(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Google authentication failed.", traceback.format_exc())
 
     user = _session_user(environ)
-    if user is not None and state.get("user") == user.id:
+    if user is not None and state.get("user") == str(user.id):
         if any(credential.email.casefold() == email for credential in user.google_credentials):
             return error(HTTPStatus.CONFLICT, "Google credential is already registered.")
         user.google_credentials.append(GoogleCredential(email=email))
@@ -168,7 +168,7 @@ def complete(environ: dict):
         HTTPStatus.SEE_OTHER,
         [
             ("Location", "/authn"),
-            _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": user.id, "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
+            _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
             _cookie(GOOGLE_STATE_COOKIE, "", max_age=0, path="/authn/google", same_site=_GOOGLE_STATE_SAME_SITE),
         ],
         b"",

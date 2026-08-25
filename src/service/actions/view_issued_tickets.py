@@ -18,7 +18,8 @@ def view_issued_tickets(*, ticket_class, render):
         tickets.append(
             {
                 "issued": ticket.issued_utc(),
-                "owner": ticket.owner,
+                "issued_to": ticket.issued_to.display_name if ticket.issued_to else "unknown",
+                "issued_by": ticket.issued_by.display_name if ticket.issued_by else "unknown",
                 "purpose": ticket.purpose,
                 "payment": ticket.payment,
                 "redeemed_at": _format_datetime(redeemed.dt) if redeemed else "not redeemed",

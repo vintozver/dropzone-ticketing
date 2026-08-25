@@ -3,6 +3,14 @@
 {% block content %}
 {% if authenticated %}
 <section>
+  <h2>Profile</h2>
+  <form method="post" action="/authn/display-name">
+    <label>User ID <input type="text" value="{{ current_user_id }}" readonly></label>
+    <label>Display name <input type="text" name="display_name" value="{{ current_display_name|default('') }}"></label>
+    <button type="submit">Save</button>
+  </form>
+</section>
+<section>
   <h2>My FIDO2 credentials</h2>
   {% if user_credentials %}
   <table>

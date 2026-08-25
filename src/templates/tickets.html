@@ -3,11 +3,24 @@
 {% block content %}
   <h1>Owners with active tickets</h1>
   {% if error %}<p>{{ error }}</p>{% endif %}
-  {% if owners %}
+  <h2>Registered owners</h2>
+  {% if registered_owners %}
     <ul>
-      {% for owner in owners %}<li><a href="/tickets?owner={{ owner|urlencode }}">{{ owner }}</a></li>{% endfor %}
+      {% for owner in registered_owners %}
+        <li><a href="/tickets?user_id={{ owner.id|urlencode }}">{{ owner.display_name }}</a></li>
+      {% endfor %}
     </ul>
   {% else %}
-    <p>No active tickets found.</p>
+    <p>No registered owners with active tickets found.</p>
+  {% endif %}
+  <h2>Unregistered owners</h2>
+  {% if unregistered_owners %}
+    <ul>
+      {% for owner in unregistered_owners %}
+        <li><a href="/tickets?display_name={{ owner|urlencode }}">{{ owner }}</a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No unregistered owners with active tickets found.</p>
   {% endif %}
 {% endblock %}

@@ -8,6 +8,7 @@ import socket
 import bson
 
 import dropzone_ticketing
+from dropzone_ticketing.model.ticket import UserRef
 
 
 class SingleFileHandler(http.server.BaseHTTPRequestHandler):
@@ -16,9 +17,23 @@ class SingleFileHandler(http.server.BaseHTTPRequestHandler):
         pdf = dropzone_ticketing.PDF(pdf_io)
 
         dt = datetime.datetime.now(datetime.UTC)
-        t = dropzone_ticketing.Ticket(id=bson.ObjectId.from_datetime(dt), code='*CHEX#', owner='Big Boy')
+        t = dropzone_ticketing.Ticket(
+            id=bson.ObjectId.from_datetime(dt),
+            code='*CHEX#',
+            issued_to=UserRef(display_name='Big Boy'),
+            issued_by=UserRef(display_name='issuer'),
+            payment='cash',
+            purpose='jump',
+        )
         pdf.append(t)
-        t = dropzone_ticketing.Ticket(id=bson.ObjectId.from_datetime(dt), code='*XXXX#', owner='Big Boy')
+        t = dropzone_ticketing.Ticket(
+            id=bson.ObjectId.from_datetime(dt),
+            code='*XXXX#',
+            issued_to=UserRef(display_name='Big Boy'),
+            issued_by=UserRef(display_name='issuer'),
+            payment='cash',
+            purpose='jump',
+        )
         pdf.append(t)
 
         pdf.render()

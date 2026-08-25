@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8">
     <title>{% block title %}Dropzone ticketing{% endblock %}</title>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
   </head>
   <body>
     <nav>
@@ -17,7 +18,7 @@
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>
         {% if authenticated %}
-          Signed in as <a href="/authn">{{ current_user_id }}</a>
+          Signed in as <a href="/authn">{{ current_user_display_name or current_user_id }}</a>
         {% endif %}
       {% endif %}
     </nav>

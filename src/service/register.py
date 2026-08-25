@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import binascii
 import hmac
-import secrets
 import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
 from time import time
 from urllib.parse import parse_qs
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
@@ -36,16 +37,18 @@ from .config import authn_config
 from .http import error, read_form, render
 from dropzone_ticketing.model.auth import Fido2Credential, User
 
+_DEFAULT_REGISTER_DISPLAY_NAME = "User"
+
 
 def _registration_from_cookie(environ: dict) -> tuple[dict[str, object], str] | None:
     payload = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
     if not payload or time() - float(payload.get("issued", 0)) > _CHALLENGE_TTL_SECONDS:
         return None
     state = payload.get("state")
-    username = payload.get("username")
-    if not isinstance(state, dict) or not isinstance(username, str):
+    user_id = payload.get("user_id")
+    if not isinstance(state, dict) or not isinstance(user_id, str) or not user_id:
         return None
-    return state, username
+    return state, user_id
 
 
 def _json_options(options: object) -> object:
@@ -62,11 +65,18 @@ def _json_options(options: object) -> object:
 def begin_register(environ: dict):
     if not authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
-    username = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("username", [""])[0].strip()
+    query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+    raw_user_id = query.get("user_id", [""])[0].strip()
+    user_id = raw_user_id or str(ObjectId())
+    display_name = query.get("display_name", [""])[0].strip()
     registration_options = None
-    if username:
+    if raw_user_id:
+        try:
+            user_object_id = ObjectId(raw_user_id)
+        except (InvalidId, TypeError):
+            return error(HTTPStatus.BAD_REQUEST, "User id is invalid.")
         server = _server(environ)
-        existing_user = User.objects(id=username).only("fido2_credentials").first()
+        existing_user = User.objects(id=user_object_id).only("id", "fido2_credentials").first()
         credentials = (
             [_credential_data(credential) for credential in existing_user.fido2_credentials]
             if existing_user is not None
@@ -74,9 +84,9 @@ def begin_register(environ: dict):
         )
         options, state = server.register_begin(
             PublicKeyCredentialUserEntity(
-                id=secrets.token_bytes(16),
-                name=username,
-                display_name=username,
+                id=user_object_id.binary,
+                name=raw_user_id,
+                display_name=display_name or _DEFAULT_REGISTER_DISPLAY_NAME,
             ),
             credentials,
             user_verification="discouraged",
@@ -85,11 +95,12 @@ def begin_register(environ: dict):
     status, headers, body = render(
         "register.html",
         rp_id=_rp_id(environ),
-        username=username,
+        user_id=user_id,
+        display_name=display_name,
         registration_options=registration_options,
     )
     if registration_options is not None:
-        payload = {"state": state, "username": username, "issued": time()}
+        payload = {"state": state, "user_id": raw_user_id, "issued": time()}
         headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/register"))
     return status, headers, body
 
@@ -98,15 +109,20 @@ def complete_register(environ: dict):
     if not authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
     form = read_form(environ)
-    username = form.get("username", "").strip()
-    if not username:
-        return error(HTTPStatus.BAD_REQUEST, "Username is required.")
+    user_id = form.get("user_id", "").strip()
+    display_name = form.get("display_name", "").strip()
+    if not user_id:
+        return error(HTTPStatus.BAD_REQUEST, "User ID is required.")
     registration = _registration_from_cookie(environ)
     if registration is None:
         return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
-    state, state_username = registration
-    if not hmac.compare_digest(username, state_username):
-        return error(HTTPStatus.FORBIDDEN, "Registration username does not match the challenge.")
+    state, state_user_id = registration
+    if not hmac.compare_digest(user_id, state_user_id):
+        return error(HTTPStatus.FORBIDDEN, "Registration user ID does not match the challenge.")
+    try:
+        user_object_id = ObjectId(user_id)
+    except (InvalidId, TypeError):
+        return error(HTTPStatus.BAD_REQUEST, "User ID is invalid.")
     try:
         server = _server(environ)
         auth_data = server.register_complete(
@@ -123,9 +139,11 @@ def complete_register(environ: dict):
         credential_id = auth_data.credential_data.credential_id
         if _find_credential(_b64encode(credential_id)) is not None:
             return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user = User.objects(id=username).first()
+        user = User.objects(id=user_object_id).first()
         if user is None:
-            user = User(id=username)
+            user = User(id=user_object_id, display_name=display_name or None)
+        elif display_name:
+            user.display_name = display_name
         user.fido2_credentials.append(
             Fido2Credential(
                 id=credential_id,

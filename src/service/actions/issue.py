@@ -2,22 +2,71 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError
 from pymongo.errors import DuplicateKeyError
 
 from ..config import MAX_CODE_ATTEMPTS, MAX_TICKETS
 
 
-def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_url, issued_user: str | None = None):
-    owner = form.get("owner", "").strip()
+def issue(
+    form: dict[str, str],
+    *,
+    ticket_class,
+    user_class,
+    user_ref_class,
+    generate_code,
+    render,
+    print_url,
+    issued_by: dict[str, object] | None = None,
+):
+    to_id = form.get("to_id", "").strip()
+    to_display_name = form.get("to_display_name", "").strip()
     payment = form.get("payment", "").strip()
     purpose = form.get("purpose", "").strip()
-    if not owner:
-        return render("issue.html", HTTPStatus.BAD_REQUEST, error="Owner is required.", owner=owner, payment=payment, purpose=purpose)
+
+    if bool(to_id) == bool(to_display_name):
+        return render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Exactly one of to_id or to_display_name is required.",
+            to_id=to_id,
+            to_display_name=to_display_name,
+            payment=payment,
+            purpose=purpose,
+        )
     if not payment:
-        return render("issue.html", HTTPStatus.BAD_REQUEST, error="Payment is required.", owner=owner, payment=payment, purpose=purpose)
+        return render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Payment is required.",
+            to_id=to_id,
+            to_display_name=to_display_name,
+            payment=payment,
+            purpose=purpose,
+        )
     if not purpose:
-        return render("issue.html", HTTPStatus.BAD_REQUEST, error="Purpose is required.", owner=owner, payment=payment, purpose=purpose)
+        return render(
+            "issue.html",
+            HTTPStatus.BAD_REQUEST,
+            error="Purpose is required.",
+            to_id=to_id,
+            to_display_name=to_display_name,
+            payment=payment,
+            purpose=purpose,
+        )
+
+    if issued_by is None:
+        return render(
+            "issue.html",
+            HTTPStatus.FORBIDDEN,
+            error="Authentication required.",
+            to_id=to_id,
+            to_display_name=to_display_name,
+            payment=payment,
+            purpose=purpose,
+        )
 
     try:
         count = int(form.get("count", ""))
@@ -28,20 +77,45 @@ def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_ur
             "issue.html",
             HTTPStatus.BAD_REQUEST,
             error=f"Count must be between 1 and {MAX_TICKETS}.",
-            owner=owner,
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
+
+    if to_id:
+        try:
+            issued_to_user = user_class.objects(id=ObjectId(to_id)).only("id", "display_name").first()
+        except (InvalidId, TypeError):
+            issued_to_user = None
+        if issued_to_user is None:
+            return render(
+                "issue.html",
+                HTTPStatus.BAD_REQUEST,
+                error="Selected user does not exist.",
+                to_id=to_id,
+                to_display_name=to_display_name,
+                payment=payment,
+                purpose=purpose,
+            )
+        issued_to = user_ref_class(id=issued_to_user.id, display_name=issued_to_user.display_name or str(issued_to_user.id))
+    else:
+        issued_to = user_ref_class(display_name=to_display_name)
+
+    issued_by_ref = user_ref_class(
+        id=issued_by.get("id"),
+        display_name=str(issued_by.get("display_name", "")).strip() or None,
+    )
 
     tickets = []
     for _ in range(count):
         for _attempt in range(MAX_CODE_ATTEMPTS):
             ticket = ticket_class(
                 code=generate_code(),
-                owner=owner,
+                issued_to=issued_to,
                 payment=payment,
                 purpose=purpose,
-                issued_user=issued_user,
+                issued_by=issued_by_ref,
             )
             try:
                 ticket.save()
@@ -52,4 +126,11 @@ def issue(form: dict[str, str], *, ticket_class, generate_code, render, print_ur
         else:
             raise RuntimeError("Could not generate a unique ticket code.")
 
-    return render("issued.html", owner=owner, count=len(tickets), payment=payment, purpose=purpose, print_url=print_url(tickets))
+    return render(
+        "issued.html",
+        issued_to_display_name=issued_to.display_name,
+        count=len(tickets),
+        payment=payment,
+        purpose=purpose,
+        print_url=print_url(tickets),
+    )

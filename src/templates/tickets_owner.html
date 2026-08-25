@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Active tickets of {{ owner }}{% endblock %}
+{% block title %}Active tickets of {{ owner_label }}{% endblock %}
 {% block content %}
-  <h1>Active tickets of {{ owner }}</h1>
+  <h1>Active tickets of {{ owner_label }}</h1>
   {% if tickets %}
     <table>
       <thead><tr><th>Issued</th><th>Issued by</th><th>Purpose</th><th>Payment</th></tr></thead>
@@ -9,7 +9,7 @@
         {% for ticket in tickets %}
           <tr>
             <td><a href="/print?id={{ ticket.id|urlencode }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
-            <td>{{ ticket.issued_user or "unknown" }}</td>
+            <td>{{ ticket.issued_by or "unknown" }}</td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
           </tr>
@@ -17,7 +17,11 @@
       </tbody>
     </table>
     <p>Follow an issue timestamp to print that ticket as PDF.</p>
-    <p><a href="/print?owner={{ owner|urlencode }}">Print all active tickets of this owner as PDF</a></p>
+    <p>
+      <a href="/print?{% if user_id %}user_id={{ user_id|urlencode }}{% else %}display_name={{ display_name|urlencode }}{% endif %}">
+        Print all active tickets of this owner as PDF
+      </a>
+    </p>
   {% else %}
     <p>No active tickets found for this owner.</p>
   {% endif %}
