@@ -37,6 +37,8 @@ from .config import authn_config
 from .http import error, read_form, render
 from dropzone_ticketing.model.auth import Fido2Credential, User
 
+_DEFAULT_REGISTER_DISPLAY_NAME = "User"
+
 
 def _registration_from_cookie(environ: dict) -> tuple[dict[str, object], str] | None:
     payload = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
@@ -84,7 +86,7 @@ def begin_register(environ: dict):
             PublicKeyCredentialUserEntity(
                 id=user_object_id.binary,
                 name=raw_user_id,
-                display_name=display_name or "User",
+                display_name=display_name or _DEFAULT_REGISTER_DISPLAY_NAME,
             ),
             credentials,
             user_verification="discouraged",
