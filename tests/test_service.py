@@ -9,10 +9,12 @@ from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
 from bson import ObjectId
+from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption
+from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import register as register_module
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
 from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
@@ -811,6 +813,113 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
         user.save.assert_called_once_with()
+
+
+class ServiceGoogleTest(unittest.TestCase):
+    def setUp(self) -> None:
+        google_module._endpoints.cache_clear()
+        self.addCleanup(google_module._endpoints.cache_clear)
+
+    def environ(self, query: str = "", cookie: str = "") -> dict:
+        return {
+            "PATH_INFO": "/authn/google",
+            "QUERY_STRING": query,
+            "REQUEST_METHOD": "GET",
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(b""),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+
+    def test_endpoints_are_read_from_the_discovery_document(self) -> None:
+        response = MagicMock()
+        response.json.return_value = {
+            "authorization_endpoint": "https://accounts.test/auth",
+            "token_endpoint": "https://tokens.test/token",
+        }
+        with patch.object(google_module.requests, "get", return_value=response) as get:
+            self.assertEqual(
+                google_module._endpoints(),
+                ("https://accounts.test/auth", "https://tokens.test/token"),
+            )
+            self.assertEqual(google_module._endpoints(), ("https://accounts.test/auth", "https://tokens.test/token"))
+        get.assert_called_once_with(google_module._GOOGLE_DISCOVERY_URI, timeout=10)
+
+    def test_oauth_flow_requests_only_the_email_scope(self) -> None:
+        with patch.object(
+            google_module, "_endpoints", return_value=("https://accounts.test/auth", "https://tokens.test/token")
+        ), patch.object(google_module, "google_client_id", return_value="client"), patch.object(
+            google_module, "google_client_secret", return_value="secret"
+        ), patch.object(google_module.Flow, "from_client_config") as from_client_config:
+            google_module._oauth_flow("https://example.test/authn/google/callback")
+
+        config, = from_client_config.call_args.args
+        self.assertEqual(config["web"]["client_id"], "client")
+        self.assertEqual(config["web"]["auth_uri"], "https://accounts.test/auth")
+        self.assertEqual(config["web"]["token_uri"], "https://tokens.test/token")
+        self.assertEqual(from_client_config.call_args.kwargs["scopes"], ["email"])
+        self.assertEqual(
+            from_client_config.call_args.kwargs["redirect_uri"], "https://example.test/authn/google/callback"
+        )
+
+    def test_begin_redirects_to_the_authorization_url(self) -> None:
+        flow = MagicMock()
+        flow.authorization_url.return_value = ("https://accounts.test/auth?state=abc", "abc")
+        with patch.object(google_module, "_configured", return_value=True), patch.object(
+            google_module, "_session_user", return_value=None
+        ), patch.object(google_module, "_oauth_flow", return_value=flow):
+            status, headers, _body = google_module.begin(self.environ())
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "https://accounts.test/auth?state=abc")
+        self.assertTrue(any(name == "Set-Cookie" and "google_oauth_state=" in value for name, value in headers))
+
+    def test_complete_logs_in_an_existing_user_using_the_userinfo_profile(self) -> None:
+        flow = MagicMock()
+        service_client = MagicMock()
+        service_client.userinfo.return_value.get.return_value.execute.return_value = {
+            "email": "Jane@Example.test",
+            "verified_email": True,
+        }
+        user = MagicMock(id="Jane")
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ), patch.object(google_module, "build", return_value=service_client) as build, patch.object(
+            google_module, "_session_user", return_value=None
+        ), patch.object(google_module, "User") as user_class:
+            user_class.objects.return_value.first.return_value = user
+            status, headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        flow.fetch_token.assert_called_once_with(code="auth-code")
+        build.assert_called_once_with("oauth2", "v2", credentials=flow.credentials)
+        user_class.objects.assert_called_once_with(google_credentials__email="jane@example.test")
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "/authn")
+
+    def test_complete_rejects_an_unverified_email(self) -> None:
+        flow = MagicMock()
+        service_client = MagicMock()
+        service_client.userinfo.return_value.get.return_value.execute.return_value = {
+            "email": "jane@example.test",
+            "verified_email": False,
+        }
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ), patch.object(google_module, "build", return_value=service_client):
+            status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+
+    def test_complete_reports_a_failed_token_exchange(self) -> None:
+        flow = MagicMock()
+        flow.fetch_token.side_effect = GoogleAuthError("boom")
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ):
+            status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ def session_secret() -> bytes:
 
 
 def google_client_id() -> str:
-    return str(_google_setting("credential_id", ""))
+    return str(_google_setting("client_id", ""))
 
 
 def google_client_secret() -> str:

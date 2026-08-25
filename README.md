@@ -11,7 +11,7 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
 google:
-  credential_id: your-client-id
+  client_id: your-client-id
   secret: your-client-secret
   redirect_uri: https://example.test/authn/google/callback
 ```
