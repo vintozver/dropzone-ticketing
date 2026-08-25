@@ -19,7 +19,7 @@
         <tr>
           <td><code>{{ credential.id }}</code></td>
           <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}
-            {% if credential.aaguid or credential.public_key or credential.extensions %}<a href="#" class="toggle-attestation">+</a>{% endif %}
+            {% if credential.aaguid or credential.extensions %}<a href="#" class="toggle-attestation">+</a>{% endif %}
           </td>
           <td>
             <form method="post" action="/authn/fido2/remove">
@@ -29,12 +29,11 @@
             </form>
           </td>
         </tr>
-        {% if credential.aaguid or credential.public_key or credential.extensions %}
+        {% if credential.aaguid or credential.extensions %}
         <tr class="attestation-details" hidden>
           <td colspan="3">
             <dl>
               <dt>AAGUID</dt><dd><code>{{ credential.aaguid or '—' }}</code></dd>
-              {% if credential.public_key %}<dt>Public key</dt><dd><pre>{{ credential.public_key }}</pre></dd>{% endif %}
               {% if credential.extensions %}<dt>Extensions</dt><dd><pre>{{ credential.extensions }}</pre></dd>{% endif %}
             </dl>
           </td>

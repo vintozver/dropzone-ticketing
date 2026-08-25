@@ -10,7 +10,6 @@ from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
 from bson import ObjectId
-from fido2 import cbor
 from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
@@ -821,7 +820,6 @@ class ServiceAuthnTest(unittest.TestCase):
         user_class.assert_called_once_with(id=ObjectId(user_id), display_name="Jane Sky")
         credential = user.fido2_credentials[0]
         self.assertEqual(credential.attestation_aaguid, b"\x01" * 16)
-        self.assertEqual(cbor.decode(bytes(credential.attestation_publickey)), {1: 2, 3: -7})
         self.assertEqual(credential.extensions, {"credProps": {"rk": True}})
         user.save.assert_called_once_with()
 
@@ -840,7 +838,6 @@ class ServiceAuthnTest(unittest.TestCase):
                     id=b"abcdefgh",
                     dt=datetime(2026, 8, 22, tzinfo=timezone.utc),
                     attestation_aaguid=bytes(range(16)),
-                    attestation_publickey=cbor.encode({1: 2, 3: -7}),
                     extensions={"credProps": {"rk": True}},
                 )
             ],
@@ -863,7 +860,6 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIn(b"65666768", body)
         self.assertIn(b">Add another</button>", body)
         self.assertIn(b"00010203-0405-0607-0809-0a0b0c0d0e0f", body)
-        self.assertIn(b"kty: EC2 (2)", body)
         self.assertIn(b"&#34;rk&#34;: true", body)
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
@@ -925,7 +921,6 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
         credential = user.fido2_credentials[0]
         self.assertEqual(credential.attestation_aaguid, b"\x01" * 16)
-        self.assertEqual(cbor.decode(bytes(credential.attestation_publickey)), {1: 2, 3: -7})
         self.assertEqual(credential.extensions, {"credProps": {"rk": True}})
         user.save.assert_called_once_with()
 
@@ -958,19 +953,6 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIsNone(auth._aaguid_display(SimpleNamespace()))
         self.assertIsNone(auth._aaguid_display(SimpleNamespace(attestation_aaguid=b"")))
 
-    def test_authn_displays_public_key_as_readable_pairs(self) -> None:
-        auth = service._auth_module
-        public_key = cbor.encode({1: 2, 3: -7, -1: 1, -2: b"\x01\x02", -3: b"\x03\x04"})
-        self.assertEqual(
-            auth._public_key_display(SimpleNamespace(attestation_publickey=public_key)),
-            "kty: EC2 (2)\nalg: ES256 (-7)\ncrv: P-256 (1)\nx: 0102\ny: 0304",
-        )
-        self.assertEqual(
-            auth._public_key_display(SimpleNamespace(attestation_publickey=b"not cbor")),
-            auth._b64encode(b"not cbor"),
-        )
-        self.assertIsNone(auth._public_key_display(SimpleNamespace()))
-
     def test_authn_displays_extensions_as_json(self) -> None:
         auth = service._auth_module
         self.assertEqual(
@@ -992,7 +974,6 @@ class ServiceAuthnTest(unittest.TestCase):
             ),
             {
                 "attestation_aaguid": b"\x01" * 16,
-                "attestation_publickey": cbor.encode({1: 2}),
                 "extensions": {"credProps": {"rk": False}},
             },
         )
