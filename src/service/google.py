@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import string
 import traceback
 from functools import lru_cache
 from http import HTTPStatus
@@ -35,6 +36,8 @@ _GOOGLE_STATE_TTL_SECONDS = 300
 _GOOGLE_STATE_SAME_SITE = "Lax"
 _GOOGLE_DISCOVERY_URI = "https://accounts.google.com/.well-known/openid-configuration"
 _GOOGLE_SCOPES = ["email"]
+_CODE_VERIFIER_LENGTH = 128
+_CODE_VERIFIER_ALPHABET = string.ascii_letters + string.digits
 
 # Google grants the canonical "https://www.googleapis.com/auth/userinfo.email" scope for the
 # requested "email" scope, which oauthlib rejects as a scope change unless relaxed.
@@ -43,6 +46,10 @@ os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 def _configured() -> bool:
     return bool(google_client_id() and google_client_secret())
+
+
+def _generate_code_verifier() -> str:
+    return "".join(secrets.choice(_CODE_VERIFIER_ALPHABET) for _ in range(_CODE_VERIFIER_LENGTH))
 
 
 @lru_cache(maxsize=1)
@@ -59,9 +66,9 @@ def _endpoints() -> tuple[str, str]:
     return auth_uri, token_uri
 
 
-def _oauth_flow(redirect_uri: str) -> Flow:
+def _oauth_flow(redirect_uri: str, code_verifier: str) -> Flow:
     auth_uri, token_uri = _endpoints()
-    return Flow.from_client_config(
+    flow = Flow.from_client_config(
         {
             "web": {
                 "client_id": google_client_id(),
@@ -74,17 +81,25 @@ def _oauth_flow(redirect_uri: str) -> Flow:
         scopes=_GOOGLE_SCOPES,
         redirect_uri=redirect_uri,
     )
+    flow.code_verifier = code_verifier
+    return flow
 
 
 def begin(environ: dict):
     if not _configured():
         return error(HTTPStatus.NOT_IMPLEMENTED, "Google authentication is not configured.")
     state = secrets.token_urlsafe(32)
+    code_verifier = _generate_code_verifier()
     user = _session_user(environ)
-    payload = {"state": state, "issued": time(), "user": user.id if user else None}
+    payload = {
+        "state": state,
+        "issued": time(),
+        "user": user.id if user else None,
+        "code_verifier": code_verifier,
+    }
     redirect_uri = google_redirect_uri(environ)
     try:
-        query, _ = _oauth_flow(redirect_uri).authorization_url(state=state, prompt="select_account")
+        query, _ = _oauth_flow(redirect_uri, code_verifier).authorization_url(state=state, prompt="select_account")
     except (GoogleAuthError, GoogleApiError, KeyError, ValueError, requests.RequestException):
         return error(HTTPStatus.FORBIDDEN, "Google authentication failed.", traceback.format_exc())
     return (
@@ -124,9 +139,12 @@ def complete(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Google authentication state is missing or invalid.")
     if query.get("error") or not query.get("code"):
         return error(HTTPStatus.FORBIDDEN, "Google authentication was cancelled or failed.")
+    code_verifier = state.get("code_verifier")
+    if not isinstance(code_verifier, str) or not code_verifier:
+        return error(HTTPStatus.FORBIDDEN, "Google authentication state is missing or invalid.")
     try:
         redirect_uri = google_redirect_uri(environ)
-        flow = _oauth_flow(redirect_uri)
+        flow = _oauth_flow(redirect_uri, code_verifier)
         flow.fetch_token(code=query["code"])
         oauth2_service = build("oauth2", "v2", credentials=flow.credentials)
         profile = oauth2_service.userinfo().get().execute()
