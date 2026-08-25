@@ -33,5 +33,22 @@ def session_secret() -> bytes:
     return _session_secret
 
 
+def google_client_id() -> str:
+    return os.environ.get("GOOGLE_CLIENT_ID", "")
+
+
+def google_client_secret() -> str:
+    return os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+
+def google_redirect_uri(environ: dict) -> str:
+    configured = os.environ.get("GOOGLE_REDIRECT_URI")
+    if configured:
+        return configured
+    scheme = environ.get("wsgi.url_scheme") or "http"
+    host = environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+    return f"{scheme}://{host}/authn/google/callback"
+
+
 def mongodb_uri() -> str:
     return os.environ["MONGODB_URI"]

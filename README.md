@@ -12,6 +12,10 @@ initial setup.
 
 ```console
 export MONGODB_URI=mongodb://localhost:27017/dropzone_ticketing
+# For Google authentication, configure an OAuth web client:
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
+export GOOGLE_REDIRECT_URI=https://example.test/authn/google/callback
 # Only during credential registration:
 export REGISTRATION_MODE=1
 ```

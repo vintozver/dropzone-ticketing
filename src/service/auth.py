@@ -138,10 +138,9 @@ def _is_authenticated(environ: dict) -> bool:
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
     return (
-        isinstance(serial, str)
-        and _credential_owner(serial) is not None
-        and time() - issued <= _COOKIE_MAX_AGE_SECONDS
-    )
+        (isinstance(serial, str) and _credential_owner(serial) is not None)
+        or (isinstance(payload.get("user_id"), str) and User.objects(id=payload["user_id"]).first() is not None)
+    ) and time() - issued <= _COOKIE_MAX_AGE_SECONDS
 
 
 def _credential_owner(encoded_id: str) -> User | None:
@@ -175,6 +174,9 @@ def _session_user(environ: dict) -> User | None:
     issued = float(payload.get("issued", 0))
     if not isinstance(serial, str) or time() - issued > _COOKIE_MAX_AGE_SECONDS:
         return None
+    user_id = payload.get("user_id")
+    if isinstance(user_id, str):
+        return User.objects(id=user_id).first()
     return _credential_owner(serial)
 
 
@@ -239,6 +241,10 @@ def begin_authn(environ: dict):
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         user_credentials=user_credentials,
+        google_credentials=[
+            {"email": credential.email}
+            for credential in getattr(_session_user(environ), "google_credentials", [])
+        ],
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
