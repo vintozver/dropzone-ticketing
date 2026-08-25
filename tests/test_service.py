@@ -552,11 +552,12 @@ class ServiceApplicationTest(unittest.TestCase):
 
     def test_registration_mode_navigation_only_links_registration(self) -> None:
         with patch.object(config, "registration_mode", return_value=True):
-            response = self.request("/", authenticated=False)
+            responses = [self.request(path, authenticated=False) for path in ("/", "/register")]
 
-        self.assertIn(b'href="/register"', response["body"])
-        for link in (b'href="/"', b'href="/authn"', b'href="/issue"', b'href="/redeem"', b'href="/tickets"'):
-            self.assertNotIn(link, response["body"])
+        for response in responses:
+            self.assertIn(b'href="/register"', response["body"])
+            for link in (b'href="/"', b'href="/authn"', b'href="/issue"', b'href="/redeem"', b'href="/tickets"'):
+                self.assertNotIn(link, response["body"])
 
 
 class ServiceAuthnTest(unittest.TestCase):
