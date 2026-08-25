@@ -24,6 +24,7 @@ To register credentials, set `REGISTRATION_MODE` while starting the service, the
 disables authentication and should only be enabled during initial setup.
 
 ```console
+# Only during credential registration:
 export REGISTRATION_MODE=1
 ```
 
