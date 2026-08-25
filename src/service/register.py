@@ -110,17 +110,17 @@ def complete_register(environ: dict):
     user_id = form.get("user_id", "").strip()
     display_name = form.get("display_name", "").strip()
     if not user_id:
-        return error(HTTPStatus.BAD_REQUEST, "User id is required.")
+        return error(HTTPStatus.BAD_REQUEST, "User ID is required.")
     registration = _registration_from_cookie(environ)
     if registration is None:
         return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
     state, state_user_id = registration
     if not hmac.compare_digest(user_id, state_user_id):
-        return error(HTTPStatus.FORBIDDEN, "Registration user id does not match the challenge.")
+        return error(HTTPStatus.FORBIDDEN, "Registration user ID does not match the challenge.")
     try:
         user_object_id = ObjectId(user_id)
     except (InvalidId, TypeError):
-        return error(HTTPStatus.BAD_REQUEST, "User id is invalid.")
+        return error(HTTPStatus.BAD_REQUEST, "User ID is invalid.")
     try:
         server = _server(environ)
         auth_data = server.register_complete(
