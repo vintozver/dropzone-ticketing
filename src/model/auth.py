@@ -12,6 +12,7 @@ class Fido2Credential(mongoengine.EmbeddedDocument):
 
     id = mongoengine.BinaryField(required=True, primary_key=True, db_field="_id")
     data = mongoengine.BinaryField(required=True)
+    attestation_object = mongoengine.BinaryField(required=False)
     dt = mongoengine.DateTimeField(required=True, default=lambda: datetime.now(timezone.utc))
 
 

@@ -82,6 +82,8 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertEqual(fields["id"].db_field, "_id")
         self.assertIsInstance(fields["data"], mongoengine.BinaryField)
         self.assertTrue(fields["data"].required)
+        self.assertIsInstance(fields["attestation_object"], mongoengine.BinaryField)
+        self.assertFalse(fields["attestation_object"].required)
         self.assertIsInstance(fields["dt"], mongoengine.DateTimeField)
         self.assertTrue(fields["dt"].required)
 

@@ -9,7 +9,7 @@
     </label>
     <input id="user-id" name="to_id" type="hidden" value="{{ to_id|default('') }}">
     <input id="user-display-name" name="to_display_name" type="hidden" value="{{ to_display_name|default('') }}">
-    <button id="clear-selected-user" type="button" {% if not to_id %}style="display:none"{% endif %}>Clear selected user</button>
+    <span id="clear-selected-user" title="Clear selected user" {% if not to_id %}style="display:none"{% endif %}><a href="#">x</a></span>
     <ul id="owner-suggestions"></ul>
     <label>Count <input name="count" type="number" min="1" max="1000" required></label>
     <label>Payment <input name="payment" type="text" required value="{{ payment|default('') }}"></label>
@@ -27,7 +27,7 @@
       const $suggestions = $("#owner-suggestions");
 
       function lockSelection(value) {
-        $ownerInput.val(value).prop("readonly", true);
+        $ownerInput.val(value).prop("disabled", true);
         $userDisplayName.val("");
         $clearButton.show();
         $suggestions.empty();
@@ -35,7 +35,7 @@
 
       function unlockSelection() {
         $userId.val("");
-        $ownerInput.prop("readonly", false).focus();
+        $ownerInput.prop("disabled", false).focus();
         $clearButton.hide();
       }
 
@@ -50,7 +50,8 @@
         lockSelection($ownerInput.val());
       }
 
-      $clearButton.on("click", function() {
+      $clearButton.on("click", "a", function(event) {
+        event.preventDefault();
         unlockSelection();
         $ownerInput.val("");
         $userDisplayName.val("");
@@ -68,12 +69,13 @@
           $suggestions.empty();
           users.slice(0, 10).forEach(function(user) {
             const $item = $("<li>");
-            const $button = $("<button>", { type: "button", text: user.display_name });
-            $button.on("click", function() {
+            const $link = $("<a>", { href: "#", text: user.display_name });
+            $link.on("click", function(event) {
+              event.preventDefault();
               $userId.val(user.id);
               lockSelection(user.display_name);
             });
-            $item.append($button);
+            $item.append($link);
             $suggestions.append($item);
           });
         });
