@@ -943,9 +943,23 @@ class ServiceGoogleTest(unittest.TestCase):
         with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
             google_module, "_oauth_flow", return_value=flow
         ):
-            status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+            status, _headers, body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
 
         self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+        self.assertIn(b"GoogleAuthError", body)
+        self.assertIn(b"boom", body)
+        self.assertIn(b"Traceback (most recent call last)", body)
+
+    def test_begin_reports_a_failed_authorization_url(self) -> None:
+        with patch.object(google_module, "_configured", return_value=True), patch.object(
+            google_module, "_session_user", return_value=None
+        ), patch.object(google_module, "_oauth_flow", side_effect=GoogleAuthError("boom")):
+            status, _headers, body = google_module.begin(self.environ())
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+        self.assertIn(b"GoogleAuthError", body)
+        self.assertIn(b"boom", body)
+        self.assertIn(b"Traceback (most recent call last)", body)
 
 
 class ServiceConfigTest(unittest.TestCase):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import traceback
 from functools import lru_cache
 from http import HTTPStatus
 from time import time
@@ -85,7 +86,7 @@ def begin(environ: dict):
     try:
         query, _ = _oauth_flow(redirect_uri).authorization_url(state=state, prompt="select_account")
     except (GoogleAuthError, GoogleApiError, KeyError, ValueError, requests.RequestException):
-        return error(HTTPStatus.FORBIDDEN, "Google authentication failed.")
+        return error(HTTPStatus.FORBIDDEN, "Google authentication failed.", traceback.format_exc())
     return (
         HTTPStatus.SEE_OTHER,
         [
@@ -133,7 +134,7 @@ def complete(environ: dict):
             raise ValueError("Google profile response is invalid.")
         email = _google_email(profile)
     except (GoogleAuthError, GoogleApiError, OAuth2Error, KeyError, ValueError, requests.RequestException):
-        return error(HTTPStatus.FORBIDDEN, "Google authentication failed.")
+        return error(HTTPStatus.FORBIDDEN, "Google authentication failed.", traceback.format_exc())
 
     user = _session_user(environ)
     if user is not None and state.get("user") == user.id:
