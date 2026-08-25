@@ -925,36 +925,36 @@ class ServiceGoogleTest(unittest.TestCase):
 
 
 class ServiceConfigTest(unittest.TestCase):
-    def config(self, values: dict) -> None:
+    def patch_config(self, values: dict) -> None:
         patcher = patch.object(config, "_file_config", return_value=values)
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_yaml_keys_are_lower_case_versions_of_the_environment_names(self) -> None:
-        self.config({"mongodb_uri": "mongodb://yaml.example/test", "registration_mode": True})
+        self.patch_config({"mongodb_uri": "mongodb://yaml.example/test", "registration_mode": True})
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
             self.assertTrue(config.registration_mode())
 
     def test_environment_overrides_the_yaml_file(self) -> None:
-        self.config({"mongodb_uri": "mongodb://yaml.example/test"})
+        self.patch_config({"mongodb_uri": "mongodb://yaml.example/test"})
         with patch.dict(os.environ, {"MONGODB_URI": "mongodb://env.example/test"}, clear=True):
             self.assertEqual(config.mongodb_uri(), "mongodb://env.example/test")
 
     def test_missing_mongodb_uri_is_reported(self) -> None:
-        self.config({})
+        self.patch_config({})
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(KeyError):
                 config.mongodb_uri()
 
     def test_google_settings_are_read_from_the_google_section(self) -> None:
-        self.config({"google": {"client_id": "client", "secret": "shhh"}})
+        self.patch_config({"google": {"client_id": "client", "secret": "shhh"}})
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.google_client_id(), "client")
             self.assertEqual(config.google_client_secret(), "shhh")
 
     def test_a_non_mapping_google_section_is_ignored(self) -> None:
-        self.config({"google": "nonsense"})
+        self.patch_config({"google": "nonsense"})
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.google_client_id(), "")
             self.assertEqual(
