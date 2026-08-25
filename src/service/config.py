@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -16,8 +17,8 @@ CODE_ALPHABET = "".join(chr(code_point) for code_point in range(33, 127))
 _session_secret = secrets.token_bytes(32)
 
 
-def _file_config() -> dict[str, object]:
-    filename = os.environ.get("CONFIG_FILE", "config.yaml")
+@lru_cache(maxsize=8)
+def _file_config(filename: str) -> dict[str, object]:
     path = Path(filename)
     if not path.is_file():
         return {}
@@ -31,7 +32,7 @@ def _file_config() -> dict[str, object]:
 def _setting(name: str, default=None):
     if name in os.environ:
         return os.environ[name]
-    return _file_config().get(name, default)
+    return _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get(name, default)
 
 
 @dataclass(frozen=True)
@@ -68,9 +69,7 @@ def google_redirect_uri(environ: dict) -> str:
     configured = _setting("GOOGLE_REDIRECT_URI")
     if configured:
         return configured
-    scheme = environ.get("wsgi.url_scheme") or "http"
-    host = environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
-    return f"{scheme}://{host}/authn/google/callback"
+    raise ValueError("GOOGLE_REDIRECT_URI must be configured for Google authentication.")
 
 
 def mongodb_uri() -> str:
