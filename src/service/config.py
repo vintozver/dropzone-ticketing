@@ -29,12 +29,17 @@ def _file_config(filename: str) -> dict[str, object]:
     return values
 
 
+def _config() -> dict[str, object]:
+    return _file_config(os.environ.get("CONFIG_FILE", "config.yaml"))
+
+
+def _section(name: str) -> dict[str, object]:
+    values = _config().get(name)
+    return values if isinstance(values, dict) else {}
+
+
 def _setting(name: str, default=None):
-    if name in os.environ:
-        return os.environ[name]
-    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml"))
-    file_name = {"MONGODB_URI": "mongodb_uri"}.get(name, name)
-    return values.get(file_name, default)
+    return _config().get(name, default)
 
 
 @dataclass(frozen=True)
@@ -43,9 +48,7 @@ class AuthnConfig:
 
 
 def registration_mode() -> bool:
-    if "REGISTRATION_MODE" in os.environ:
-        return True
-    return bool(_setting("REGISTRATION_MODE", False))
+    return bool(_setting("registration_mode", False))
 
 
 def authn_config() -> AuthnConfig:
@@ -53,14 +56,11 @@ def authn_config() -> AuthnConfig:
 
 
 def session_secret() -> bytes:
-    configured = _setting("AUTHN_SESSION_SECRET")
-    if configured:
-        return configured.encode("utf-8")
     return _session_secret
 
 
 def google_client_id() -> str:
-    return str(_google_setting("credential_id", ""))
+    return str(_google_setting("client_id", ""))
 
 
 def google_client_secret() -> str:
@@ -77,14 +77,11 @@ def google_redirect_uri(environ: dict) -> str:
 
 
 def _google_setting(name: str, default=None):
-    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("google", {})
-    if isinstance(values, dict):
-        return values.get(name, default)
-    return default
+    return _section("google").get(name, default)
 
 
 def mongodb_uri() -> str:
-    configured = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("mongodb_uri")
+    configured = _setting("mongodb_uri")
     if not configured:
         raise KeyError("mongodb_uri")
     return str(configured)

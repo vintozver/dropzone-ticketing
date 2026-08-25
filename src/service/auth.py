@@ -72,10 +72,17 @@ def _cookies(environ: dict) -> dict[str, str]:
     return cookies
 
 
-def _cookie(name: str, value: str, *, max_age: int = _COOKIE_MAX_AGE_SECONDS, path: str = "/") -> tuple[str, str]:
+def _cookie(
+    name: str,
+    value: str,
+    *,
+    max_age: int = _COOKIE_MAX_AGE_SECONDS,
+    path: str = "/",
+    same_site: str = "Strict",
+) -> tuple[str, str]:
     return (
         "Set-Cookie",
-        f"{name}={quote(value, safe='')}; Max-Age={max_age}; Path={path}; Secure; HttpOnly; SameSite=Strict",
+        f"{name}={quote(value, safe='')}; Max-Age={max_age}; Path={path}; Secure; HttpOnly; SameSite={same_site}",
     )
 
 

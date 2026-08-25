@@ -10,22 +10,26 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
+registration_mode: false
 google:
-  credential_id: your-client-id
+  client_id: your-client-id
   secret: your-client-secret
   redirect_uri: https://example.test/authn/google/callback
 ```
 
+All settings come from this file only; `CONFIG_FILE` merely names it.
+
 ### Registration mode
 
 Protected routes require authentication with a registered FIDO2 or Google credential.
-To register credentials, set `REGISTRATION_MODE` while starting the service, then open
-`/register`, enter a username, and press “Register credential”. Registration mode
-disables authentication and should only be enabled during initial setup.
+To register credentials, set `registration_mode` in the configuration file, restart the
+service, then open `/register`, enter a username, and press “Register credential”.
+Registration mode disables every other route and should only be enabled during initial
+setup: while it is on, only `/register` is served and all other paths answer `403`.
 
-```console
+```yaml
 # Only during credential registration:
-export REGISTRATION_MODE=1
+registration_mode: true
 ```
 
 For local development, the following command starts the WSGI application on port

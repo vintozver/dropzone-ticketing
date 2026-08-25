@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -9,10 +10,13 @@ from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
 from bson import ObjectId
+from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption
+from dropzone_ticketing.service import config
+from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import register as register_module
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
 from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
@@ -538,6 +542,23 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "403 Forbidden")
         self.assertIn(b"registration-only mode", response["body"])
 
+    def test_registration_mode_only_serves_the_registration_route(self) -> None:
+        with patch.object(config, "registration_mode", return_value=True):
+            blocked = [self.request(path, authenticated=False)["status"] for path in ("/", "/issue", "/tickets")]
+            registration = self.request("/register", authenticated=False)
+
+        self.assertEqual(blocked, ["403 Forbidden"] * 3)
+        self.assertEqual(registration["status"], "200 OK")
+
+    def test_registration_mode_navigation_only_links_registration(self) -> None:
+        with patch.object(config, "registration_mode", return_value=True):
+            responses = [self.request(path, authenticated=False) for path in ("/", "/register")]
+
+        for response in responses:
+            self.assertIn(b'href="/register"', response["body"])
+            for link in (b'href="/"', b'href="/authn"', b'href="/issue"', b'href="/redeem"', b'href="/tickets"'):
+                self.assertNotIn(link, response["body"])
+
 
 class ServiceAuthnTest(unittest.TestCase):
     def request(self, path: str, method: str = "GET", form: Optional[dict] = None, cookie: str = ""):
@@ -811,6 +832,177 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
         user.save.assert_called_once_with()
+
+
+class ServiceGoogleTest(unittest.TestCase):
+    def setUp(self) -> None:
+        google_module._endpoints.cache_clear()
+        self.addCleanup(google_module._endpoints.cache_clear)
+
+    def environ(self, query: str = "", cookie: str = "") -> dict:
+        return {
+            "PATH_INFO": "/authn/google",
+            "QUERY_STRING": query,
+            "REQUEST_METHOD": "GET",
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(b""),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+
+    def test_endpoints_are_read_from_the_discovery_document(self) -> None:
+        response = MagicMock()
+        response.json.return_value = {
+            "authorization_endpoint": "https://accounts.test/auth",
+            "token_endpoint": "https://tokens.test/token",
+        }
+        with patch.object(google_module.requests, "get", return_value=response) as get:
+            self.assertEqual(
+                google_module._endpoints(),
+                ("https://accounts.test/auth", "https://tokens.test/token"),
+            )
+            self.assertEqual(google_module._endpoints(), ("https://accounts.test/auth", "https://tokens.test/token"))
+        get.assert_called_once_with(google_module._GOOGLE_DISCOVERY_URI, timeout=10)
+
+    def test_oauth_flow_requests_only_the_email_scope(self) -> None:
+        with patch.object(
+            google_module, "_endpoints", return_value=("https://accounts.test/auth", "https://tokens.test/token")
+        ), patch.object(google_module, "google_client_id", return_value="client"), patch.object(
+            google_module, "google_client_secret", return_value="secret"
+        ), patch.object(google_module.Flow, "from_client_config") as from_client_config:
+            google_module._oauth_flow("https://example.test/authn/google/callback")
+
+        config, = from_client_config.call_args.args
+        self.assertEqual(config["web"]["client_id"], "client")
+        self.assertEqual(config["web"]["auth_uri"], "https://accounts.test/auth")
+        self.assertEqual(config["web"]["token_uri"], "https://tokens.test/token")
+        self.assertEqual(from_client_config.call_args.kwargs["scopes"], ["email"])
+        self.assertEqual(
+            from_client_config.call_args.kwargs["redirect_uri"], "https://example.test/authn/google/callback"
+        )
+
+    def test_begin_redirects_to_the_authorization_url(self) -> None:
+        flow = MagicMock()
+        flow.authorization_url.return_value = ("https://accounts.test/auth?state=abc", "abc")
+        with patch.object(google_module, "_configured", return_value=True), patch.object(
+            google_module, "_session_user", return_value=None
+        ), patch.object(google_module, "_oauth_flow", return_value=flow):
+            status, headers, _body = google_module.begin(self.environ())
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "https://accounts.test/auth?state=abc")
+        state_cookie = next(value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value)
+        self.assertIn("SameSite=Lax", state_cookie)
+
+    def test_complete_logs_in_an_existing_user_using_the_userinfo_profile(self) -> None:
+        flow = MagicMock()
+        service_client = MagicMock()
+        service_client.userinfo.return_value.get.return_value.execute.return_value = {
+            "email": "Jane@Example.test",
+            "verified_email": True,
+        }
+        user = MagicMock(id="Jane")
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ), patch.object(google_module, "build", return_value=service_client) as build, patch.object(
+            google_module, "_session_user", return_value=None
+        ), patch.object(google_module, "User") as user_class:
+            user_class.objects.return_value.first.return_value = user
+            status, headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        flow.fetch_token.assert_called_once_with(code="auth-code")
+        build.assert_called_once_with("oauth2", "v2", credentials=flow.credentials)
+        user_class.objects.assert_called_once_with(google_credentials__email="jane@example.test")
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "/authn")
+        cleared_state_cookie = next(
+            value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value
+        )
+        self.assertIn("SameSite=Lax", cleared_state_cookie)
+        session_cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_session=" in value)
+        self.assertIn("SameSite=Strict", session_cookie)
+
+    def test_complete_rejects_an_unverified_email(self) -> None:
+        flow = MagicMock()
+        service_client = MagicMock()
+        service_client.userinfo.return_value.get.return_value.execute.return_value = {
+            "email": "jane@example.test",
+            "verified_email": False,
+        }
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ), patch.object(google_module, "build", return_value=service_client):
+            status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+
+    def test_complete_reports_a_failed_token_exchange(self) -> None:
+        flow = MagicMock()
+        flow.fetch_token.side_effect = GoogleAuthError("boom")
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+            google_module, "_oauth_flow", return_value=flow
+        ):
+            status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+
+
+class ServiceConfigTest(unittest.TestCase):
+    def patch_config(self, values: dict) -> None:
+        patcher = patch.object(config, "_file_config", return_value=values)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_settings_are_read_from_the_yaml_file(self) -> None:
+        self.patch_config(
+            {
+                "mongodb_uri": "mongodb://yaml.example/test",
+                "registration_mode": True,
+            }
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
+            self.assertTrue(config.registration_mode())
+
+    def test_the_environment_does_not_provide_settings(self) -> None:
+        self.patch_config({"mongodb_uri": "mongodb://yaml.example/test"})
+        environment = {
+            "MONGODB_URI": "mongodb://env.example/test",
+            "REGISTRATION_MODE": "1",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
+            self.assertFalse(config.registration_mode())
+
+    def test_the_session_secret_is_random_and_not_configurable(self) -> None:
+        self.patch_config({"authn_session_secret": "shhh"})
+        with patch.dict(os.environ, {}, clear=True):
+            secret = config.session_secret()
+        self.assertNotEqual(secret, b"shhh")
+        self.assertEqual(len(secret), 32)
+        self.assertEqual(config.session_secret(), secret)
+
+    def test_missing_mongodb_uri_is_reported(self) -> None:
+        self.patch_config({})
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(KeyError):
+                config.mongodb_uri()
+
+    def test_google_settings_are_read_from_the_google_section(self) -> None:
+        self.patch_config({"google": {"client_id": "client", "secret": "shhh"}})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.google_client_id(), "client")
+            self.assertEqual(config.google_client_secret(), "shhh")
+
+    def test_a_non_mapping_google_section_is_ignored(self) -> None:
+        self.patch_config({"google": "nonsense"})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.google_client_id(), "")
+            self.assertEqual(
+                config.google_redirect_uri({"wsgi.url_scheme": "https", "HTTP_HOST": "example.test"}),
+                "https://example.test/authn/google/callback",
+            )
 
 
 if __name__ == "__main__":

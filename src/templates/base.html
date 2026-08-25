@@ -6,20 +6,24 @@
   </head>
   <body>
     <nav>
-      <a href="/">Home</a>
-      {% if not authenticated %}
-        <a href="/authn">Sign in</a>
-      {% endif %}
-      <a href="/issue">Issue tickets</a>
-      <a href="/redeem">Redeem tickets</a>
-      <a href="/tickets">View tickets</a>
-      {% if authenticated %}
-        Signed in as <a href="/authn">{{ current_user_id }}</a>
+      {% if registration_mode %}
+        <a href="/register">Register credential</a>
+      {% else %}
+        <a href="/">Home</a>
+        {% if not authenticated %}
+          <a href="/authn">Sign in</a>
+        {% endif %}
+        <a href="/issue">Issue tickets</a>
+        <a href="/redeem">Redeem tickets</a>
+        <a href="/tickets">View tickets</a>
+        {% if authenticated %}
+          Signed in as <a href="/authn">{{ current_user_id }}</a>
+        {% endif %}
       {% endif %}
     </nav>
     {% if registration_mode %}
       <section>
-        <p>Registration-only mode is enabled.</p>
+        <p>Registration-only mode is enabled: only credential registration is available.</p>
       </section>
     {% endif %}
     <main>{% block content %}{% endblock %}</main>
