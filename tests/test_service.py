@@ -10,6 +10,7 @@ from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
 from bson import ObjectId
+from fido2 import cbor
 from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
@@ -765,13 +766,17 @@ class ServiceAuthnTest(unittest.TestCase):
         )
         class CredentialData:
             credential_id = b"credential"
+            aaguid = b"\x01" * 16
+            public_key = {1: 2, 3: -7}
 
             def __bytes__(self):
                 return b"serialized credential"
 
         credential_data = CredentialData()
         server = MagicMock()
-        server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
+        server.register_complete.return_value = SimpleNamespace(
+            credential_data=credential_data, extensions={"credProps": {"rk": True}}
+        )
         user = MagicMock()
         user.fido2_credentials = []
         user_class = MagicMock()
@@ -814,7 +819,10 @@ class ServiceAuthnTest(unittest.TestCase):
         registration_response.assert_called_once()
         user_class.objects.assert_called_once_with(id=ObjectId(user_id))
         user_class.assert_called_once_with(id=ObjectId(user_id), display_name="Jane Sky")
-        self.assertEqual(user.fido2_credentials[0].attestation_object, b"attestation")
+        credential = user.fido2_credentials[0]
+        self.assertEqual(credential.attestation_aaguid, b"\x01" * 16)
+        self.assertEqual(cbor.decode(bytes(credential.attestation_publickey)), {1: 2, 3: -7})
+        self.assertEqual(credential.extensions, {"credProps": {"rk": True}})
         user.save.assert_called_once_with()
 
     def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
@@ -827,7 +835,15 @@ class ServiceAuthnTest(unittest.TestCase):
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
             display_name="Jane",
-            fido2_credentials=[SimpleNamespace(id=b"abcdefgh", dt=datetime(2026, 8, 22, tzinfo=timezone.utc))],
+            fido2_credentials=[
+                SimpleNamespace(
+                    id=b"abcdefgh",
+                    dt=datetime(2026, 8, 22, tzinfo=timezone.utc),
+                    attestation_aaguid=bytes(range(16)),
+                    attestation_publickey=cbor.encode({1: 2, 3: -7}),
+                    extensions={"credProps": {"rk": True}},
+                )
+            ],
         )
         environ = {
             "PATH_INFO": "/authn",
@@ -846,6 +862,9 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIn(b"61626364", body)
         self.assertIn(b"65666768", body)
         self.assertIn(b">Add another</button>", body)
+        self.assertIn(b"00010203-0405-0607-0809-0a0b0c0d0e0f", body)
+        self.assertIn(b"kty: EC2 (2)", body)
+        self.assertIn(b"&#34;rk&#34;: true", body)
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
         self.assertEqual(payload["register_state"], register_state)
@@ -860,13 +879,17 @@ class ServiceAuthnTest(unittest.TestCase):
 
         class CredentialData:
             credential_id = b"credential"
+            aaguid = b"\x01" * 16
+            public_key = {1: 2, 3: -7}
 
             def __bytes__(self):
                 return b"serialized credential"
 
         credential_data = CredentialData()
         server = MagicMock()
-        server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
+        server.register_complete.return_value = SimpleNamespace(
+            credential_data=credential_data, extensions={"credProps": {"rk": True}}
+        )
         user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), fido2_credentials=[])
         environ = {
             "PATH_INFO": "/authn/register",
@@ -900,7 +923,10 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
-        self.assertEqual(user.fido2_credentials[0].attestation_object, b"attestation")
+        credential = user.fido2_credentials[0]
+        self.assertEqual(credential.attestation_aaguid, b"\x01" * 16)
+        self.assertEqual(cbor.decode(bytes(credential.attestation_publickey)), {1: 2, 3: -7})
+        self.assertEqual(credential.extensions, {"credProps": {"rk": True}})
         user.save.assert_called_once_with()
 
     def test_authn_remove_fido2_credential_requires_csrf_and_persists(self) -> None:
@@ -922,13 +948,54 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(user.fido2_credentials, [])
         user.save.assert_called_once_with()
 
-    def test_authn_displays_decoded_attestation_object(self) -> None:
+    def test_authn_displays_aaguid_as_uuid(self) -> None:
         auth = service._auth_module
         self.assertEqual(
-            auth._attestation_display(SimpleNamespace(attestation_object=b"\xa1cfoocbar")),
-            '{\n  "foo": "bar"\n}',
+            auth._aaguid_display(SimpleNamespace(attestation_aaguid=bytes(range(16)))),
+            "00010203-0405-0607-0809-0a0b0c0d0e0f",
         )
-        self.assertIsNone(auth._attestation_display(SimpleNamespace()))
+        self.assertEqual(auth._aaguid_display(SimpleNamespace(attestation_aaguid=b"\x01\x02")), "0102")
+        self.assertIsNone(auth._aaguid_display(SimpleNamespace()))
+        self.assertIsNone(auth._aaguid_display(SimpleNamespace(attestation_aaguid=b"")))
+
+    def test_authn_displays_public_key_as_readable_pairs(self) -> None:
+        auth = service._auth_module
+        public_key = cbor.encode({1: 2, 3: -7, -1: 1, -2: b"\x01\x02", -3: b"\x03\x04"})
+        self.assertEqual(
+            auth._public_key_display(SimpleNamespace(attestation_publickey=public_key)),
+            "kty: EC2 (2)\nalg: ES256 (-7)\ncrv: P-256 (1)\nx: 0102\ny: 0304",
+        )
+        self.assertEqual(
+            auth._public_key_display(SimpleNamespace(attestation_publickey=b"not cbor")),
+            auth._b64encode(b"not cbor"),
+        )
+        self.assertIsNone(auth._public_key_display(SimpleNamespace()))
+
+    def test_authn_displays_extensions_as_json(self) -> None:
+        auth = service._auth_module
+        self.assertEqual(
+            auth._extensions_display(SimpleNamespace(extensions={"credProps": {"rk": True}, "raw": b"\x01"})),
+            '{\n  "credProps": {\n    "rk": true\n  },\n  "raw": "AQ"\n}',
+        )
+        self.assertIsNone(auth._extensions_display(SimpleNamespace()))
+        self.assertIsNone(auth._extensions_display(SimpleNamespace(extensions={})))
+
+    def test_registration_fields_tolerate_missing_authenticator_data(self) -> None:
+        auth = service._auth_module
+        self.assertEqual(auth._registration_fields(SimpleNamespace(credential_data=None, extensions=None)), {})
+        self.assertEqual(
+            auth._registration_fields(
+                SimpleNamespace(
+                    credential_data=SimpleNamespace(aaguid=b"\x01" * 16, public_key={1: 2}),
+                    extensions={"credProps": {"rk": False}},
+                )
+            ),
+            {
+                "attestation_aaguid": b"\x01" * 16,
+                "attestation_publickey": cbor.encode({1: 2}),
+                "extensions": {"credProps": {"rk": False}},
+            },
+        )
 
     def test_display_name_update_persists_for_authenticated_user(self) -> None:
         auth = service._auth_module
