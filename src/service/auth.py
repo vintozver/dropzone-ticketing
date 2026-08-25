@@ -246,7 +246,7 @@ def begin_authn(environ: dict):
         user_credentials=user_credentials,
         google_credentials=[
             {"email": credential.email}
-            for credential in getattr(_session_user(environ), "google_credentials", [])
+            for credential in getattr(user, "google_credentials", [])
         ],
         google_csrf=google_csrf,
     )

@@ -10,6 +10,10 @@ service, then open `/register`, enter a username, and press “Register credenti
 Registration mode disables authentication and should only be enabled during
 initial setup.
 
+Configuration can also be loaded from a JSON object in `config.json` (or the
+file named by `CONFIG_FILE`). Environment variables override values from the
+file.
+
 ```console
 export MONGODB_URI=mongodb://localhost:27017/dropzone_ticketing
 # For Google authentication, configure an OAuth web client:

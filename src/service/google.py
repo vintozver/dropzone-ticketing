@@ -128,11 +128,12 @@ def remove(environ: dict):
     user = _session_user(environ)
     if user is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
-    token = read_form(environ).get("csrf", "")
+    form = read_form(environ)
+    token = form.get("csrf", "")
     expected = _cookies(environ).get(GOOGLE_CSRF_COOKIE, "")
     if not token or not expected or not secrets.compare_digest(token, expected):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
-    email = read_form(environ).get("email", "").strip().casefold()
+    email = form.get("email", "").strip().casefold()
     credentials = user.google_credentials
     user.google_credentials = [credential for credential in credentials if credential.email.casefold() != email]
     if len(user.google_credentials) == len(credentials):
