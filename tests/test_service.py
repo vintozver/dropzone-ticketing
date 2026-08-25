@@ -246,16 +246,18 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b'href="/print?owner=Jane"', body)
 
     @patch.object(service.mongoengine, "register_connection")
-    def test_ensure_storage_registers_connection_from_env_var(self, register_connection) -> None:
+    @patch("dropzone_ticketing.service.config._file_config")
+    def test_ensure_storage_uses_yaml_mongodb_uri(self, file_config, register_connection) -> None:
         original_connected = service._storage_connected
         service._storage_connected = False
         try:
+            file_config.return_value = {"mongodb_uri": "mongodb://yaml.example/test"}
             with patch.dict("os.environ", {"MONGODB_URI": "mongodb://example/test"}):
                 service._ensure_storage()
 
                 register_connection.assert_called_once_with(
                     service.mongoengine_alias,
-                    host="mongodb://example/test",
+                    host="mongodb://yaml.example/test",
                 )
                 self.assertTrue(service._storage_connected)
 

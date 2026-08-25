@@ -68,7 +68,7 @@ def google_client_secret() -> str:
 
 
 def google_redirect_uri(environ: dict) -> str:
-    configured = _google_setting("redirect_uri") or _setting("GOOGLE_REDIRECT_URI")
+    configured = _google_setting("redirect_uri")
     if configured:
         return configured
     scheme = environ.get("wsgi.url_scheme") or "http"
@@ -77,15 +77,6 @@ def google_redirect_uri(environ: dict) -> str:
 
 
 def _google_setting(name: str, default=None):
-    if name == "credential_id":
-        env_names = ("GOOGLE_CREDENTIAL_ID", "GOOGLE_CLIENT_ID")
-    elif name == "secret":
-        env_names = ("GOOGLE_SECRET", "GOOGLE_CLIENT_SECRET")
-    else:
-        env_names = ("GOOGLE_REDIRECT_URI",)
-    for env_name in env_names:
-        if env_name in os.environ:
-            return os.environ[env_name]
     values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("google", {})
     if isinstance(values, dict):
         return values.get(name, default)
@@ -93,7 +84,7 @@ def _google_setting(name: str, default=None):
 
 
 def mongodb_uri() -> str:
-    configured = _setting("MONGODB_URI")
+    configured = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("mongodb_uri")
     if not configured:
         raise KeyError("MONGODB_URI")
     return str(configured)
