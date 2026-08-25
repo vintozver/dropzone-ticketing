@@ -32,7 +32,9 @@ def _file_config(filename: str) -> dict[str, object]:
 def _setting(name: str, default=None):
     if name in os.environ:
         return os.environ[name]
-    return _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get(name, default)
+    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml"))
+    file_name = {"MONGODB_URI": "mongodb_uri"}.get(name, name)
+    return values.get(file_name, default)
 
 
 @dataclass(frozen=True)
@@ -58,18 +60,36 @@ def session_secret() -> bytes:
 
 
 def google_client_id() -> str:
-    return str(_setting("GOOGLE_CLIENT_ID", ""))
+    return str(_google_setting("credential_id", ""))
 
 
 def google_client_secret() -> str:
-    return str(_setting("GOOGLE_CLIENT_SECRET", ""))
+    return str(_google_setting("secret", ""))
 
 
 def google_redirect_uri(environ: dict) -> str:
-    configured = _setting("GOOGLE_REDIRECT_URI")
+    configured = _google_setting("redirect_uri") or _setting("GOOGLE_REDIRECT_URI")
     if configured:
         return configured
-    raise ValueError("GOOGLE_REDIRECT_URI must be configured for Google authentication.")
+    scheme = environ.get("wsgi.url_scheme") or "http"
+    host = environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+    return f"{scheme}://{host}/authn/google/callback"
+
+
+def _google_setting(name: str, default=None):
+    if name == "credential_id":
+        env_names = ("GOOGLE_CREDENTIAL_ID", "GOOGLE_CLIENT_ID")
+    elif name == "secret":
+        env_names = ("GOOGLE_SECRET", "GOOGLE_CLIENT_SECRET")
+    else:
+        env_names = ("GOOGLE_REDIRECT_URI",)
+    for env_name in env_names:
+        if env_name in os.environ:
+            return os.environ[env_name]
+    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("google", {})
+    if isinstance(values, dict):
+        return values.get(name, default)
+    return default
 
 
 def mongodb_uri() -> str:

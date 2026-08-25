@@ -10,9 +10,16 @@ service, then open `/register`, enter a username, and press “Register credenti
 Registration mode disables authentication and should only be enabled during
 initial setup.
 
-Configuration can also be loaded from a YAML object in `config.yaml` (or the
-file named by `CONFIG_FILE`). Environment variables override values from the
-file.
+Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
+`config.yaml` when that variable is not set. Environment variables override
+values from the file. The file uses `mongodb_uri` and a nested `google` object:
+
+```yaml
+mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
+google:
+  credential_id: your-client-id
+  secret: your-client-secret
+```
 
 ```console
 export MONGODB_URI=mongodb://localhost:27017/dropzone_ticketing
