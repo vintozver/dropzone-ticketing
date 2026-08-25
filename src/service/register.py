@@ -68,12 +68,7 @@ def begin_register(environ: dict):
     registration_options = None
     if username:
         server = _server(environ)
-        existing_user = User.objects(login=username).only("fido2_credentials").first()
-        credentials = (
-            [_credential_data(credential) for credential in existing_user.fido2_credentials]
-            if existing_user is not None
-            else []
-        )
+        credentials = []
         options, state = server.register_begin(
             PublicKeyCredentialUserEntity(
                 id=secrets.token_bytes(16),
@@ -127,11 +122,7 @@ def complete_register(environ: dict):
         credential_id = auth_data.credential_data.credential_id
         if _find_credential(_b64encode(credential_id)) is not None:
             return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user = User.objects(login=username).first()
-        if user is None:
-            user = User(login=username, display_name=display_name or None)
-        elif display_name:
-            user.display_name = display_name or None
+        user = User(display_name=display_name or username or None)
         user.fido2_credentials.append(
             Fido2Credential(
                 id=credential_id,

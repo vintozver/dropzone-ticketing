@@ -21,18 +21,18 @@ def issue(
     print_url,
     issued_by: dict[str, object] | None = None,
 ):
-    user_id = form.get("user_id", "").strip()
-    user_display_name = form.get("user_display_name", "").strip()
+    to_id = form.get("to_id", "").strip()
+    to_display_name = form.get("to_display_name", "").strip()
     payment = form.get("payment", "").strip()
     purpose = form.get("purpose", "").strip()
 
-    if bool(user_id) == bool(user_display_name):
+    if bool(to_id) == bool(to_display_name):
         return render(
             "issue.html",
             HTTPStatus.BAD_REQUEST,
-            error="Exactly one of user_id or user_display_name is required.",
-            user_id=user_id,
-            user_display_name=user_display_name,
+            error="Exactly one of to_id or to_display_name is required.",
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
@@ -41,8 +41,8 @@ def issue(
             "issue.html",
             HTTPStatus.BAD_REQUEST,
             error="Payment is required.",
-            user_id=user_id,
-            user_display_name=user_display_name,
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
@@ -51,8 +51,8 @@ def issue(
             "issue.html",
             HTTPStatus.BAD_REQUEST,
             error="Purpose is required.",
-            user_id=user_id,
-            user_display_name=user_display_name,
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
@@ -62,8 +62,8 @@ def issue(
             "issue.html",
             HTTPStatus.FORBIDDEN,
             error="Authentication required.",
-            user_id=user_id,
-            user_display_name=user_display_name,
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
@@ -77,15 +77,15 @@ def issue(
             "issue.html",
             HTTPStatus.BAD_REQUEST,
             error=f"Count must be between 1 and {MAX_TICKETS}.",
-            user_id=user_id,
-            user_display_name=user_display_name,
+            to_id=to_id,
+            to_display_name=to_display_name,
             payment=payment,
             purpose=purpose,
         )
 
-    if user_id:
+    if to_id:
         try:
-            issued_to_user = user_class.objects(id=ObjectId(user_id)).only("id", "login", "display_name").first()
+            issued_to_user = user_class.objects(id=ObjectId(to_id)).only("id", "display_name").first()
         except (InvalidId, TypeError):
             issued_to_user = None
         if issued_to_user is None:
@@ -93,14 +93,14 @@ def issue(
                 "issue.html",
                 HTTPStatus.BAD_REQUEST,
                 error="Selected user does not exist.",
-                user_id=user_id,
-                user_display_name=user_display_name,
+                to_id=to_id,
+                to_display_name=to_display_name,
                 payment=payment,
                 purpose=purpose,
             )
-        issued_to = user_ref_class(id=issued_to_user.id, display_name=issued_to_user.display_name or issued_to_user.login)
+        issued_to = user_ref_class(id=issued_to_user.id, display_name=issued_to_user.display_name or str(issued_to_user.id))
     else:
-        issued_to = user_ref_class(display_name=user_display_name)
+        issued_to = user_ref_class(display_name=to_display_name)
 
     issued_by_ref = user_ref_class(
         id=issued_by.get("id"),

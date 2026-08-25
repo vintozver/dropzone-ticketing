@@ -5,7 +5,7 @@
 <section>
   <h2>Profile</h2>
   <form method="post" action="/authn/display-name">
-    <label>Login <input type="text" value="{{ current_login }}" readonly></label>
+    <label>User ID <input type="text" value="{{ current_user_id }}" readonly></label>
     <label>Display name <input type="text" name="display_name" value="{{ current_display_name|default('') }}"></label>
     <button type="submit">Save</button>
   </form>

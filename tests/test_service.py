@@ -59,7 +59,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         status, _headers, body = service._issue(
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
@@ -127,7 +127,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         status, _headers, body = service._issue(
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "2",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
@@ -260,8 +260,8 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b'href="/print?display_name=Jane"', body)
 
     def test_user_search_limits_results_to_ten(self) -> None:
-        prefix_users = [SimpleNamespace(id=ObjectId(), login=f"user-{index}", display_name=f"Jane {index}") for index in range(7)]
-        contains_users = [SimpleNamespace(id=ObjectId(), login=f"extra-{index}", display_name=f"X Jane {index}") for index in range(5)]
+        prefix_users = [SimpleNamespace(id=ObjectId(), display_name=f"Jane {index}") for index in range(7)]
+        contains_users = [SimpleNamespace(id=ObjectId(), display_name=f"X Jane {index}") for index in range(5)]
         first_query = MagicMock()
         first_query.only.return_value.limit.return_value = prefix_users
         second_query = MagicMock()
@@ -300,7 +300,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         service._issue(
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
@@ -464,7 +464,7 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_base_template_shows_signed_in_user(self) -> None:
-        with patch.object(service._auth_module, "current_user_id", return_value="jane"), patch.object(
+        with patch.object(service._auth_module, "current_user_id", return_value="507f1f77bcf86cd799439011"), patch.object(
             service._auth_module, "current_user_display_name", return_value="Jane"
         ):
             response = self.request("/", authenticated=True)
@@ -477,7 +477,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "1001",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
@@ -492,7 +492,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "1",
                 "payment": " ",
                 "purpose": "C182 hop-and-hop",
@@ -507,7 +507,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "user_display_name": "Jane",
+                "to_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": " ",
@@ -522,15 +522,15 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "user_id": "507f1f77bcf86cd799439011",
-                "user_display_name": "Jane",
+                "to_id": "507f1f77bcf86cd799439011",
+                "to_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
             },
         )
         self.assertEqual(response["status"], "400 Bad Request")
-        self.assertIn(b"Exactly one of user_id or user_display_name is required.", response["body"])
+        self.assertIn(b"Exactly one of to_id or to_display_name is required.", response["body"])
 
     def test_print_page_is_removed(self) -> None:
         response = self.request("/print")
@@ -793,7 +793,7 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(server.register_complete.call_args.args[0], state)
         self.assertEqual(server.register_complete.call_args.kwargs["response"], "registration response")
         registration_response.assert_called_once()
-        user_class.assert_called_once_with(login="Jane", display_name="Jane Sky")
+        user_class.assert_called_once_with(display_name="Jane Sky")
         user.save.assert_called_once_with()
 
     def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
@@ -805,7 +805,6 @@ class ServiceAuthnTest(unittest.TestCase):
         server.register_begin.return_value = {"publicKey": {"challenge": b"register challenge"}}, register_state
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
-            login="Jane",
             display_name="Jane",
             fido2_credentials=[SimpleNamespace(id=b"abcdefgh", dt=datetime(2026, 8, 22, tzinfo=timezone.utc))],
         )
@@ -829,13 +828,13 @@ class ServiceAuthnTest(unittest.TestCase):
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
         self.assertEqual(payload["register_state"], register_state)
-        self.assertEqual(payload["register_user"], "Jane")
+        self.assertEqual(payload["register_user"], "507f1f77bcf86cd799439011")
 
     def test_authn_register_complete_attaches_credential_to_current_user(self) -> None:
         auth = service._auth_module
         state = {"challenge": b64(b"server challenge"), "user_verification": "discouraged"}
         cookie = "authn_challenge=" + auth._signed(
-            {"register_state": state, "register_user": "Jane", "issued": auth.time()}
+            {"register_state": state, "register_user": "507f1f77bcf86cd799439011", "issued": auth.time()}
         )
 
         class CredentialData:
@@ -847,7 +846,7 @@ class ServiceAuthnTest(unittest.TestCase):
         credential_data = CredentialData()
         server = MagicMock()
         server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
-        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), login="Jane", fido2_credentials=[])
+        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), fido2_credentials=[])
         environ = {
             "PATH_INFO": "/authn/register",
             "REQUEST_METHOD": "POST",

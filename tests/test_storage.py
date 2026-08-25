@@ -90,19 +90,15 @@ class StorageTicketDocumentTest(unittest.TestCase):
             User._meta["indexes"],
             [
                 {"fields": ["display_name"]},
-                {"fields": ["$display_name"]},
                 {"fields": ["fido2_credentials._id"], "unique": True},
                 {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
             ],
         )
 
-    def test_user_login_and_display_name_fields(self) -> None:
+    def test_user_id_and_display_name_fields(self) -> None:
         fields = User._fields
         self.assertIsInstance(fields["id"], mongoengine.ObjectIdField)
         self.assertTrue(fields["id"].primary_key)
-        self.assertIsInstance(fields["login"], mongoengine.StringField)
-        self.assertTrue(fields["login"].required)
-        self.assertTrue(fields["login"].unique)
         self.assertIsInstance(fields["display_name"], mongoengine.StringField)
         self.assertFalse(fields["display_name"].required)
 
