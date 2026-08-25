@@ -27,7 +27,6 @@ GOOGLE_CSRF_COOKIE = "google_csrf"
 _GOOGLE_STATE_TTL_SECONDS = 300
 _GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
-_HTTP = httplib2.Http()
 
 
 def _configured() -> bool:
@@ -93,7 +92,7 @@ def complete(environ: dict):
         id_token = token.get("id_token")
         if not isinstance(id_token, str) or not id_token:
             raise ValueError("Google token response did not contain an ID token.")
-        profile = verify_id_token(id_token, google_client_id(), http=_HTTP)
+        profile = verify_id_token(id_token, google_client_id(), http=httplib2.Http())
         if not isinstance(profile, dict):
             raise ValueError("Google ID token response is invalid.")
         email = _google_email(profile)
