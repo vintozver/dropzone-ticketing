@@ -78,7 +78,7 @@ def _cookie(
     *,
     max_age: int = _COOKIE_MAX_AGE_SECONDS,
     path: str = "/",
-    same_site: str = "Strict",
+    same_site: str = "Lax",
 ) -> tuple[str, str]:
     return (
         "Set-Cookie",
