@@ -542,6 +542,22 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "403 Forbidden")
         self.assertIn(b"registration-only mode", response["body"])
 
+    def test_registration_mode_only_serves_the_registration_route(self) -> None:
+        with patch.object(config, "registration_mode", return_value=True):
+            blocked = [self.request(path, authenticated=False)["status"] for path in ("/", "/issue", "/tickets")]
+            registration = self.request("/register", authenticated=False)
+
+        self.assertEqual(blocked, ["403 Forbidden"] * 3)
+        self.assertEqual(registration["status"], "200 OK")
+
+    def test_registration_mode_navigation_only_links_registration(self) -> None:
+        with patch.object(config, "registration_mode", return_value=True):
+            response = self.request("/", authenticated=False)
+
+        self.assertIn(b'href="/register"', response["body"])
+        for link in (b'href="/"', b'href="/authn"', b'href="/issue"', b'href="/redeem"', b'href="/tickets"'):
+            self.assertNotIn(link, response["body"])
+
 
 class ServiceAuthnTest(unittest.TestCase):
     def request(self, path: str, method: str = "GET", form: Optional[dict] = None, cookie: str = ""):
