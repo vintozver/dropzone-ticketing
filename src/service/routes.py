@@ -3,7 +3,7 @@ from __future__ import annotations
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import auth, register
+from . import auth, google, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
@@ -29,6 +29,21 @@ def dispatch(environ: dict, handlers):
     if path == "/authn/register":
         if method == "POST":
             return auth.complete_authn_register(environ)
+        return method_not_allowed(["POST"])
+
+    if path == "/authn/google":
+        if method == "GET":
+            return google.begin(environ)
+        return method_not_allowed(["GET"])
+
+    if path == "/authn/google/callback":
+        if method == "GET":
+            return google.complete(environ)
+        return method_not_allowed(["GET"])
+
+    if path == "/authn/google/remove":
+        if method == "POST":
+            return google.remove(environ)
         return method_not_allowed(["POST"])
 
     if path == "/register":

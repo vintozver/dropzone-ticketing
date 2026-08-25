@@ -6,7 +6,7 @@ import unittest
 import mongoengine
 
 from dropzone_ticketing.model import mongoengine_alias
-from dropzone_ticketing.model.auth import Fido2Credential, User
+from dropzone_ticketing.model.auth import Fido2Credential, GoogleCredential, User
 from dropzone_ticketing.model.ticket import Redemption, Ticket
 
 
@@ -76,7 +76,18 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertTrue(fields["dt"].required)
 
     def test_user_indexes_credentials_by_embedded_identifier(self) -> None:
-        self.assertEqual(User._meta["indexes"], [{"fields": ["fido2_credentials._id"], "unique": True}])
+        self.assertEqual(
+            User._meta["indexes"],
+            [
+                {"fields": ["fido2_credentials._id"], "unique": True},
+                {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
+            ],
+        )
+
+    def test_google_credential_embedded_document_fields(self) -> None:
+        fields = GoogleCredential._fields
+        self.assertIsInstance(fields["email"], mongoengine.StringField)
+        self.assertTrue(fields["email"].required)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@
   <button type="submit">Authenticate</button>
 </form>
 <p id="authn-error" role="alert"></p>
+<p><a href="/authn/google">Authenticate via Google</a></p>
 {% endif %}
 {% if authenticated %}
 <form method="post" action="/logout">
@@ -32,6 +33,23 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
+{% if authenticated %}
+<h3>Google credentials</h3>
+{% if google_credentials %}
+<ul>
+  {% for credential in google_credentials %}
+  <li>{{ credential.email }}
+    <form method="post" action="/authn/google/remove" style="display:inline">
+      <input type="hidden" name="email" value="{{ credential.email }}">
+      <input type="hidden" name="csrf" value="{{ google_csrf }}">
+      <button type="submit">Remove</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}<p>No Google credentials registered.</p>{% endif %}
+<p><a href="/authn/google">Add a Google credential</a></p>
 {% endif %}
 {% if user_credentials and registration_options %}
 <h3>Add a new credential</h3>

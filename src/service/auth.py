@@ -138,10 +138,9 @@ def _is_authenticated(environ: dict) -> bool:
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
     return (
-        isinstance(serial, str)
-        and _credential_owner(serial) is not None
-        and time() - issued <= _COOKIE_MAX_AGE_SECONDS
-    )
+        (isinstance(serial, str) and _credential_owner(serial) is not None)
+        or (isinstance(payload.get("user_id"), str) and User.objects(id=payload["user_id"]).first() is not None)
+    ) and time() - issued <= _COOKIE_MAX_AGE_SECONDS
 
 
 def _credential_owner(encoded_id: str) -> User | None:
@@ -173,7 +172,12 @@ def _session_user(environ: dict) -> User | None:
         return None
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
-    if not isinstance(serial, str) or time() - issued > _COOKIE_MAX_AGE_SECONDS:
+    if time() - issued > _COOKIE_MAX_AGE_SECONDS:
+        return None
+    user_id = payload.get("user_id")
+    if isinstance(user_id, str):
+        return User.objects(id=user_id).first()
+    if not isinstance(serial, str):
         return None
     return _credential_owner(serial)
 
@@ -232,6 +236,7 @@ def begin_authn(environ: dict):
             }
             for credential in user.fido2_credentials
         ]
+    google_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
@@ -239,12 +244,18 @@ def begin_authn(environ: dict):
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         user_credentials=user_credentials,
+        google_credentials=[
+            {"email": credential.email}
+            for credential in getattr(user, "google_credentials", [])
+        ],
+        google_csrf=google_csrf,
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
         payload["register_state"] = register_state
         payload["register_user"] = user.id
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
+    headers.append(_cookie("google_csrf", google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
 
 
