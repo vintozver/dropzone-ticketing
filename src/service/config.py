@@ -86,5 +86,5 @@ def _google_setting(name: str, default=None):
 def mongodb_uri() -> str:
     configured = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("mongodb_uri")
     if not configured:
-        raise KeyError("MONGODB_URI")
+        raise KeyError("mongodb_uri")
     return str(configured)
