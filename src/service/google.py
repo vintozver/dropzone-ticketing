@@ -95,7 +95,11 @@ def complete(environ: dict):
     if query.get("error") or not query.get("code"):
         return error(HTTPStatus.FORBIDDEN, "Google authentication was cancelled or failed.")
     try:
-        email = _google_email(_post_token(query["code"], google_redirect_uri(environ))["access_token"])
+        token = _post_token(query["code"], google_redirect_uri(environ))
+        access_token = token.get("access_token")
+        if not isinstance(access_token, str) or not access_token:
+            raise ValueError("Google token response did not contain an access token.")
+        email = _google_email(access_token)
     except (KeyError, ValueError, OSError, json.JSONDecodeError):
         return error(HTTPStatus.FORBIDDEN, "Google authentication failed.")
 
@@ -125,6 +129,9 @@ def remove(environ: dict):
     if user is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     email = read_form(environ).get("email", "").strip().casefold()
-    user.google_credentials = [credential for credential in user.google_credentials if credential.email.casefold() != email]
+    credentials = user.google_credentials
+    user.google_credentials = [credential for credential in credentials if credential.email.casefold() != email]
+    if len(user.google_credentials) == len(credentials):
+        return error(HTTPStatus.NOT_FOUND, "Google credential not found.")
     user.save()
     return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
