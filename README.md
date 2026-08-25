@@ -3,26 +3,27 @@ Ticketing software for the drop zone (skydiving)
 
 ## Web service
 
-Set `mongodb_uri` in `config.yaml` to the MongoDB connection string used by the
-web service. Protected routes require FIDO2 authentication with a credential registered in
-MongoDB. To register credentials, set `REGISTRATION_MODE` while starting the
-service, then open `/register`, enter a username, and press “Register credential”.
-Registration mode disables authentication and should only be enabled during
-initial setup.
+### Configuration
 
 Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
-`config.yaml` when that variable is not set. The file uses `mongodb_uri` and a nested
-`google` object:
+`config.yaml` when that variable is not set:
 
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
 google:
   credential_id: your-client-id
   secret: your-client-secret
+  redirect_uri: https://example.test/authn/google/callback
 ```
 
+### Registration mode
+
+Protected routes require FIDO2 authentication with a credential registered in MongoDB.
+To register credentials, set `REGISTRATION_MODE` while starting the service, then open
+`/register`, enter a username, and press “Register credential”. Registration mode
+disables authentication and should only be enabled during initial setup.
+
 ```console
-# Only during credential registration:
 export REGISTRATION_MODE=1
 ```
 
