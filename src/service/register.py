@@ -130,7 +130,7 @@ def complete_register(environ: dict):
         user = User.objects(login=username).first()
         if user is None:
             user = User(login=username, display_name=display_name or None)
-        else:
+        elif display_name:
             user.display_name = display_name or None
         user.fido2_credentials.append(
             Fido2Credential(

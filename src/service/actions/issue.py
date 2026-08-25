@@ -60,7 +60,7 @@ def issue(
     if issued_by is None:
         return render(
             "issue.html",
-            HTTPStatus.BAD_REQUEST,
+            HTTPStatus.FORBIDDEN,
             error="Authentication required.",
             user_id=user_id,
             user_display_name=user_display_name,
