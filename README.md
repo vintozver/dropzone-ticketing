@@ -10,7 +10,6 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
-authn_session_secret: your-session-secret
 registration_mode: false
 google:
   client_id: your-client-id

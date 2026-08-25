@@ -942,25 +942,28 @@ class ServiceConfigTest(unittest.TestCase):
             {
                 "mongodb_uri": "mongodb://yaml.example/test",
                 "registration_mode": True,
-                "authn_session_secret": "shhh",
             }
         )
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
             self.assertTrue(config.registration_mode())
-            self.assertEqual(config.session_secret(), b"shhh")
 
     def test_the_environment_does_not_provide_settings(self) -> None:
         self.patch_config({"mongodb_uri": "mongodb://yaml.example/test"})
         environment = {
             "MONGODB_URI": "mongodb://env.example/test",
             "REGISTRATION_MODE": "1",
-            "AUTHN_SESSION_SECRET": "env-secret",
         }
         with patch.dict(os.environ, environment, clear=True):
             self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
             self.assertFalse(config.registration_mode())
-            self.assertNotEqual(config.session_secret(), b"env-secret")
+
+    def test_the_session_secret_is_random_and_not_configurable(self) -> None:
+        self.patch_config({"authn_session_secret": "shhh"})
+        with patch.dict(os.environ, {}, clear=True):
+            secret = config.session_secret()
+        self.assertNotEqual(secret, b"shhh")
+        self.assertEqual(len(secret), 32)
 
     def test_missing_mongodb_uri_is_reported(self) -> None:
         self.patch_config({})

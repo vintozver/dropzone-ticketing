@@ -56,9 +56,6 @@ def authn_config() -> AuthnConfig:
 
 
 def session_secret() -> bytes:
-    configured = _setting("authn_session_secret")
-    if configured:
-        return str(configured).encode("utf-8")
     return _session_secret
 
 
