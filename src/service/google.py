@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import json
 import secrets
 from http import HTTPStatus
 from time import time
-from urllib.parse import parse_qs, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs
+
+import httplib2
+from oauth2client.client import FlowExchangeError, OAuth2WebServerFlow, verify_id_token
+from oauth2client.crypt import AppIdentityError
 
 from .config import google_client_id, google_client_secret, google_redirect_uri
 from .http import error, read_form
@@ -23,10 +25,24 @@ from dropzone_ticketing.model.auth import GoogleCredential, User
 GOOGLE_STATE_COOKIE = "google_oauth_state"
 GOOGLE_CSRF_COOKIE = "google_csrf"
 _GOOGLE_STATE_TTL_SECONDS = 300
+_GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 def _configured() -> bool:
     return bool(google_client_id() and google_client_secret())
+
+
+def _oauth_flow(redirect_uri: str) -> OAuth2WebServerFlow:
+    return OAuth2WebServerFlow(
+        client_id=google_client_id(),
+        client_secret=google_client_secret(),
+        scope="openid email",
+        redirect_uri=redirect_uri,
+        auth_uri=_GOOGLE_AUTH_URI,
+        token_uri=_GOOGLE_TOKEN_URI,
+        prompt="select_account",
+    )
 
 
 def begin(environ: dict):
@@ -35,20 +51,12 @@ def begin(environ: dict):
     state = secrets.token_urlsafe(32)
     user = _session_user(environ)
     payload = {"state": state, "issued": time(), "user": user.id if user else None}
-    query = urlencode(
-        {
-            "client_id": google_client_id(),
-            "redirect_uri": google_redirect_uri(environ),
-            "response_type": "code",
-            "scope": "openid email",
-            "state": state,
-            "prompt": "select_account",
-        }
-    )
+    redirect_uri = google_redirect_uri(environ)
+    query = _oauth_flow(redirect_uri).step1_get_authorize_url(state=state)
     return (
         HTTPStatus.SEE_OTHER,
         [
-            ("Location", f"https://accounts.google.com/o/oauth2/v2/auth?{query}"),
+            ("Location", query),
             _cookie(GOOGLE_STATE_COOKIE, _signed(payload), max_age=_GOOGLE_STATE_TTL_SECONDS, path="/authn/google"),
         ],
         b"",
@@ -62,25 +70,7 @@ def _state(environ: dict) -> dict[str, object] | None:
     return payload
 
 
-def _post_token(code: str, redirect_uri: str) -> dict:
-    body = urlencode(
-        {
-            "code": code,
-            "client_id": google_client_id(),
-            "client_secret": google_client_secret(),
-            "redirect_uri": redirect_uri,
-            "grant_type": "authorization_code",
-        }
-    ).encode()
-    with urlopen(Request("https://oauth2.googleapis.com/token", data=body, method="POST"), timeout=10) as response:
-        return json.loads(response.read())
-
-
-def _google_email(access_token: str) -> str:
-    request = Request("https://openidconnect.googleapis.com/v1/userinfo")
-    request.add_header("Authorization", "Bearer " + access_token)
-    with urlopen(request, timeout=10) as response:
-        profile = json.loads(response.read())
+def _google_email(profile: dict[str, object]) -> str:
     email = profile.get("email")
     if not isinstance(email, str) or not email or not profile.get("email_verified", False):
         raise ValueError("Google did not provide a verified email address.")
@@ -95,12 +85,18 @@ def complete(environ: dict):
     if query.get("error") or not query.get("code"):
         return error(HTTPStatus.FORBIDDEN, "Google authentication was cancelled or failed.")
     try:
-        token = _post_token(query["code"], google_redirect_uri(environ))
-        access_token = token.get("access_token")
-        if not isinstance(access_token, str) or not access_token:
-            raise ValueError("Google token response did not contain an access token.")
-        email = _google_email(access_token)
-    except (KeyError, ValueError, OSError, json.JSONDecodeError):
+        redirect_uri = google_redirect_uri(environ)
+        token = _oauth_flow(redirect_uri).step2_exchange(query["code"]).token_response
+        if not isinstance(token, dict):
+            raise ValueError("Google token response is invalid.")
+        id_token = token.get("id_token")
+        if not isinstance(id_token, str) or not id_token:
+            raise ValueError("Google token response did not contain an ID token.")
+        profile = verify_id_token(id_token, google_client_id(), http=httplib2.Http())
+        if not isinstance(profile, dict):
+            raise ValueError("Google ID token response is invalid.")
+        email = _google_email(profile)
+    except (AppIdentityError, FlowExchangeError, KeyError, ValueError, httplib2.HttpLib2Error):
         return error(HTTPStatus.FORBIDDEN, "Google authentication failed.")
 
     user = _session_user(environ)
