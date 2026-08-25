@@ -21,6 +21,7 @@ from .auth import (
 from dropzone_ticketing.model.auth import GoogleCredential, User
 
 GOOGLE_STATE_COOKIE = "google_oauth_state"
+GOOGLE_CSRF_COOKIE = "google_csrf"
 _GOOGLE_STATE_TTL_SECONDS = 300
 
 
@@ -41,7 +42,6 @@ def begin(environ: dict):
             "response_type": "code",
             "scope": "openid email",
             "state": state,
-            "access_type": "online",
             "prompt": "select_account",
         }
     )
@@ -128,6 +128,10 @@ def remove(environ: dict):
     user = _session_user(environ)
     if user is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
+    token = read_form(environ).get("csrf", "")
+    expected = _cookies(environ).get(GOOGLE_CSRF_COOKIE, "")
+    if not token or not expected or not secrets.compare_digest(token, expected):
+        return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     email = read_form(environ).get("email", "").strip().casefold()
     credentials = user.google_credentials
     user.google_credentials = [credential for credential in credentials if credential.email.casefold() != email]

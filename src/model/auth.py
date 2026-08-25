@@ -18,7 +18,7 @@ class Fido2Credential(mongoengine.EmbeddedDocument):
 class GoogleCredential(mongoengine.EmbeddedDocument):
     """A Google account allowed to authenticate as a ticketing user."""
 
-    email = mongoengine.StringField(required=True, unique=True)
+    email = mongoengine.StringField(required=True)
 
 
 class User(mongoengine.Document):

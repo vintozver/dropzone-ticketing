@@ -236,6 +236,7 @@ def begin_authn(environ: dict):
             }
             for credential in user.fido2_credentials
         ]
+    google_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
@@ -247,12 +248,14 @@ def begin_authn(environ: dict):
             {"email": credential.email}
             for credential in getattr(_session_user(environ), "google_credentials", [])
         ],
+        google_csrf=google_csrf,
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
         payload["register_state"] = register_state
         payload["register_user"] = user.id
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
+    headers.append(_cookie("google_csrf", google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
 
 
