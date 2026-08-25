@@ -252,18 +252,17 @@ class ServiceHelperTest(unittest.TestCase):
         service._storage_connected = False
         try:
             file_config.return_value = {"mongodb_uri": "mongodb://yaml.example/test"}
-            with patch.dict("os.environ", {"MONGODB_URI": "mongodb://example/test"}):
-                service._ensure_storage()
+            service._ensure_storage()
 
-                register_connection.assert_called_once_with(
-                    service.mongoengine_alias,
-                    host="mongodb://yaml.example/test",
-                )
-                self.assertTrue(service._storage_connected)
+            register_connection.assert_called_once_with(
+                service.mongoengine_alias,
+                host="mongodb://yaml.example/test",
+            )
+            self.assertTrue(service._storage_connected)
 
-                # A second call should be a no-op and must not reconnect.
-                service._ensure_storage()
-                register_connection.assert_called_once()
+            # A second call should be a no-op and must not reconnect.
+            service._ensure_storage()
+            register_connection.assert_called_once()
         finally:
             service._storage_connected = original_connected
 
