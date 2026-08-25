@@ -24,6 +24,7 @@ All settings come from this file only; `CONFIG_FILE` merely names it.
 Protected routes require authentication with a registered FIDO2 or Google credential.
 To register credentials, set `registration_mode` in the configuration file, restart the
 service, then open `/register`, enter a username, and press “Register credential”.
+FIDO2 credential registration requests enterprise attestation from the authenticator.
 Registration mode disables every other route and should only be enabled during initial
 setup: while it is on, only `/register` is served and all other paths answer `403`.
 

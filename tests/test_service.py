@@ -10,6 +10,7 @@ from unittest.mock import ANY, MagicMock, call, patch
 from urllib.parse import urlencode
 
 from bson import ObjectId
+from fido2.webauthn import AttestationConveyancePreference
 from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
@@ -657,6 +658,17 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIn(b"navigator.credentials.get", body)
         self.assertIn(b"registrationOptions = null", body)
         self.assertNotIn(b"Register credential", body)
+
+    def test_fido2_server_requests_enterprise_attestation(self) -> None:
+        auth = service._auth_module
+        environ = {
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        server = auth._server(environ)
+
+        self.assertEqual(server.attestation, AttestationConveyancePreference.ENTERPRISE)
 
     def test_authn_complete_uses_stored_credential_and_sets_session_cookie(self) -> None:
         auth = service._auth_module

@@ -19,6 +19,7 @@ from fido2.server import Fido2Server
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
+    AttestationConveyancePreference,
     CollectedClientData,
     PublicKeyCredentialUserEntity,
     PublicKeyCredentialRpEntity,
@@ -382,7 +383,11 @@ def complete_authn(environ: dict):
 
 def _server(environ: dict) -> Fido2Server:
     rp = PublicKeyCredentialRpEntity("dropzone-ticketing", _rp_id(environ))
-    return Fido2Server(rp, verify_origin=lambda origin: origin == _origin(environ))
+    return Fido2Server(
+        rp,
+        attestation=AttestationConveyancePreference.ENTERPRISE,
+        verify_origin=lambda origin: origin == _origin(environ),
+    )
 
 
 def _credential_data(credential: Fido2Credential):
