@@ -172,11 +172,13 @@ def _session_user(environ: dict) -> User | None:
         return None
     serial = payload.get("serial")
     issued = float(payload.get("issued", 0))
-    if not isinstance(serial, str) or time() - issued > _COOKIE_MAX_AGE_SECONDS:
+    if time() - issued > _COOKIE_MAX_AGE_SECONDS:
         return None
     user_id = payload.get("user_id")
     if isinstance(user_id, str):
         return User.objects(id=user_id).first()
+    if not isinstance(serial, str):
+        return None
     return _credential_owner(serial)
 
 
