@@ -84,7 +84,7 @@ def begin_register(environ: dict):
             PublicKeyCredentialUserEntity(
                 id=user_object_id.binary,
                 name=raw_user_id,
-                display_name=display_name or raw_user_id,
+                display_name=display_name or "User",
             ),
             credentials,
             user_verification="discouraged",
