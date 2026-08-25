@@ -11,6 +11,7 @@ from hashlib import sha256
 from http import HTTPStatus
 from time import time
 from urllib.parse import quote
+from uuid import UUID
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -230,24 +231,116 @@ def _credential_display_id(credential: Fido2Credential) -> str:
     return f"{hex_value[:8]}…{hex_value[-8:]}"
 
 
-def _attestation_display(credential: Fido2Credential) -> str | None:
-    attestation_object = getattr(credential, "attestation_object", None)
-    if not attestation_object:
+_COSE_LABELS = {1: "kty", 2: "kid", 3: "alg", 4: "key_ops", 5: "base_iv"}
+_COSE_KTY_LABELS = {
+    1: {-1: "crv", -2: "x", -4: "d"},
+    2: {-1: "crv", -2: "x", -3: "y", -4: "d"},
+    3: {-1: "n", -2: "e", -3: "d"},
+    4: {-1: "k"},
+}
+_COSE_KTY_NAMES = {1: "OKP", 2: "EC2", 3: "RSA", 4: "Symmetric"}
+_COSE_ALG_NAMES = {
+    -7: "ES256",
+    -8: "EdDSA",
+    -35: "ES384",
+    -36: "ES512",
+    -37: "PS256",
+    -38: "PS384",
+    -39: "PS512",
+    -257: "RS256",
+    -258: "RS384",
+    -259: "RS512",
+}
+_COSE_CRV_NAMES = {1: "P-256", 2: "P-384", 3: "P-521", 4: "X25519", 5: "X448", 6: "Ed25519", 7: "Ed448"}
+
+
+def _json_value(value: object):
+    if isinstance(value, bytes):
+        return _b64encode(value)
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    return value
+
+
+def _aaguid_display(credential: Fido2Credential) -> str | None:
+    aaguid = getattr(credential, "attestation_aaguid", None)
+    if not aaguid:
         return None
+    raw = bytes(aaguid)
+    if len(raw) != 16:
+        return raw.hex()
+    return str(UUID(bytes=raw))
 
-    def json_value(value: object):
-        if isinstance(value, bytes):
-            return _b64encode(value)
-        if isinstance(value, dict):
-            return {str(key): json_value(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [json_value(item) for item in value]
-        return value
 
+def _cose_label(label: object, kty: object) -> str:
+    if not isinstance(label, int):
+        return str(label)
+    if label in _COSE_LABELS:
+        return _COSE_LABELS[label]
+    return _COSE_KTY_LABELS.get(kty, {}).get(label, str(label))
+
+
+def _cose_value(name: str, value: object) -> str:
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, int):
+        names = {"kty": _COSE_KTY_NAMES, "alg": _COSE_ALG_NAMES, "crv": _COSE_CRV_NAMES}.get(name)
+        if names is not None and value in names:
+            return f"{names[value]} ({value})"
+        return str(value)
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(_json_value(value), sort_keys=True)
+    return str(value)
+
+
+def _public_key_display(credential: Fido2Credential) -> str | None:
+    public_key = getattr(credential, "attestation_publickey", None)
+    if not public_key:
+        return None
+    raw = bytes(public_key)
     try:
-        return json.dumps(json_value(cbor.decode(bytes(attestation_object))), indent=2, sort_keys=True)
+        decoded = cbor.decode(raw)
     except (TypeError, ValueError):
-        return _b64encode(bytes(attestation_object))
+        return _b64encode(raw)
+    if not isinstance(decoded, dict):
+        return _b64encode(raw)
+    kty = decoded.get(1)
+    lines = []
+    for label in sorted(decoded, key=lambda item: (item < 0, abs(item)) if isinstance(item, int) else (True, 0)):
+        name = _cose_label(label, kty)
+        lines.append(f"{name}: {_cose_value(name, decoded[label])}")
+    return "\n".join(lines)
+
+
+def _extensions_display(credential: Fido2Credential) -> str | None:
+    extensions = getattr(credential, "extensions", None)
+    if not extensions:
+        return None
+    try:
+        return json.dumps(_json_value(dict(extensions)), indent=2, sort_keys=True)
+    except (TypeError, ValueError):
+        return str(extensions)
+
+
+def _registration_fields(auth_data: object) -> dict[str, object]:
+    """Extra credential fields taken from the authenticator data of a registration."""
+    credential_data = getattr(auth_data, "credential_data", None)
+    fields: dict[str, object] = {}
+    aaguid = getattr(credential_data, "aaguid", None)
+    if aaguid:
+        fields["attestation_aaguid"] = bytes(aaguid)
+    public_key = getattr(credential_data, "public_key", None)
+    if public_key is not None:
+        try:
+            fields["attestation_publickey"] = cbor.encode(dict(public_key))
+        except (TypeError, ValueError):
+            pass
+    extensions = getattr(auth_data, "extensions", None)
+    if extensions:
+        fields["extensions"] = dict(extensions)
+    return fields
 
 
 def begin_authn(environ: dict):
@@ -287,7 +380,9 @@ def begin_authn(environ: dict):
             {
                 "id": _credential_display_id(credential),
                 "dt": credential.dt,
-                "attestation_object": _attestation_display(credential),
+                "aaguid": _aaguid_display(credential),
+                "public_key": _public_key_display(credential),
+                "extensions": _extensions_display(credential),
                 "encoded_id": _b64encode(credential.id),
             }
             for credential in user.fido2_credentials
@@ -401,8 +496,8 @@ def complete_authn_register(environ: dict):
             Fido2Credential(
                 id=credential_id,
                 data=credential_data,
-                attestation_object=attestation_object,
                 dt=datetime.now(timezone.utc),
+                **_registration_fields(auth_data),
             )
         )
         user.save()

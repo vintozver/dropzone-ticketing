@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Issue tickets{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/themes/base/jquery-ui.min.css" integrity="sha256-Y6jCdwjQRMCYr1alUxqNKUiK/cdfQd8PvQ/AcEj3TNM=" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/jquery-ui.min.js" integrity="sha256-AlTido85uXPlSyyaZNsjJXeCs07eSv3r43kyCVc8ChI=" crossorigin="anonymous"></script>
+{% endblock %}
 {% block content %}
   <h1>Issue tickets</h1>
   {% if error %}<p>{{ error }}</p>{% endif %}
@@ -10,7 +14,6 @@
     <input id="user-id" name="to_id" type="hidden" value="{{ to_id|default('') }}">
     <input id="user-display-name" name="to_display_name" type="hidden" value="{{ to_display_name|default('') }}">
     <span id="clear-selected-user" title="Clear selected user" {% if not to_id %}style="display:none"{% endif %}><a href="#">x</a></span>
-    <ul id="owner-suggestions"></ul>
     <label>Count <input name="count" type="number" min="1" max="1000" required></label>
     <label>Payment <input name="payment" type="text" required value="{{ payment|default('') }}"></label>
     <p>for example, cash or credit card; be sure to write down last 4 digits of the card number or account as necessary</p>
@@ -24,13 +27,11 @@
       const $userId = $("#user-id");
       const $userDisplayName = $("#user-display-name");
       const $clearButton = $("#clear-selected-user");
-      const $suggestions = $("#owner-suggestions");
 
       function lockSelection(value) {
         $ownerInput.val(value).prop("disabled", true);
         $userDisplayName.val("");
         $clearButton.show();
-        $suggestions.empty();
       }
 
       function unlockSelection() {
@@ -57,28 +58,28 @@
         $userDisplayName.val("");
       });
 
-      $ownerInput.on("input", function() {
-        unlockSelection();
-        setFreeformValue();
-        const query = $ownerInput.val().trim();
-        if (!query) {
-          $suggestions.empty();
-          return;
-        }
-        $.getJSON("/users/search", { q: query }).done(function(users) {
-          $suggestions.empty();
-          users.slice(0, 10).forEach(function(user) {
-            const $item = $("<li>");
-            const $link = $("<a>", { href: "#", text: user.display_name });
-            $link.on("click", function(event) {
-              event.preventDefault();
-              $userId.val(user.id);
-              lockSelection(user.display_name);
-            });
-            $item.append($link);
-            $suggestions.append($item);
+      $ownerInput.autocomplete({
+        minLength: 2,
+        delay: 300,
+        source: function(request, response) {
+          $.getJSON("/users/search", { q: request.term }).done(function(users) {
+            response(users.map(function(user) {
+              return { label: user.display_name, value: user.display_name, id: user.id };
+            }));
+          }).fail(function() {
+            response([]);
           });
-        });
+        },
+        select: function(event, ui) {
+          event.preventDefault();
+          $userId.val(ui.item.id);
+          lockSelection(ui.item.label);
+          return false;
+        }
+      });
+
+      $ownerInput.on("input", function() {
+        setFreeformValue();
       });
 
       $("form").on("submit", function() {

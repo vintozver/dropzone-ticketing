@@ -28,6 +28,7 @@ from .auth import (
     _cookies,
     _credential_data,
     _find_credential,
+    _registration_fields,
     _rp_id,
     _server,
     _signed,
@@ -149,8 +150,8 @@ def complete_register(environ: dict):
             Fido2Credential(
                 id=credential_id,
                 data=credential_data,
-                attestation_object=attestation_object,
                 dt=datetime.now(timezone.utc),
+                **_registration_fields(auth_data),
             )
         )
         user.save()
