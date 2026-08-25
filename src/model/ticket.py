@@ -15,6 +15,11 @@ class Redemption(mongoengine.EmbeddedDocument):
     reason = mongoengine.StringField(required=False)
 
 
+class UserRef(mongoengine.EmbeddedDocument):
+    id = mongoengine.ObjectIdField(required=False)
+    display_name = mongoengine.StringField(required=False)
+
+
 class Ticket(mongoengine.Document):
     """A ticket record persisted in MongoDB.
 
@@ -27,16 +32,20 @@ class Ticket(mongoengine.Document):
     """
 
     code = mongoengine.StringField(required=True, unique=True)
-    owner = mongoengine.StringField(required=True)
+    issued_to = mongoengine.EmbeddedDocumentField(UserRef, required=True)
     payment = mongoengine.StringField(required=True)
     purpose = mongoengine.StringField(required=True)
-    issued_user = mongoengine.StringField(required=False)
+    issued_by = mongoengine.EmbeddedDocumentField(UserRef, required=True)
     redeemed = mongoengine.EmbeddedDocumentField(Redemption, required=False)
 
     meta = {
         "db_alias": mongoengine_alias,
         "collection": "tickets",
-        "indexes": ["code"],
+        "indexes": [
+            "code",
+            "issued_to.id",
+            "issued_to.display_name",
+        ],
     }
 
     def issued_utc(self) -> datetime:

@@ -24,13 +24,17 @@ class GoogleCredential(mongoengine.EmbeddedDocument):
 class User(mongoengine.Document):
     """A user and their registered authentication credentials."""
 
-    id = mongoengine.StringField(primary_key=True)
+    id = mongoengine.ObjectIdField(primary_key=True)
+    login = mongoengine.StringField(required=True, unique=True)
+    display_name = mongoengine.StringField(required=False)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
     google_credentials = mongoengine.EmbeddedDocumentListField(GoogleCredential, default=list)
 
     meta = {
         "db_alias": mongoengine_alias,
         "indexes": [
+            {"fields": ["display_name"]},
+            {"fields": ["$display_name"]},
             {"fields": ["fido2_credentials._id"], "unique": True},
             {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
         ],

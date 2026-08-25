@@ -12,6 +12,8 @@ from http import HTTPStatus
 from time import time
 from urllib.parse import quote
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from fido2.server import Fido2Server
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
@@ -132,10 +134,20 @@ def _register_state_from_cookie(environ: dict) -> tuple[dict[str, object], str] 
     if not payload or time() - float(payload.get("issued", 0)) > _CHALLENGE_TTL_SECONDS:
         return None
     state = payload.get("register_state")
-    user_id = payload.get("register_user")
-    if not isinstance(state, dict) or not isinstance(user_id, str):
+    user_login = payload.get("register_user")
+    if not isinstance(state, dict) or not isinstance(user_login, str):
         return None
-    return state, user_id
+    return state, user_login
+
+
+def _user_by_id_str(value: object) -> User | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        user_id = ObjectId(value)
+    except (InvalidId, TypeError):
+        return None
+    return User.objects(id=user_id).first()
 
 
 def _is_authenticated(environ: dict) -> bool:
@@ -146,7 +158,7 @@ def _is_authenticated(environ: dict) -> bool:
     issued = float(payload.get("issued", 0))
     return (
         (isinstance(serial, str) and _credential_owner(serial) is not None)
-        or (isinstance(payload.get("user_id"), str) and User.objects(id=payload["user_id"]).first() is not None)
+        or (_user_by_id_str(payload.get("user_id")) is not None)
     ) and time() - issued <= _COOKIE_MAX_AGE_SECONDS
 
 
@@ -183,7 +195,7 @@ def _session_user(environ: dict) -> User | None:
         return None
     user_id = payload.get("user_id")
     if isinstance(user_id, str):
-        return User.objects(id=user_id).first()
+        return _user_by_id_str(user_id)
     if not isinstance(serial, str):
         return None
     return _credential_owner(serial)
@@ -193,7 +205,21 @@ def current_user_id(environ: dict) -> str | None:
     user = _session_user(environ)
     if user is None:
         return None
-    return user.id
+    return user.login
+
+
+def current_user_display_name(environ: dict) -> str | None:
+    user = _session_user(environ)
+    if user is None:
+        return None
+    return user.display_name or user.login
+
+
+def current_user_ref(environ: dict) -> dict[str, object] | None:
+    user = _session_user(environ)
+    if user is None:
+        return None
+    return {"id": user.id, "display_name": user.display_name or user.login}
 
 
 def _credential_display_id(credential: Fido2Credential) -> str:
@@ -228,9 +254,9 @@ def begin_authn(environ: dict):
     if user is not None:
         register_options, register_state = server.register_begin(
             PublicKeyCredentialUserEntity(
-                id=user.id.encode("utf-8"),
-                name=user.id,
-                display_name=user.id,
+                id=user.login.encode("utf-8"),
+                name=user.login,
+                display_name=user.display_name or user.login,
             ),
             [_credential_data(credential) for credential in user.fido2_credentials],
             user_verification="discouraged",
@@ -257,11 +283,13 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "google_credentials", [])
         ],
         google_csrf=google_csrf,
+        current_login=user.login if user is not None else "",
+        current_display_name=user.display_name if user is not None else "",
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
         payload["register_state"] = register_state
-        payload["register_user"] = user.id
+        payload["register_user"] = user.login
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     headers.append(_cookie("google_csrf", google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
@@ -326,8 +354,8 @@ def complete_authn_register(environ: dict):
     register_state = _register_state_from_cookie(environ)
     if register_state is None:
         return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
-    state, state_user_id = register_state
-    if not hmac.compare_digest(user.id, state_user_id):
+    state, state_user_login = register_state
+    if not hmac.compare_digest(user.login, state_user_login):
         return error(HTTPStatus.FORBIDDEN, "Registration user does not match the challenge.")
     form = read_form(environ)
     try:
@@ -365,6 +393,19 @@ def logout():
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Signed out.")
     headers = [("Location", "/authn"), _clear_cookie(AUTHN_SESSION_COOKIE)]
     return status, headers, body
+
+
+def update_display_name(environ: dict):
+    user = _session_user(environ)
+    if user is None:
+        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
+    form = read_form(environ)
+    display_name = form.get("display_name", "").strip()
+    if len(display_name) > 200:
+        return error(HTTPStatus.BAD_REQUEST, "Display name is too long.")
+    user.display_name = display_name or None
+    user.save()
+    return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
 
 
 def require_auth(environ: dict):

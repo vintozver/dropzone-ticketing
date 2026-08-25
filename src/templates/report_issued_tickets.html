@@ -8,6 +8,7 @@
         <tr>
           <th>Issued</th>
           <th>Issued to</th>
+          <th>Issued by</th>
           <th>Purpose</th>
           <th>Payment</th>
           <th>Redeemed at</th>
@@ -19,7 +20,8 @@
         {% for ticket in tickets %}
           <tr>
             <td>{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
-            <td>{{ ticket.owner }}</td>
+            <td>{{ ticket.issued_to }}</td>
+            <td>{{ ticket.issued_by }}</td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
             <td>{{ ticket.redeemed_at }}</td>

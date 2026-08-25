@@ -62,11 +62,13 @@ def _json_options(options: object) -> object:
 def begin_register(environ: dict):
     if not authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
-    username = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("username", [""])[0].strip()
+    query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+    username = query.get("username", [""])[0].strip()
+    display_name = query.get("display_name", [""])[0].strip()
     registration_options = None
     if username:
         server = _server(environ)
-        existing_user = User.objects(id=username).only("fido2_credentials").first()
+        existing_user = User.objects(login=username).only("fido2_credentials").first()
         credentials = (
             [_credential_data(credential) for credential in existing_user.fido2_credentials]
             if existing_user is not None
@@ -76,7 +78,7 @@ def begin_register(environ: dict):
             PublicKeyCredentialUserEntity(
                 id=secrets.token_bytes(16),
                 name=username,
-                display_name=username,
+                display_name=display_name or username,
             ),
             credentials,
             user_verification="discouraged",
@@ -86,6 +88,7 @@ def begin_register(environ: dict):
         "register.html",
         rp_id=_rp_id(environ),
         username=username,
+        display_name=display_name,
         registration_options=registration_options,
     )
     if registration_options is not None:
@@ -99,6 +102,7 @@ def complete_register(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Credential registration is disabled.")
     form = read_form(environ)
     username = form.get("username", "").strip()
+    display_name = form.get("display_name", "").strip()
     if not username:
         return error(HTTPStatus.BAD_REQUEST, "Username is required.")
     registration = _registration_from_cookie(environ)
@@ -123,9 +127,11 @@ def complete_register(environ: dict):
         credential_id = auth_data.credential_data.credential_id
         if _find_credential(_b64encode(credential_id)) is not None:
             return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user = User.objects(id=username).first()
+        user = User.objects(login=username).first()
         if user is None:
-            user = User(id=username)
+            user = User(login=username, display_name=display_name or None)
+        else:
+            user.display_name = display_name or None
         user.fido2_credentials.append(
             Fido2Credential(
                 id=credential_id,

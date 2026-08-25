@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Tickets issued{% endblock %}
 {% block content %}
-  <h1>Tickets issued to {{ owner }}</h1>
+  <h1>Tickets issued to {{ issued_to_display_name }}</h1>
   <ul>
     <li>Tickets issued: {{ count }}</li>
     <li>Purpose: {{ purpose }}</li>

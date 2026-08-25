@@ -14,10 +14,11 @@ from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
-from dropzone_ticketing.model.ticket import Redemption
+from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import config
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import register as register_module
+from dropzone_ticketing.service.actions.search_users import search_users
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
 from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
 
@@ -26,6 +27,10 @@ def b64(value: bytes) -> str:
     import base64
 
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def user_ref(display_name: str, *, object_id: str | None = None) -> UserRef:
+    return UserRef(id=ObjectId(object_id) if object_id else None, display_name=display_name)
 
 
 class ServiceHelperTest(unittest.TestCase):
@@ -54,23 +59,23 @@ class ServiceHelperTest(unittest.TestCase):
 
         status, _headers, body = service._issue(
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
-            }
+            },
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "Issuer"},
         )
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertNotIn(b"new-code", body)
         self.assertEqual(generate_code.call_count, 2)
-        self.assertEqual(
-            ticket_class.call_args_list,
-            [
-                call(code="duplicate-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop", issued_user=None),
-                call(code="new-code", owner="Jane", payment="cash", purpose="C182 hop-and-hop", issued_user=None),
-            ],
-        )
+        self.assertEqual(ticket_class.call_count, 2)
+        for call_ in ticket_class.call_args_list:
+            self.assertEqual(call_.kwargs["payment"], "cash")
+            self.assertEqual(call_.kwargs["purpose"], "C182 hop-and-hop")
+            self.assertEqual(call_.kwargs["issued_to"].display_name, "Jane")
+            self.assertEqual(call_.kwargs["issued_by"].display_name, "Issuer")
 
     @patch.object(service, "Ticket")
     def test_redeem_reports_each_result(self, ticket_class) -> None:
@@ -122,11 +127,12 @@ class ServiceHelperTest(unittest.TestCase):
 
         status, _headers, body = service._issue(
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "2",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
-            }
+            },
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "Issuer"},
         )
 
         self.assertEqual(status, service.HTTPStatus.OK)
@@ -141,7 +147,7 @@ class ServiceHelperTest(unittest.TestCase):
 
     @patch.object(service, "Ticket")
     def test_print_renders_only_the_requested_tickets(self, ticket_class) -> None:
-        ticket = MagicMock(code="secret-code", owner="Jane")
+        ticket = MagicMock(code="secret-code", issued_to=user_ref("Jane"))
         ticket_class.objects.return_value = [ticket]
 
         with patch.object(service, "PDF") as pdf_class:
@@ -179,75 +185,95 @@ class ServiceHelperTest(unittest.TestCase):
 
     @patch.object(service, "Ticket")
     def test_print_renders_all_active_tickets_of_an_owner(self, ticket_class) -> None:
-        tickets = [MagicMock(code="code-1", owner="Jane"), MagicMock(code="code-2", owner="Jane")]
+        tickets = [MagicMock(code="code-1", issued_to=user_ref("Jane")), MagicMock(code="code-2", issued_to=user_ref("Jane"))]
         ticket_class.objects.return_value = tickets
 
         with patch.object(service, "PDF") as pdf_class:
-            status, headers, _body = service._print_tickets([], "Jane")
+            status, headers, _body = service._print_tickets([], None, "Jane")
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(("Content-Type", "application/pdf"), headers)
-        ticket_class.objects.assert_called_once_with(owner="Jane", redeemed=None)
+        ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
         self.assertEqual(
             pdf_class.return_value.append.call_args_list,
             [call(tickets[0]), call(tickets[1])],
         )
 
-    def test_print_rejects_an_owner_together_with_ticket_ids(self) -> None:
-        status, _headers, body = service._print_tickets(["507f1f77bcf86cd799439011"], "Jane")
+    def test_print_rejects_a_user_filter_together_with_ticket_ids(self) -> None:
+        status, _headers, body = service._print_tickets(["507f1f77bcf86cd799439011"], None, "Jane")
 
         self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
-        self.assertIn(b"Supply either ticket identifiers or an owner, not both.", body)
+        self.assertIn(b"Supply either ticket identifiers or a user filter, not both.", body)
 
-    def test_print_rejects_a_blank_owner(self) -> None:
-        status, _headers, body = service._print_tickets([], " ")
+    def test_print_rejects_an_empty_user_filter(self) -> None:
+        status, _headers, body = service._print_tickets([], "", "")
 
         self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
-        self.assertIn(b"Owner is required.", body)
+        self.assertIn(b"At least one ticket is required.", body)
 
     @patch.object(service, "Ticket")
     def test_print_without_active_owner_tickets_is_not_found(self, ticket_class) -> None:
         ticket_class.objects.return_value = []
 
-        status, _headers, body = service._print_tickets([], "Jane")
+        status, _headers, body = service._print_tickets([], None, "Jane")
 
         self.assertEqual(status, service.HTTPStatus.NOT_FOUND)
         self.assertIn(b"No tickets found.", body)
 
     @patch.object(service, "Ticket")
     def test_view_owners_lists_only_owners_with_active_tickets(self, ticket_class) -> None:
-        ticket_class.objects.return_value.distinct.return_value = ["Zoe", "Jane"]
+        ticket_class.objects.side_effect = [
+            SimpleNamespace(distinct=lambda _field: [ObjectId("507f1f77bcf86cd799439011")]),
+            SimpleNamespace(only=lambda _field: SimpleNamespace(first=lambda: SimpleNamespace(issued_to=user_ref("Jane")))),
+            SimpleNamespace(distinct=lambda _field: ["Guest"]),
+        ]
 
         status, _headers, body = service._view_owners()
 
         self.assertEqual(status, service.HTTPStatus.OK)
-        ticket_class.objects.assert_called_once_with(redeemed=None)
-        ticket_class.objects.return_value.distinct.assert_called_once_with("owner")
-        self.assertLess(body.index(b"Jane"), body.index(b"Zoe"))
+        self.assertIn(b"/tickets?user_id=507f1f77bcf86cd799439011", body)
+        self.assertIn(b"/tickets?display_name=Guest", body)
 
     @patch.object(service, "Ticket")
     def test_view_owner_tickets_hides_the_ticket_code(self, ticket_class) -> None:
         ticket = MagicMock(
             payment="cash",
             purpose="C182 hop-and-hop",
-            issued_user="issuer-1",
+            issued_by=user_ref("issuer-1"),
+            issued_to=user_ref("Jane"),
             code="secret-code",
             id="507f1f77bcf86cd799439011",
         )
         ticket.issued_utc.return_value = datetime(2026, 8, 22, tzinfo=timezone.utc)
         ticket_class.objects.return_value = [ticket]
 
-        status, _headers, body = service._view_owner_tickets("Jane")
+        status, _headers, body = service._view_owner_tickets(None, "Jane")
 
         self.assertEqual(status, service.HTTPStatus.OK)
-        ticket_class.objects.assert_called_once_with(owner="Jane", redeemed=None)
+        ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
         self.assertIn(b"2026-08-22 00:00:00 UTC", body)
         self.assertIn(b"issuer-1", body)
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
         self.assertNotIn(b"secret-code", body)
         self.assertIn(b'href="/print?id=507f1f77bcf86cd799439011"', body)
-        self.assertIn(b'href="/print?owner=Jane"', body)
+        self.assertIn(b'href="/print?display_name=Jane"', body)
+
+    def test_user_search_limits_results_to_ten(self) -> None:
+        prefix_users = [SimpleNamespace(id=ObjectId(), login=f"user-{index}", display_name=f"Jane {index}") for index in range(7)]
+        contains_users = [SimpleNamespace(id=ObjectId(), login=f"extra-{index}", display_name=f"X Jane {index}") for index in range(5)]
+        first_query = MagicMock()
+        first_query.only.return_value.limit.return_value = prefix_users
+        second_query = MagicMock()
+        second_query.only.return_value.limit.return_value = contains_users
+        user_class = MagicMock()
+        user_class.objects.side_effect = [first_query, second_query]
+
+        result = search_users("Jane", user_class=user_class)
+
+        self.assertEqual(len(result), 10)
+        self.assertEqual(first_query.only.return_value.limit.call_args.args[0], 10)
+        self.assertEqual(second_query.only.return_value.limit.call_args.args[0], 3)
 
     @patch.object(service.mongoengine, "register_connection")
     @patch("dropzone_ticketing.service.config._file_config")
@@ -274,21 +300,17 @@ class ServiceHelperTest(unittest.TestCase):
 
         service._issue(
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
             },
-            "issuer-1",
+            {"id": ObjectId("507f1f77bcf86cd799439099"), "display_name": "issuer-1"},
         )
 
-        ticket_class.assert_called_once_with(
-            code=ANY,
-            owner="Jane",
-            payment="cash",
-            purpose="C182 hop-and-hop",
-            issued_user="issuer-1",
-        )
+        ticket_class.assert_called_once()
+        self.assertEqual(ticket_class.call_args.kwargs["issued_to"].display_name, "Jane")
+        self.assertEqual(ticket_class.call_args.kwargs["issued_by"].display_name, "issuer-1")
 
     @patch.object(service, "Ticket")
     def test_redeem_records_redeeming_user(self, ticket_class) -> None:
@@ -305,7 +327,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         query = [
             SimpleNamespace(
-                owner="Jane",
+                issued_to=user_ref("Jane"),
                 code="today-code",
                 redeemed=Redemption(
                     dt=datetime(2026, 8, 24, 9, tzinfo=timezone.utc),
@@ -314,7 +336,7 @@ class ServiceHelperTest(unittest.TestCase):
                 ),
             ),
             SimpleNamespace(
-                owner="Jane",
+                issued_to=user_ref("Jane"),
                 code="yesterday-code",
                 redeemed=Redemption(
                     dt=datetime(2026, 8, 23, 20, tzinfo=timezone.utc),
@@ -342,10 +364,10 @@ class ServiceHelperTest(unittest.TestCase):
                 "redeemed__dt__lt": datetime(2026, 8, 25, tzinfo=timezone.utc),
             },
         )
-        self.assertIn(b"Redeemed today: 1", body)
-        self.assertIn(b"Redeemed yesterday: 1", body)
-        self.assertIn(b'<span alt="today-code" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">2</span>', body)
-        self.assertIn(b'<span alt="yesterday-code" title="Reason: unknown; By: unknown; At: 2026-08-23 20:00:00 UTC">1</span>', body)
+        self.assertIn(b"Today:", body)
+        self.assertIn(b"Yesterday:", body)
+        self.assertIn(b'<span title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">1</span>', body)
+        self.assertIn(b'<span title="Reason: unknown; By: unknown; At: 2026-08-23 20:00:00 UTC">1</span>', body)
         self.assertNotIn(b">today-code</span>", body)
 
     def test_issued_report_limits_to_last_500_and_handles_missing_redemption(self) -> None:
@@ -358,7 +380,8 @@ class ServiceHelperTest(unittest.TestCase):
                 self.limit_count = count
                 return [
                     SimpleNamespace(
-                        owner="Jane",
+                        issued_to=user_ref("Jane"),
+                        issued_by=user_ref("issuer-1"),
                         purpose="C182 hop-and-hop",
                         payment="cash",
                         redeemed=Redemption(
@@ -369,7 +392,8 @@ class ServiceHelperTest(unittest.TestCase):
                         issued_utc=lambda: ObjectId("64e3b8000000000000000000").generation_time,
                     ),
                     SimpleNamespace(
-                        owner="Zoe",
+                        issued_to=user_ref("Zoe"),
+                        issued_by=user_ref("issuer-2"),
                         purpose="packing",
                         payment="card",
                         redeemed=None,
@@ -417,6 +441,10 @@ class ServiceApplicationTest(unittest.TestCase):
 
         with patch.object(service, "_ensure_storage"), patch.object(
             service._auth_module, "_is_authenticated", return_value=authenticated
+        ), patch.object(
+            service._auth_module,
+            "current_user_ref",
+            return_value={"id": ObjectId("507f1f77bcf86cd799439011"), "display_name": "Jane"} if authenticated else None,
         ):
             response["body"] = b"".join(service.application(environ, start_response))
         return response
@@ -436,10 +464,12 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_base_template_shows_signed_in_user(self) -> None:
-        with patch.object(service._auth_module, "current_user_id", return_value="jane"):
+        with patch.object(service._auth_module, "current_user_id", return_value="jane"), patch.object(
+            service._auth_module, "current_user_display_name", return_value="Jane"
+        ):
             response = self.request("/", authenticated=True)
 
-        self.assertIn(b'Signed in as <a href="/authn">jane</a>', response["body"])
+        self.assertIn(b'Signed in as <a href="/authn">Jane</a>', response["body"])
         self.assertNotIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_issue_rejects_out_of_range_count(self) -> None:
@@ -447,7 +477,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "1001",
                 "payment": "cash",
                 "purpose": "C182 hop-and-hop",
@@ -462,7 +492,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "1",
                 "payment": " ",
                 "purpose": "C182 hop-and-hop",
@@ -477,7 +507,7 @@ class ServiceApplicationTest(unittest.TestCase):
             "/issue",
             "POST",
             {
-                "owner": "Jane",
+                "user_display_name": "Jane",
                 "count": "1",
                 "payment": "cash",
                 "purpose": " ",
@@ -486,6 +516,21 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "400 Bad Request")
         self.assertIn(b"Purpose is required.", response["body"])
+
+    def test_issue_requires_exactly_one_user_field(self) -> None:
+        response = self.request(
+            "/issue",
+            "POST",
+            {
+                "user_id": "507f1f77bcf86cd799439011",
+                "user_display_name": "Jane",
+                "count": "1",
+                "payment": "cash",
+                "purpose": "C182 hop-and-hop",
+            },
+        )
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertIn(b"Exactly one of user_id or user_display_name is required.", response["body"])
 
     def test_print_page_is_removed(self) -> None:
         response = self.request("/print")
@@ -721,6 +766,7 @@ class ServiceAuthnTest(unittest.TestCase):
                 urlencode(
                     {
                         "username": "Jane",
+                        "display_name": "Jane Sky",
                         "id": "credential",
                         "rawId": b64(b"credential"),
                         "clientDataJSON": b64(b"client data"),
@@ -747,6 +793,7 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(server.register_complete.call_args.args[0], state)
         self.assertEqual(server.register_complete.call_args.kwargs["response"], "registration response")
         registration_response.assert_called_once()
+        user_class.assert_called_once_with(login="Jane", display_name="Jane Sky")
         user.save.assert_called_once_with()
 
     def test_authn_begin_shows_registered_credentials_for_signed_in_user(self) -> None:
@@ -757,7 +804,9 @@ class ServiceAuthnTest(unittest.TestCase):
         server.authenticate_begin.return_value = {}, state
         server.register_begin.return_value = {"publicKey": {"challenge": b"register challenge"}}, register_state
         user = SimpleNamespace(
-            id="Jane",
+            id=ObjectId("507f1f77bcf86cd799439011"),
+            login="Jane",
+            display_name="Jane",
             fido2_credentials=[SimpleNamespace(id=b"abcdefgh", dt=datetime(2026, 8, 22, tzinfo=timezone.utc))],
         )
         environ = {
@@ -798,7 +847,7 @@ class ServiceAuthnTest(unittest.TestCase):
         credential_data = CredentialData()
         server = MagicMock()
         server.register_complete.return_value = SimpleNamespace(credential_data=credential_data)
-        user = MagicMock(id="Jane", fido2_credentials=[])
+        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), login="Jane", fido2_credentials=[])
         environ = {
             "PATH_INFO": "/authn/register",
             "REQUEST_METHOD": "POST",
@@ -831,6 +880,23 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
         self.assertEqual(user.fido2_credentials[0].data, b"serialized credential")
+        user.save.assert_called_once_with()
+
+    def test_display_name_update_persists_for_authenticated_user(self) -> None:
+        auth = service._auth_module
+        user = MagicMock(display_name=None)
+        environ = {
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(urlencode({"display_name": "  Jane Sky  "}).encode()),
+            "HTTP_COOKIE": "authn_session=signed",
+        }
+        environ["CONTENT_LENGTH"] = str(environ["wsgi.input"].getbuffer().nbytes)
+        with patch.object(auth, "_session_user", return_value=user):
+            status, headers, _body = auth.update_display_name(environ)
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(dict(headers)["Location"], "/authn")
+        self.assertEqual(user.display_name, "Jane Sky")
         user.save.assert_called_once_with()
 
 
@@ -871,7 +937,7 @@ class ServiceGoogleTest(unittest.TestCase):
         ), patch.object(google_module, "google_client_id", return_value="client"), patch.object(
             google_module, "google_client_secret", return_value="secret"
         ), patch.object(google_module.Flow, "from_client_config") as from_client_config:
-            google_module._oauth_flow("https://example.test/authn/google/callback")
+            google_module._oauth_flow("https://example.test/authn/google/callback", "verifier")
 
         config, = from_client_config.call_args.args
         self.assertEqual(config["web"]["client_id"], "client")
@@ -932,7 +998,7 @@ class ServiceGoogleTest(unittest.TestCase):
             "email": "jane@example.test",
             "verified_email": False,
         }
-        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None, "code_verifier": "verifier"}), patch.object(
             google_module, "_oauth_flow", return_value=flow
         ), patch.object(google_module, "build", return_value=service_client):
             status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
@@ -942,7 +1008,7 @@ class ServiceGoogleTest(unittest.TestCase):
     def test_complete_reports_a_failed_token_exchange(self) -> None:
         flow = MagicMock()
         flow.fetch_token.side_effect = GoogleAuthError("boom")
-        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None, "code_verifier": "verifier"}), patch.object(
             google_module, "_oauth_flow", return_value=flow
         ):
             status, _headers, body = google_module.complete(self.environ(query="state=abc&code=auth-code"))

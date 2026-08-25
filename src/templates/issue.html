@@ -4,7 +4,13 @@
   <h1>Issue tickets</h1>
   {% if error %}<p>{{ error }}</p>{% endif %}
   <form method="post">
-    <label>Owner <input name="owner" type="text" required value="{{ owner|default('') }}"></label>
+    <label>Owner
+      <input id="owner-input" type="text" autocomplete="off" value="{{ user_display_name|default('') }}">
+    </label>
+    <input id="user-id" name="user_id" type="hidden" value="{{ user_id|default('') }}">
+    <input id="user-display-name" name="user_display_name" type="hidden" value="{{ user_display_name|default('') }}">
+    <button id="clear-selected-user" type="button" {% if not user_id %}style="display:none"{% endif %}>Clear selected user</button>
+    <ul id="owner-suggestions"></ul>
     <label>Count <input name="count" type="number" min="1" max="1000" required></label>
     <label>Payment <input name="payment" type="text" required value="{{ payment|default('') }}"></label>
     <p>for example, cash or credit card; be sure to write down last 4 digits of the card number or account as necessary</p>
@@ -12,4 +18,70 @@
     <p>for example, King Air full altitude, C182 hop-and-hop, balloon ride, bonfire, dinner admission. Write down the price if necessary.</p>
     <button type="submit">Issue</button>
   </form>
+  <script>
+    $(function() {
+      const $ownerInput = $("#owner-input");
+      const $userId = $("#user-id");
+      const $userDisplayName = $("#user-display-name");
+      const $clearButton = $("#clear-selected-user");
+      const $suggestions = $("#owner-suggestions");
+
+      function lockSelection(value) {
+        $ownerInput.val(value).prop("readonly", true);
+        $userDisplayName.val("");
+        $clearButton.show();
+        $suggestions.empty();
+      }
+
+      function unlockSelection() {
+        $userId.val("");
+        $ownerInput.prop("readonly", false).focus();
+        $clearButton.hide();
+      }
+
+      function setFreeformValue() {
+        if ($userId.val()) {
+          return;
+        }
+        $userDisplayName.val($ownerInput.val().trim());
+      }
+
+      if ($userId.val()) {
+        lockSelection($ownerInput.val());
+      }
+
+      $clearButton.on("click", function() {
+        unlockSelection();
+        $ownerInput.val("");
+        $userDisplayName.val("");
+      });
+
+      $ownerInput.on("input", function() {
+        unlockSelection();
+        setFreeformValue();
+        const query = $ownerInput.val().trim();
+        if (!query) {
+          $suggestions.empty();
+          return;
+        }
+        $.getJSON("/users/search", { q: query }).done(function(users) {
+          $suggestions.empty();
+          users.slice(0, 10).forEach(function(user) {
+            const $item = $("<li>");
+            const $button = $("<button>", { type: "button", text: user.display_name });
+            $button.on("click", function() {
+              $userId.val(user.id);
+              lockSelection(user.display_name);
+            });
+            $item.append($button);
+            $suggestions.append($item);
+          });
+        });
+      });
+
+      $("form").on("submit", function() {
+        setFreeformValue();
+      });
+    });
+  </script>
 {% endblock %}

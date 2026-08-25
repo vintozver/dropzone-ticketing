@@ -8,6 +8,7 @@ from io import BytesIO
 from bson import ObjectId
 
 from dropzone_ticketing import PDF, Ticket
+from dropzone_ticketing.model.ticket import UserRef
 from dropzone_ticketing.pdf import (
     PAGE_HEIGHT,
     PAGE_WIDTH,
@@ -26,7 +27,8 @@ def make_ticket(
     return Ticket(
         id=ObjectId.from_datetime(issued),
         code=code,
-        owner=owner,
+        issued_to=UserRef(display_name=owner),
+        issued_by=UserRef(display_name="issuer"),
         payment=payment,
         purpose=purpose,
     )
@@ -73,7 +75,8 @@ class TicketPdfTest(unittest.TestCase):
     def test_issued_utc_requires_an_identifier(self) -> None:
         ticket = Ticket(
             code="NOID01",
-            owner="John Jumper",
+            issued_to=UserRef(display_name="John Jumper"),
+            issued_by=UserRef(display_name="issuer"),
             payment="cash",
             purpose="One jump 36$",
         )

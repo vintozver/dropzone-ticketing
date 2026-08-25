@@ -33,11 +33,11 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
 
     tickets = sorted(
         ticket_class.objects(redeemed__dt__gte=yesterday, redeemed__dt__lt=tomorrow),
-        key=lambda ticket: (ticket.owner, _as_utc(ticket.redeemed.dt)),
+        key=lambda ticket: ((ticket.issued_to.display_name if ticket.issued_to else ""), _as_utc(ticket.redeemed.dt)),
     )
     for ticket in tickets:
         redeemed = ticket.redeemed
-        owner = ticket.owner
+        owner = (ticket.issued_to.display_name if ticket.issued_to else "") or "unknown"
         group = owner_groups[owner]
         group["owner"] = owner
         redeemed_dt = _as_utc(redeemed.dt)

@@ -56,7 +56,7 @@ class PDF(object):
         line_height = 0.18 * inch
 
         self.canvas.setFont("Helvetica", 8)
-        self.canvas.drawString(x, y, ticket.owner)
+        self.canvas.drawString(x, y, ticket.issued_to.display_name or "")
         self.canvas.drawString(x, y - line_height, ticket.code)
         self.canvas.drawString(x, y - 2 * line_height, self._format_datetime(issued_utc, "UTC"))
 
@@ -73,7 +73,7 @@ class PDF(object):
             ticket.purpose,
             f"Paid: {ticket.payment}",
             f"Issued: {self._format_datetime(issued_pdt, 'PDT')}",
-            f"To: {ticket.owner}",
+            f"To: {ticket.issued_to.display_name or ''}",
             "Jumper:",
             "_____________________",
         ]
