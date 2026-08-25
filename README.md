@@ -18,20 +18,18 @@ google:
   redirect_uri: https://example.test/authn/google/callback
 ```
 
-Every top level setting can also be given as an environment variable named after the
-upper case form of its YAML key (`MONGODB_URI`, `AUTHN_SESSION_SECRET`,
-`REGISTRATION_MODE`); the environment takes precedence over the file.
+All settings come from this file only; `CONFIG_FILE` merely names it.
 
 ### Registration mode
 
 Protected routes require authentication with a registered FIDO2 or Google credential.
-To register credentials, set `REGISTRATION_MODE` while starting the service, then open
-`/register`, enter a username, and press “Register credential”. Registration mode
-disables authentication and should only be enabled during initial setup.
+To register credentials, set `registration_mode` in the configuration file, restart the
+service, then open `/register`, enter a username, and press “Register credential”.
+Registration mode disables authentication and should only be enabled during initial setup.
 
-```console
+```yaml
 # Only during credential registration:
-export REGISTRATION_MODE=1
+registration_mode: true
 ```
 
 For local development, the following command starts the WSGI application on port

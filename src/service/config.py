@@ -39,13 +39,7 @@ def _section(name: str) -> dict[str, object]:
 
 
 def _setting(name: str, default=None):
-    """Read a setting from the environment, falling back to the YAML file.
-
-    Environment variables are upper case; the matching YAML key is lower case.
-    """
-    if name in os.environ:
-        return os.environ[name]
-    return _config().get(name.lower(), default)
+    return _config().get(name, default)
 
 
 @dataclass(frozen=True)
@@ -54,9 +48,7 @@ class AuthnConfig:
 
 
 def registration_mode() -> bool:
-    if "REGISTRATION_MODE" in os.environ:
-        return True
-    return bool(_setting("REGISTRATION_MODE", False))
+    return bool(_setting("registration_mode", False))
 
 
 def authn_config() -> AuthnConfig:
@@ -64,9 +56,9 @@ def authn_config() -> AuthnConfig:
 
 
 def session_secret() -> bytes:
-    configured = _setting("AUTHN_SESSION_SECRET")
+    configured = _setting("authn_session_secret")
     if configured:
-        return configured.encode("utf-8")
+        return str(configured).encode("utf-8")
     return _session_secret
 
 
@@ -92,7 +84,7 @@ def _google_setting(name: str, default=None):
 
 
 def mongodb_uri() -> str:
-    configured = _setting("MONGODB_URI")
+    configured = _setting("mongodb_uri")
     if not configured:
         raise KeyError("mongodb_uri")
     return str(configured)

@@ -30,6 +30,8 @@ from dropzone_ticketing.model.auth import GoogleCredential, User
 GOOGLE_STATE_COOKIE = "google_oauth_state"
 GOOGLE_CSRF_COOKIE = "google_csrf"
 _GOOGLE_STATE_TTL_SECONDS = 300
+# The cookie must survive Google's cross-site redirect back to the callback.
+_GOOGLE_STATE_SAME_SITE = "Lax"
 _GOOGLE_DISCOVERY_URI = "https://accounts.google.com/.well-known/openid-configuration"
 _GOOGLE_SCOPES = ["email"]
 
@@ -88,7 +90,13 @@ def begin(environ: dict):
         HTTPStatus.SEE_OTHER,
         [
             ("Location", query),
-            _cookie(GOOGLE_STATE_COOKIE, _signed(payload), max_age=_GOOGLE_STATE_TTL_SECONDS, path="/authn/google"),
+            _cookie(
+                GOOGLE_STATE_COOKIE,
+                _signed(payload),
+                max_age=_GOOGLE_STATE_TTL_SECONDS,
+                path="/authn/google",
+                same_site=_GOOGLE_STATE_SAME_SITE,
+            ),
         ],
         b"",
     )
@@ -142,7 +150,7 @@ def complete(environ: dict):
         [
             ("Location", "/authn"),
             _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": user.id, "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
-            _cookie(GOOGLE_STATE_COOKIE, "", max_age=0, path="/authn/google"),
+            _cookie(GOOGLE_STATE_COOKIE, "", max_age=0, path="/authn/google", same_site=_GOOGLE_STATE_SAME_SITE),
         ],
         b"",
     )

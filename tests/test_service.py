@@ -875,7 +875,8 @@ class ServiceGoogleTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
         self.assertEqual(dict(headers)["Location"], "https://accounts.test/auth?state=abc")
-        self.assertTrue(any(name == "Set-Cookie" and "google_oauth_state=" in value for name, value in headers))
+        state_cookie = next(value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value)
+        self.assertIn("SameSite=Lax", state_cookie)
 
     def test_complete_logs_in_an_existing_user_using_the_userinfo_profile(self) -> None:
         flow = MagicMock()
@@ -898,6 +899,10 @@ class ServiceGoogleTest(unittest.TestCase):
         user_class.objects.assert_called_once_with(google_credentials__email="jane@example.test")
         self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
         self.assertEqual(dict(headers)["Location"], "/authn")
+        cleared = next(value for name, value in headers if name == "Set-Cookie" and "google_oauth_state=" in value)
+        self.assertIn("SameSite=Lax", cleared)
+        session_cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_session=" in value)
+        self.assertIn("SameSite=Strict", session_cookie)
 
     def test_complete_rejects_an_unverified_email(self) -> None:
         flow = MagicMock()
@@ -930,16 +935,30 @@ class ServiceConfigTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_yaml_keys_are_lower_case_versions_of_the_environment_names(self) -> None:
-        self.patch_config({"mongodb_uri": "mongodb://yaml.example/test", "registration_mode": True})
+    def test_settings_are_read_from_the_yaml_file(self) -> None:
+        self.patch_config(
+            {
+                "mongodb_uri": "mongodb://yaml.example/test",
+                "registration_mode": True,
+                "authn_session_secret": "shhh",
+            }
+        )
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
             self.assertTrue(config.registration_mode())
+            self.assertEqual(config.session_secret(), b"shhh")
 
-    def test_environment_overrides_the_yaml_file(self) -> None:
+    def test_the_environment_does_not_provide_settings(self) -> None:
         self.patch_config({"mongodb_uri": "mongodb://yaml.example/test"})
-        with patch.dict(os.environ, {"MONGODB_URI": "mongodb://env.example/test"}, clear=True):
-            self.assertEqual(config.mongodb_uri(), "mongodb://env.example/test")
+        environment = {
+            "MONGODB_URI": "mongodb://env.example/test",
+            "REGISTRATION_MODE": "1",
+            "AUTHN_SESSION_SECRET": "env-secret",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
+            self.assertFalse(config.registration_mode())
+            self.assertNotEqual(config.session_secret(), b"env-secret")
 
     def test_missing_mongodb_uri_is_reported(self) -> None:
         self.patch_config({})
