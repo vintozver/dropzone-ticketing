@@ -903,7 +903,9 @@ class ServiceGoogleTest(unittest.TestCase):
             "verified_email": True,
         }
         user = MagicMock(id="Jane")
-        with patch.object(google_module, "_state", return_value={"state": "abc", "user": None}), patch.object(
+        with patch.object(
+            google_module, "_state", return_value={"state": "abc", "user": None, "code_verifier": "verifier"}
+        ), patch.object(
             google_module, "_oauth_flow", return_value=flow
         ), patch.object(google_module, "build", return_value=service_client) as build, patch.object(
             google_module, "_session_user", return_value=None
@@ -921,7 +923,7 @@ class ServiceGoogleTest(unittest.TestCase):
         )
         self.assertIn("SameSite=Lax", cleared_state_cookie)
         session_cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_session=" in value)
-        self.assertIn("SameSite=Strict", session_cookie)
+        self.assertIn("SameSite=Lax", session_cookie)
 
     def test_complete_rejects_an_unverified_email(self) -> None:
         flow = MagicMock()
