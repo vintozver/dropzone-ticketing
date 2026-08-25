@@ -29,12 +29,23 @@ def _file_config(filename: str) -> dict[str, object]:
     return values
 
 
+def _config() -> dict[str, object]:
+    return _file_config(os.environ.get("CONFIG_FILE", "config.yaml"))
+
+
+def _section(name: str) -> dict[str, object]:
+    values = _config().get(name)
+    return values if isinstance(values, dict) else {}
+
+
 def _setting(name: str, default=None):
+    """Read a setting from the environment, falling back to the YAML file.
+
+    Environment variables are upper case; the matching YAML key is lower case.
+    """
     if name in os.environ:
         return os.environ[name]
-    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml"))
-    file_name = {"MONGODB_URI": "mongodb_uri"}.get(name, name)
-    return values.get(file_name, default)
+    return _config().get(name.lower(), default)
 
 
 @dataclass(frozen=True)
@@ -77,14 +88,11 @@ def google_redirect_uri(environ: dict) -> str:
 
 
 def _google_setting(name: str, default=None):
-    values = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("google", {})
-    if isinstance(values, dict):
-        return values.get(name, default)
-    return default
+    return _section("google").get(name, default)
 
 
 def mongodb_uri() -> str:
-    configured = _file_config(os.environ.get("CONFIG_FILE", "config.yaml")).get("mongodb_uri")
+    configured = _setting("MONGODB_URI")
     if not configured:
         raise KeyError("mongodb_uri")
     return str(configured)

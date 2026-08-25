@@ -10,11 +10,17 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
+authn_session_secret: your-session-secret
+registration_mode: false
 google:
   client_id: your-client-id
   secret: your-client-secret
   redirect_uri: https://example.test/authn/google/callback
 ```
+
+Every top level setting can also be given as an environment variable named after the
+upper case form of its YAML key (`MONGODB_URI`, `AUTHN_SESSION_SECRET`,
+`REGISTRATION_MODE`); the environment takes precedence over the file.
 
 ### Registration mode
 

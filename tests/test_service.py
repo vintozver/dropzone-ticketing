@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption
+from dropzone_ticketing.service import config
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import register as register_module
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
@@ -920,6 +922,45 @@ class ServiceGoogleTest(unittest.TestCase):
             status, _headers, _body = google_module.complete(self.environ(query="state=abc&code=auth-code"))
 
         self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+
+
+class ServiceConfigTest(unittest.TestCase):
+    def config(self, values: dict) -> None:
+        patcher = patch.object(config, "_file_config", return_value=values)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_yaml_keys_are_lower_case_versions_of_the_environment_names(self) -> None:
+        self.config({"mongodb_uri": "mongodb://yaml.example/test", "registration_mode": True})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.mongodb_uri(), "mongodb://yaml.example/test")
+            self.assertTrue(config.registration_mode())
+
+    def test_environment_overrides_the_yaml_file(self) -> None:
+        self.config({"mongodb_uri": "mongodb://yaml.example/test"})
+        with patch.dict(os.environ, {"MONGODB_URI": "mongodb://env.example/test"}, clear=True):
+            self.assertEqual(config.mongodb_uri(), "mongodb://env.example/test")
+
+    def test_missing_mongodb_uri_is_reported(self) -> None:
+        self.config({})
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(KeyError):
+                config.mongodb_uri()
+
+    def test_google_settings_are_read_from_the_google_section(self) -> None:
+        self.config({"google": {"client_id": "client", "secret": "shhh"}})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.google_client_id(), "client")
+            self.assertEqual(config.google_client_secret(), "shhh")
+
+    def test_a_non_mapping_google_section_is_ignored(self) -> None:
+        self.config({"google": "nonsense"})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.google_client_id(), "")
+            self.assertEqual(
+                config.google_redirect_uri({"wsgi.url_scheme": "https", "HTTP_HOST": "example.test"}),
+                "https://example.test/authn/google/callback",
+            )
 
 
 if __name__ == "__main__":
