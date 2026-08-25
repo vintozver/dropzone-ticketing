@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
+
+import yaml
 
 MAX_TICKETS = 1000
 MAX_CODE_ATTEMPTS = 20
@@ -16,14 +17,14 @@ _session_secret = secrets.token_bytes(32)
 
 
 def _file_config() -> dict[str, object]:
-    filename = os.environ.get("CONFIG_FILE", "config.json")
+    filename = os.environ.get("CONFIG_FILE", "config.yaml")
     path = Path(filename)
     if not path.is_file():
         return {}
     with path.open(encoding="utf-8") as config_file:
-        values = json.load(config_file)
+        values = yaml.safe_load(config_file)
     if not isinstance(values, dict):
-        raise ValueError("Configuration file must contain a JSON object.")
+        raise ValueError("Configuration file must contain a YAML object.")
     return values
 
 

@@ -10,7 +10,7 @@ service, then open `/register`, enter a username, and press “Register credenti
 Registration mode disables authentication and should only be enabled during
 initial setup.
 
-Configuration can also be loaded from a JSON object in `config.json` (or the
+Configuration can also be loaded from a YAML object in `config.yaml` (or the
 file named by `CONFIG_FILE`). Environment variables override values from the
 file.
 
