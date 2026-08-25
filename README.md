@@ -18,7 +18,7 @@ google:
 
 ### Registration mode
 
-Protected routes require FIDO2 authentication with a credential registered in MongoDB.
+Protected routes require authentication with a registered FIDO2 or Google credential.
 To register credentials, set `REGISTRATION_MODE` while starting the service, then open
 `/register`, enter a username, and press “Register credential”. Registration mode
 disables authentication and should only be enabled during initial setup.
