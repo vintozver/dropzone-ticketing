@@ -49,8 +49,9 @@ class StorageTicketDocumentTest(unittest.TestCase):
         redeemed_fields = Redemption._fields
         self.assertIsInstance(redeemed_fields["dt"], mongoengine.DateTimeField)
         self.assertTrue(redeemed_fields["dt"].required)
-        self.assertIsInstance(redeemed_fields["by_user"], mongoengine.StringField)
-        self.assertFalse(redeemed_fields["by_user"].required)
+        self.assertIsInstance(redeemed_fields["by"], mongoengine.EmbeddedDocumentField)
+        self.assertFalse(redeemed_fields["by"].required)
+        self.assertIs(redeemed_fields["by"].document_type_obj, UserRef)
         self.assertIsInstance(redeemed_fields["reason"], mongoengine.StringField)
         self.assertFalse(redeemed_fields["reason"].required)
 
@@ -65,11 +66,11 @@ class StorageTicketDocumentTest(unittest.TestCase):
             Redemption().validate()
 
         redemption = Redemption(dt=datetime(2026, 8, 22, tzinfo=timezone.utc))
-        self.assertNotIn("by_user", redemption.to_mongo())
+        self.assertNotIn("by", redemption.to_mongo())
         self.assertNotIn("reason", redemption.to_mongo())
 
     def test_collection_metadata(self) -> None:
-        self.assertEqual(Ticket._meta["collection"], "tickets")
+        self.assertEqual(Ticket._meta["collection"], "ticket")
         self.assertIn("code", Ticket._meta["indexes"])
         self.assertIn("issued_to.id", Ticket._meta["indexes"])
         self.assertIn("issued_to.display_name", Ticket._meta["indexes"])

@@ -11,7 +11,7 @@ class Redemption(mongoengine.EmbeddedDocument):
     """Details recorded when a ticket is redeemed."""
 
     dt = mongoengine.DateTimeField(required=True)
-    by_user = mongoengine.StringField(required=False)
+    by = mongoengine.EmbeddedDocumentField("UserRef", required=False)
     reason = mongoengine.StringField(required=False)
 
 
@@ -40,7 +40,7 @@ class Ticket(mongoengine.Document):
 
     meta = {
         "db_alias": mongoengine_alias,
-        "collection": "tickets",
+        "collection": "ticket",
         "indexes": [
             "code",
             "issued_to.id",

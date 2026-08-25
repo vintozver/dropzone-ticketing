@@ -92,7 +92,15 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "GET":
             return render("redeem.html")
-        return handlers._redeem(handlers._read_form(environ), handlers._current_user_id(environ))
+        return handlers._redeem(handlers._read_form(environ), handlers._current_user_ref(environ))
+
+    if path.startswith("/tickets/"):
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._view_ticket(path.removeprefix("/tickets/"))
 
     if path == "/tickets":
         if method != "GET":

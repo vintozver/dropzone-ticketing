@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Ticket {{ ticket.id }}{% endblock %}
+{% block content %}
+  <h1>Ticket {{ ticket.id }}</h1>
+  <dl>
+    <dt>Issued</dt><dd>{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</dd>
+    <dt>Issued to</dt><dd>{{ ticket.issued_to }}</dd>
+    <dt>Issued by</dt><dd>{{ ticket.issued_by }}</dd>
+    <dt>Purpose</dt><dd>{{ ticket.purpose }}</dd>
+    <dt>Payment</dt><dd>{{ ticket.payment }}</dd>
+    <dt>Code</dt><dd><code>{{ ticket.code }}</code></dd>
+    <dt>Redeemed at</dt><dd>{% if ticket.redeemed_at %}{{ ticket.redeemed_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}</dd>
+    <dt>Redeemed by</dt><dd>{{ ticket.redeemed_by }}</dd>
+    <dt>Redemption reason</dt><dd>{{ ticket.redeemed_reason }}</dd>
+  </dl>
+  <p><a href="/print?id={{ ticket.id|urlencode }}">Print this ticket as PDF</a></p>
+{% endblock %}
