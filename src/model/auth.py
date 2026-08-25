@@ -30,8 +30,5 @@ class User(mongoengine.Document):
 
     meta = {
         "db_alias": mongoengine_alias,
-        "indexes": [
-            {"fields": ["fido2_credentials._id"], "unique": True},
-            {"fields": ["google_credentials.email"], "unique": True},
-        ],
+        "indexes": [{"fields": ["fido2_credentials._id"], "unique": True}],
     }
