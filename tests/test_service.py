@@ -773,10 +773,10 @@ class ServiceAuthnTest(unittest.TestCase):
         ):
             _status, headers, body = auth.begin_authn(environ)
 
-        self.assertIn(b"Your registered credentials", body)
+        self.assertIn(b"My FIDO2 credentials", body)
         self.assertIn(b"61626364", body)
         self.assertIn(b"65666768", body)
-        self.assertIn(b"Register additional credential", body)
+        self.assertIn(b">Add another</button>", body)
         cookie = next(value for name, value in headers if name == "Set-Cookie")
         payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
         self.assertEqual(payload["register_state"], register_state)

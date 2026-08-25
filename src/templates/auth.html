@@ -1,66 +1,79 @@
 {% extends "base.html" %}
 {% block title %}Authenticate{% endblock %}
 {% block content %}
-{% if not authenticated %}
-<h2>Authenticate</h2>
-<p>Use a registered FIDO2 credential to sign in.</p>
-<form id="authn-form" method="post" action="/authn">
-  <input type="hidden" name="id" id="id">
-  <input type="hidden" name="rawId" id="rawId">
-  <input type="hidden" name="clientDataJSON" id="clientDataJSON">
-  <input type="hidden" name="authenticatorData" id="authenticatorData">
-  <input type="hidden" name="signature" id="signature">
-  <button type="submit">Authenticate</button>
-</form>
-<p id="authn-error" role="alert"></p>
-<p><a href="/authn/google">Authenticate via Google</a></p>
-{% endif %}
 {% if authenticated %}
-<form method="post" action="/logout">
-  <button type="submit">Logout</button>
-</form>
-{% endif %}
-{% if user_credentials %}
-<h3>Your registered credentials</h3>
-<table>
-  <thead><tr><th>Credential ID</th><th>Registered at</th></tr></thead>
-  <tbody>
-    {% for credential in user_credentials %}
-      <tr>
-        <td><code>{{ credential.id }}</code></td>
-        <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}</td>
-      </tr>
+<section>
+  <h2>My FIDO2 credentials</h2>
+  {% if user_credentials %}
+  <table>
+    <thead><tr><th>Credential ID</th><th>Registered at</th></tr></thead>
+    <tbody>
+      {% for credential in user_credentials %}
+        <tr>
+          <td><code>{{ credential.id }}</code></td>
+          <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No FIDO2 credentials registered.</p>{% endif %}
+  {% if registration_options %}
+  <form id="register-form" method="post" action="/authn/register">
+    <input type="hidden" name="id" id="register-id">
+    <input type="hidden" name="rawId" id="register-rawId">
+    <input type="hidden" name="attestationObject" id="register-attestationObject">
+    <input type="hidden" name="clientDataJSON" id="register-clientDataJSON">
+    <button type="submit">Add another</button>
+  </form>
+  <p id="register-error" role="alert"></p>
+  {% endif %}
+</section>
+<section>
+  <h2>My Google credentials</h2>
+  {% if google_credentials %}
+  <ul>
+    {% for credential in google_credentials %}
+    <li>{{ credential.email }}
+      <form method="post" action="/authn/google/remove" style="display:inline">
+        <input type="hidden" name="email" value="{{ credential.email }}">
+        <input type="hidden" name="csrf" value="{{ google_csrf }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>
     {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-{% if authenticated %}
-<h3>Google credentials</h3>
-{% if google_credentials %}
-<ul>
-  {% for credential in google_credentials %}
-  <li>{{ credential.email }}
-    <form method="post" action="/authn/google/remove" style="display:inline">
-      <input type="hidden" name="email" value="{{ credential.email }}">
-      <input type="hidden" name="csrf" value="{{ google_csrf }}">
-      <button type="submit">Remove</button>
-    </form>
-  </li>
-  {% endfor %}
-</ul>
-{% else %}<p>No Google credentials registered.</p>{% endif %}
-<p><a href="/authn/google">Add a Google credential</a></p>
-{% endif %}
-{% if user_credentials and registration_options %}
-<h3>Add a new credential</h3>
-<form id="register-form" method="post" action="/authn/register">
-  <input type="hidden" name="id" id="register-id">
-  <input type="hidden" name="rawId" id="register-rawId">
-  <input type="hidden" name="attestationObject" id="register-attestationObject">
-  <input type="hidden" name="clientDataJSON" id="register-clientDataJSON">
-  <button type="submit">Register additional credential</button>
-</form>
-<p id="register-error" role="alert"></p>
+  </ul>
+  {% else %}<p>No Google credentials registered.</p>{% endif %}
+  <form method="get" action="/authn/google">
+    <button type="submit">Add another</button>
+  </form>
+</section>
+<section>
+  <h2>Logout</h2>
+  <form method="post" action="/logout">
+    <button type="submit">Logout</button>
+  </form>
+</section>
+{% else %}
+<section>
+  <h2>FIDO2/passkey</h2>
+  <p>Use a registered FIDO2 credential or passkey to sign in securely.</p>
+  <form id="authn-form" method="post" action="/authn">
+    <input type="hidden" name="id" id="id">
+    <input type="hidden" name="rawId" id="rawId">
+    <input type="hidden" name="clientDataJSON" id="clientDataJSON">
+    <input type="hidden" name="authenticatorData" id="authenticatorData">
+    <input type="hidden" name="signature" id="signature">
+    <button type="submit">Proceed</button>
+  </form>
+  <p id="authn-error" role="alert"></p>
+</section>
+<section>
+  <h2>Google</h2>
+  <p>Use your Google account to sign in.</p>
+  <form method="get" action="/authn/google">
+    <button type="submit">Proceed</button>
+  </form>
+</section>
 {% endif %}
 <script>
 const challenge = "{{ challenge }}";

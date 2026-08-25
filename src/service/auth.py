@@ -251,6 +251,7 @@ def begin_authn(environ: dict):
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         user_credentials=user_credentials,
+        authenticated=user is not None,
         google_credentials=[
             {"email": credential.email}
             for credential in getattr(user, "google_credentials", [])
