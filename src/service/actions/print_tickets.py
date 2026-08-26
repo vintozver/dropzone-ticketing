@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import timezone
 from http import HTTPStatus
 from urllib.parse import urlencode
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+from dropzone_ticketing.service.config import local_timezone
 
 
 def safe_filename(label: str) -> str:
@@ -68,7 +69,7 @@ def print_tickets(
         return render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
-    display_timezone = display_timezone or timezone.utc
+    display_timezone = display_timezone or local_timezone()
     pdf = pdf_class(output, local_timezone=display_timezone)
     for ticket in tickets:
         pdf.append(ticket)
