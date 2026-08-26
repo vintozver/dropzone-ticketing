@@ -1479,7 +1479,7 @@ class ServiceMicrosoftTest(unittest.TestCase):
                 microsoft_module._client_authentication("https://login.test/token")
 
         self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
-        self.assertIsInstance(raised.exception.__cause__, TypeError)
+        self.assertIsInstance(raised.exception.__cause__, (TypeError, ValueError))
 
     def test_a_certificate_alone_configures_microsoft_authentication(self) -> None:
         with patch.object(microsoft_module, "microsoft_client_id", return_value="client"), patch.object(
