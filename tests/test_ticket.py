@@ -46,7 +46,7 @@ class TicketPdfTest(unittest.TestCase):
             purpose="King Air full altitude 36$",
         )
 
-        pdf = PDF(output, local_timezone=ZoneInfo("America/Los_Angeles"))
+        pdf = PDF(output, local_timezone=ZoneInfo("America/Los_Angeles"), business_name="The Dropzone")
         pdf.append(ticket)
         pdf.render()
 
@@ -76,7 +76,7 @@ class TicketPdfTest(unittest.TestCase):
             datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
         )
 
-        pdf = PDF(output, business_name="Skydive Example")
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="Skydive Example")
         pdf.append(ticket)
         pdf.render()
 
@@ -117,7 +117,7 @@ class TicketLogoTest(unittest.TestCase):
             datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
         )
 
-        pdf = PDF(output)
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
         pdf.append(ticket)
         pdf.render()
 

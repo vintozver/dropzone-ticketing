@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, tzinfo
 from importlib import resources
 from io import BytesIO
 from typing import BinaryIO
@@ -23,13 +23,12 @@ VERTICAL_MARGIN = 0.15 * inch
 HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
-DEFAULT_BUSINESS_NAME = "The Dropzone"
 
 
 class PDF(object):
     """A PDF document rendering one page per appended ticket."""
 
-    def __init__(self, destination: BinaryIO, local_timezone: tzinfo = timezone.utc, business_name: str = DEFAULT_BUSINESS_NAME):
+    def __init__(self, destination: BinaryIO, local_timezone: tzinfo, business_name: str):
         self.canvas = canvas.Canvas(
             destination,
             pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
