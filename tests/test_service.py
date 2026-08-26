@@ -1413,7 +1413,7 @@ class ServiceMicrosoftTest(unittest.TestCase):
             hashes.SHA256(),
         )
 
-    def test_an_elliptic_curve_key_is_signed_with_the_matching_algorithm(self) -> None:
+    def test_an_elliptic_curve_key_uses_microsoft_es256_with_sha256(self) -> None:
         key = ec.generate_private_key(ec.SECP384R1())
         pem, _certificate = self.certificate_pem(key)
         with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem), patch.object(
@@ -1422,7 +1422,7 @@ class ServiceMicrosoftTest(unittest.TestCase):
             assertion = microsoft_module._client_assertion("https://login.test/token")
 
         header_segment, claims_segment, signature_segment = assertion.split(".")
-        self.assertEqual(self.segment(header_segment)["alg"], "ES384")
+        self.assertEqual(self.segment(header_segment)["alg"], "ES256")
         raw = self.signature(signature_segment)
         self.assertEqual(len(raw), 96)
         half = len(raw) // 2
@@ -1431,7 +1431,7 @@ class ServiceMicrosoftTest(unittest.TestCase):
                 int.from_bytes(raw[:half], "big"), int.from_bytes(raw[half:], "big")
             ),
             f"{header_segment}.{claims_segment}".encode(),
-            ec.ECDSA(hashes.SHA384()),
+            ec.ECDSA(hashes.SHA256()),
         )
 
     def test_the_certificate_is_read_when_the_key_comes_first_in_the_bundle(self) -> None:
