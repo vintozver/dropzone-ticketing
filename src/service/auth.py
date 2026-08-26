@@ -331,6 +331,7 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "google_credentials", [])
         ],
         google_csrf=google_csrf,
+        authn_csrf=google_csrf,
         microsoft_credentials=[
             {"email": credential.email}
             for credential in getattr(user, "microsoft_credentials", [])

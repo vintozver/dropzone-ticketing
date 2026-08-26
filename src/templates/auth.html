@@ -17,7 +17,7 @@
     <li>{{ credential.email }}
       <form method="post" action="/authn/microsoft/remove" style="display:inline">
         <input type="hidden" name="email" value="{{ credential.email }}">
-        <input type="hidden" name="csrf" value="{{ google_csrf }}">
+        <input type="hidden" name="csrf" value="{{ authn_csrf }}">
         <button type="submit">Remove</button>
       </form>
     </li>

@@ -18,7 +18,7 @@ from .http import error, read_form
 from ..model.auth import MicrosoftCredential, User
 
 MICROSOFT_STATE_COOKIE = "microsoft_oauth_state"
-MICROSOFT_CSRF_COOKIE = "google_csrf"
+AUTHN_CSRF_COOKIE = "google_csrf"
 _STATE_TTL_SECONDS = 300
 _DISCOVERY_URI = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
 _SCOPES = "openid email profile"
@@ -140,7 +140,7 @@ def remove(environ: dict):
     if user is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     form = read_form(environ)
-    if not secrets.compare_digest(form.get("csrf", ""), _cookies(environ).get(MICROSOFT_CSRF_COOKIE, "")):
+    if not secrets.compare_digest(form.get("csrf", ""), _cookies(environ).get(AUTHN_CSRF_COOKIE, "")):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     email = form.get("email", "").strip().casefold()
     credentials = user.microsoft_credentials
