@@ -23,18 +23,20 @@ VERTICAL_MARGIN = 0.15 * inch
 HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
+DEFAULT_BUSINESS_NAME = "The Dropzone"
 
 
 class PDF(object):
     """A PDF document rendering one page per appended ticket."""
 
-    def __init__(self, destination: BinaryIO, local_timezone: tzinfo = timezone.utc):
+    def __init__(self, destination: BinaryIO, local_timezone: tzinfo = timezone.utc, business_name: str = DEFAULT_BUSINESS_NAME):
         self.canvas = canvas.Canvas(
             destination,
             pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
             pageCompression=0,
         )
         self.local_timezone = local_timezone
+        self.business_name = business_name
         self.canvas.setTitle("Tickets")
 
     def append(self, ticket: _ticket.Ticket) -> None:
@@ -67,7 +69,7 @@ class PDF(object):
         line_height = 0.16 * inch
 
         self.canvas.setFont("Helvetica-Bold", 16)
-        self.canvas.drawString(x, y, "Skydive Toledo LLC")
+        self.canvas.drawString(x, y, self.business_name)
         self.canvas.setFont("Helvetica", 12)
 
         lines = [

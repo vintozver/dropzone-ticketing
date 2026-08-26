@@ -9,8 +9,7 @@ from urllib.parse import parse_qs
 
 from jinja2 import Environment, PackageLoader, pass_context, select_autoescape
 
-from dropzone_ticketing.time_utils import format_datetime
-
+from ..time_utils import format_datetime
 from .config import MAX_FORM_BYTES, local_timezone
 
 _templates = Environment(

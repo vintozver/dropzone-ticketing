@@ -56,6 +56,10 @@ def local_timezone() -> ZoneInfo:
     return ZoneInfo(str(_setting("timezone", "UTC") or "UTC"))
 
 
+def business_name() -> str:
+    return str(_setting("business_name", "The Dropzone") or "The Dropzone")
+
+
 def authn_config() -> AuthnConfig:
     return AuthnConfig(register=registration_mode())
 

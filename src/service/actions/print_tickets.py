@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from bson import ObjectId
 from bson.errors import InvalidId
 
-from dropzone_ticketing.service.config import local_timezone
+from ..config import business_name, local_timezone
 
 
 def safe_filename(label: str) -> str:
@@ -68,7 +68,7 @@ def print_tickets(
         return render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
-    pdf = pdf_class(output, local_timezone=local_timezone())
+    pdf = pdf_class(output, local_timezone=local_timezone(), business_name=business_name())
     for ticket in tickets:
         pdf.append(ticket)
     pdf.render()

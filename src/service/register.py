@@ -36,7 +36,7 @@ from .auth import (
 )
 from .config import authn_config
 from .http import error, read_form, render
-from dropzone_ticketing.model.auth import Fido2Credential, User
+from ..model.auth import Fido2Credential, User
 
 _DEFAULT_REGISTER_DISPLAY_NAME = "User"
 

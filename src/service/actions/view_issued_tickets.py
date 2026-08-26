@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from urllib.parse import urlencode
 
-from dropzone_ticketing.service.config import local_timezone
-from dropzone_ticketing.time_utils import format_datetime
+from ...time_utils import format_datetime
+from ..config import local_timezone
 
 
 def _user_link(ref) -> dict[str, str]:

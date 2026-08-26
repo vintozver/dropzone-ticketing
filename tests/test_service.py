@@ -167,6 +167,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(("Content-Type", "application/pdf"), headers)
         self.assertEqual(pdf_class.call_args.kwargs["local_timezone"].key, "UTC")
+        self.assertEqual(pdf_class.call_args.kwargs["business_name"], "The Dropzone")
         ticket_class.objects.assert_called_once_with(
             id__in=[service.ObjectId("507f1f77bcf86cd799439011")]
         )
@@ -206,6 +207,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(("Content-Type", "application/pdf"), headers)
         self.assertEqual(pdf_class.call_args.kwargs["local_timezone"].key, "UTC")
+        self.assertEqual(pdf_class.call_args.kwargs["business_name"], "The Dropzone")
         ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
         self.assertEqual(
             pdf_class.return_value.append.call_args_list,
@@ -1321,6 +1323,16 @@ class ServiceConfigTest(unittest.TestCase):
         self.patch_config({"timezone": "America/Los_Angeles"})
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.local_timezone().key, "America/Los_Angeles")
+
+    def test_business_name_defaults_to_the_dropzone(self) -> None:
+        self.patch_config({})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.business_name(), "The Dropzone")
+
+    def test_business_name_is_read_from_the_yaml_file(self) -> None:
+        self.patch_config({"business_name": "Skydive Example"})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.business_name(), "Skydive Example")
 
     def test_google_settings_are_read_from_the_google_section(self) -> None:
         self.patch_config({"google": {"client_id": "client", "secret": "shhh"}})
