@@ -23,6 +23,12 @@ class GoogleCredential(mongoengine.EmbeddedDocument):
     email = mongoengine.StringField(required=True)
 
 
+class MicrosoftCredential(mongoengine.EmbeddedDocument):
+    """A Microsoft account allowed to authenticate as a ticketing user."""
+
+    email = mongoengine.StringField(required=True)
+
+
 class User(mongoengine.Document):
     """A user and their registered authentication credentials."""
 
@@ -30,6 +36,7 @@ class User(mongoengine.Document):
     display_name = mongoengine.StringField(required=False)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
     google_credentials = mongoengine.EmbeddedDocumentListField(GoogleCredential, default=list)
+    microsoft_credentials = mongoengine.EmbeddedDocumentListField(MicrosoftCredential, default=list)
 
     meta = {
         "db_alias": mongoengine_alias,
@@ -37,5 +44,6 @@ class User(mongoengine.Document):
             {"fields": ["display_name"]},
             {"fields": ["fido2_credentials._id"], "unique": True},
             {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
+            {"fields": ["microsoft_credentials.email"], "unique": True, "sparse": True},
         ],
     }

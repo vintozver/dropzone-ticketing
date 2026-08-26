@@ -10,6 +10,23 @@
   </form>
 </section>
 <section>
+  <h2>My Microsoft credentials</h2>
+  {% if microsoft_credentials %}
+  <ul>
+    {% for credential in microsoft_credentials %}
+    <li>{{ credential.email }}
+      <form method="post" action="/authn/microsoft/remove" style="display:inline">
+        <input type="hidden" name="email" value="{{ credential.email }}">
+        <input type="hidden" name="csrf" value="{{ authn_csrf }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p>No Microsoft credentials registered.</p>{% endif %}
+  <form method="get" action="/authn/microsoft"><button type="submit">Add another</button></form>
+</section>
+<section>
   <h2>My FIDO2 credentials</h2>
   {% if user_credentials %}
   <table>
@@ -24,7 +41,7 @@
           <td>
             <form method="post" action="/authn/fido2/remove">
               <input type="hidden" name="credential_id" value="{{ credential.encoded_id }}">
-              <input type="hidden" name="csrf" value="{{ google_csrf }}">
+              <input type="hidden" name="csrf" value="{{ authn_csrf }}">
               <button type="submit">Remove</button>
             </form>
           </td>
@@ -62,7 +79,7 @@
     <li>{{ credential.email }}
       <form method="post" action="/authn/google/remove" style="display:inline">
         <input type="hidden" name="email" value="{{ credential.email }}">
-        <input type="hidden" name="csrf" value="{{ google_csrf }}">
+        <input type="hidden" name="csrf" value="{{ authn_csrf }}">
         <button type="submit">Remove</button>
       </form>
     </li>
@@ -99,6 +116,11 @@
   <form method="get" action="/authn/google">
     <button type="submit">Proceed</button>
   </form>
+</section>
+<section>
+  <h2>Microsoft</h2>
+  <p>Use your Microsoft account to sign in.</p>
+  <form method="get" action="/authn/microsoft"><button type="submit">Proceed</button></form>
 </section>
 {% endif %}
 <script>

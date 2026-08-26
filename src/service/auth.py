@@ -32,6 +32,7 @@ from ..model.auth import Fido2Credential, User
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
+AUTHN_CSRF_COOKIE = "authn_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 
@@ -317,7 +318,7 @@ def begin_authn(environ: dict):
             }
             for credential in user.fido2_credentials
         ]
-    google_csrf = secrets.token_urlsafe(32)
+    authn_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
@@ -330,7 +331,11 @@ def begin_authn(environ: dict):
             {"email": credential.email}
             for credential in getattr(user, "google_credentials", [])
         ],
-        google_csrf=google_csrf,
+        authn_csrf=authn_csrf,
+        microsoft_credentials=[
+            {"email": credential.email}
+            for credential in getattr(user, "microsoft_credentials", [])
+        ],
         current_display_name=user.display_name if user is not None else "",
     )
     payload = {"state": _state, "issued": time()}
@@ -338,7 +343,7 @@ def begin_authn(environ: dict):
         payload["register_state"] = register_state
         payload["register_user"] = str(user.id)
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
-    headers.append(_cookie("google_csrf", google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
+    headers.append(_cookie(AUTHN_CSRF_COOKIE, authn_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
 
 
@@ -467,7 +472,7 @@ def remove_fido2_credential(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     form = read_form(environ)
     token = form.get("csrf", "")
-    expected = _cookies(environ).get("google_csrf", "")
+    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "")
     if not token or not expected or not secrets.compare_digest(token, expected):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     try:

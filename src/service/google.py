@@ -20,6 +20,7 @@ from .config import google_client_id, google_client_secret, google_redirect_uri
 from .http import error, read_form
 from .auth import (
     AUTHN_SESSION_COOKIE,
+    AUTHN_CSRF_COOKIE,
     _COOKIE_MAX_AGE_SECONDS,
     _cookie,
     _cookies,
@@ -30,7 +31,7 @@ from .auth import (
 from ..model.auth import GoogleCredential, User
 
 GOOGLE_STATE_COOKIE = "google_oauth_state"
-GOOGLE_CSRF_COOKIE = "google_csrf"
+GOOGLE_CSRF_COOKIE = AUTHN_CSRF_COOKIE
 _GOOGLE_STATE_TTL_SECONDS = 300
 # The cookie must survive Google's cross-site redirect back to the callback.
 _GOOGLE_STATE_SAME_SITE = "Lax"
@@ -181,7 +182,7 @@ def remove(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     form = read_form(environ)
     token = form.get("csrf", "")
-    expected = _cookies(environ).get(GOOGLE_CSRF_COOKIE, "")
+    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "")
     if not token or not expected or not secrets.compare_digest(token, expected):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     email = form.get("email", "").strip().casefold()
