@@ -182,7 +182,7 @@ def remove(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     form = read_form(environ)
     token = form.get("csrf", "")
-    expected = _cookies(environ).get(GOOGLE_CSRF_COOKIE, "")
+    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "") or _cookies(environ).get("google_csrf", "")
     if not token or not expected or not secrets.compare_digest(token, expected):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     email = form.get("email", "").strip().casefold()
