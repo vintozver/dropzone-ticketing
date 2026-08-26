@@ -37,6 +37,21 @@ microsoft:
 All settings come from this file only; `CONFIG_FILE` merely names it.
 If `timezone` is omitted, displayed times default to UTC.
 
+#### Microsoft certificate authentication
+
+A Microsoft certificate can be generated using the following commands:
+
+```console
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:secp521r1 -out client-key.pem
+openssl req -x509 -key client-key.pem -sha256 -days 7300 -subj "/CN=credential" -issuer "/CN=credential" -nodes -out client-crt.pem
+```
+
+Combine `client-crt.pem` and `client-key.pem` and add the resulting PEM content
+to the `microsoft.certificate` YAML configuration value.
+
+The `client-crt.pem` file must also be uploaded to the Microsoft Azure portal
+under **App registration → Certificates & secrets → Certificates**.
+
 ### Registration mode
 
 Protected routes require authentication with a registered FIDO2 or Google credential.
