@@ -97,8 +97,8 @@ def microsoft_client_secret() -> str:
     return str(_microsoft_setting("secret", ""))
 
 
-def microsoft_client_key() -> str:
-    return str(_microsoft_setting("key", "") or "")
+def microsoft_client_certificate() -> str:
+    return str(_microsoft_setting("certificate", "") or "")
 
 
 def microsoft_redirect_uri(environ: dict) -> str:

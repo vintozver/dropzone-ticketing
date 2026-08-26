@@ -22,9 +22,12 @@ google:
 microsoft:
   client_id: your-client-id
   secret: your-client-secret
-  # Optional certificate authentication: RSA private key in PEM format, optionally
-  # followed by the matching certificate. When present it replaces `secret`.
-  key: |
+  # Optional certificate authentication: the certificate and its private key,
+  # both in PEM format, concatenated in any order. When present it replaces `secret`.
+  certificate: |
+    -----BEGIN CERTIFICATE-----
+    ...
+    -----END CERTIFICATE-----
     -----BEGIN PRIVATE KEY-----
     ...
     -----END PRIVATE KEY-----

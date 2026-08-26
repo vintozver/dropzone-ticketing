@@ -15,7 +15,8 @@ from urllib.parse import parse_qs, urlencode
 from bson import ObjectId
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
+from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from cryptography.x509.oid import NameOID
 from fido2.webauthn import AttestationConveyancePreference
 from google.auth.exceptions import GoogleAuthError
@@ -1337,13 +1338,33 @@ class ServiceMicrosoftTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-    def private_key_pem(self) -> str:
-        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        return key.private_bytes(
+    def certificate_pem(self, key=None) -> tuple[str, "x509.Certificate"]:
+        key = key or rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "example.test")])
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime(2026, 1, 1))
+            .not_valid_after(datetime(2027, 1, 1))
+            .sign(key, None if isinstance(key, ed25519.Ed25519PrivateKey) else hashes.SHA256())
+        )
+        pem = certificate.public_bytes(serialization.Encoding.PEM).decode() + key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption(),
         ).decode()
+        return pem, certificate
+
+    @staticmethod
+    def segment(value: str) -> dict:
+        return json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+
+    @staticmethod
+    def signature(value: str) -> bytes:
+        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
     def test_begin_requests_the_openid_and_email_scopes(self) -> None:
         with patch.object(microsoft_module, "_configured", return_value=True), patch.object(
@@ -1360,9 +1381,10 @@ class ServiceMicrosoftTest(unittest.TestCase):
         scope = parse_qs(location.split("?", 1)[1])["scope"][0]
         self.assertEqual(scope.split(), ["openid", "email"])
 
-    def test_the_private_key_takes_precedence_over_the_secret(self) -> None:
-        pem = self.private_key_pem()
-        with patch.object(microsoft_module, "microsoft_client_key", return_value=pem), patch.object(
+    def test_the_certificate_takes_precedence_over_the_secret(self) -> None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem, certificate = self.certificate_pem(key)
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem), patch.object(
             microsoft_module, "microsoft_client_secret", return_value="shhh"
         ), patch.object(microsoft_module, "microsoft_client_id", return_value="client"):
             authentication = microsoft_module._client_authentication("https://login.test/token")
@@ -1373,69 +1395,66 @@ class ServiceMicrosoftTest(unittest.TestCase):
             "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
         )
         header_segment, claims_segment, signature_segment = authentication["client_assertion"].split(".")
-
-        def decode(segment: str) -> dict:
-            padded = segment + "=" * (-len(segment) % 4)
-            return json.loads(base64.urlsafe_b64decode(padded))
-
-        self.assertEqual(decode(header_segment), {"alg": "RS256", "typ": "JWT"})
-        claims = decode(claims_segment)
+        expected_thumbprint = base64.urlsafe_b64encode(
+            certificate.fingerprint(hashes.SHA256())
+        ).rstrip(b"=").decode()
+        self.assertEqual(
+            self.segment(header_segment), {"alg": "RS256", "typ": "JWT", "x5t#S256": expected_thumbprint}
+        )
+        claims = self.segment(claims_segment)
         self.assertEqual(claims["aud"], "https://login.test/token")
         self.assertEqual(claims["iss"], "client")
         self.assertEqual(claims["sub"], "client")
         self.assertGreater(claims["exp"], claims["iat"])
-        signing_input = f"{header_segment}.{claims_segment}".encode()
-        signature = base64.urlsafe_b64decode(signature_segment + "=" * (-len(signature_segment) % 4))
-        public_key = serialization.load_pem_private_key(pem.encode(), None).public_key()
-        public_key.verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
-
-    def test_a_bundled_certificate_adds_the_thumbprint_header(self) -> None:
-        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "example.test")])
-        certificate = (
-            x509.CertificateBuilder()
-            .subject_name(name)
-            .issuer_name(name)
-            .public_key(key.public_key())
-            .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime(2026, 1, 1))
-            .not_valid_after(datetime(2027, 1, 1))
-            .sign(key, hashes.SHA256())
+        key.public_key().verify(
+            self.signature(signature_segment),
+            f"{header_segment}.{claims_segment}".encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
         )
-        pem = key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode() + certificate.public_bytes(serialization.Encoding.PEM).decode()
-        with patch.object(microsoft_module, "microsoft_client_key", return_value=pem), patch.object(
+
+    def test_an_elliptic_curve_key_is_signed_with_the_matching_algorithm(self) -> None:
+        key = ec.generate_private_key(ec.SECP384R1())
+        pem, _certificate = self.certificate_pem(key)
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem), patch.object(
             microsoft_module, "microsoft_client_id", return_value="client"
         ):
-            assertion = microsoft_module._client_authentication("https://login.test/token")["client_assertion"]
+            assertion = microsoft_module._client_assertion("https://login.test/token")
 
-        segment = assertion.split(".", 1)[0]
-        header = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
-        expected = base64.urlsafe_b64encode(certificate.fingerprint(hashes.SHA1())).rstrip(b"=").decode()
-        self.assertEqual(header["x5t"], expected)
+        header_segment, claims_segment, signature_segment = assertion.split(".")
+        self.assertEqual(self.segment(header_segment)["alg"], "ES384")
+        raw = self.signature(signature_segment)
+        self.assertEqual(len(raw), 96)
+        half = len(raw) // 2
+        key.public_key().verify(
+            encode_dss_signature(
+                int.from_bytes(raw[:half], "big"), int.from_bytes(raw[half:], "big")
+            ),
+            f"{header_segment}.{claims_segment}".encode(),
+            ec.ECDSA(hashes.SHA384()),
+        )
 
-    def test_the_secret_is_used_without_a_private_key(self) -> None:
-        with patch.object(microsoft_module, "microsoft_client_key", return_value=""), patch.object(
+    def test_the_secret_is_used_without_a_certificate(self) -> None:
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=""), patch.object(
             microsoft_module, "microsoft_client_secret", return_value="shhh"
         ):
             self.assertEqual(
                 microsoft_module._client_authentication("https://login.test/token"), {"client_secret": "shhh"}
             )
 
-    def test_an_invalid_private_key_is_reported_without_the_key_material(self) -> None:
-        with patch.object(microsoft_module, "microsoft_client_key", return_value="-----BEGIN PRIVATE KEY-----\nsecret\n"):
+    def test_an_invalid_certificate_is_reported_without_the_key_material(self) -> None:
+        with patch.object(
+            microsoft_module, "microsoft_client_certificate", return_value="-----BEGIN PRIVATE KEY-----\nsecret\n"
+        ):
             with self.assertRaises(ValueError) as raised:
                 microsoft_module._client_authentication("https://login.test/token")
 
-        self.assertEqual(str(raised.exception), "Microsoft private key is invalid.")
+        self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
         self.assertNotIn("secret", traceback.format_exception_only(type(raised.exception), raised.exception)[0])
 
-    def test_a_private_key_alone_configures_microsoft_authentication(self) -> None:
+    def test_a_certificate_alone_configures_microsoft_authentication(self) -> None:
         with patch.object(microsoft_module, "microsoft_client_id", return_value="client"), patch.object(
-            microsoft_module, "microsoft_client_key", return_value="pem"
+            microsoft_module, "microsoft_client_certificate", return_value="pem"
         ), patch.object(microsoft_module, "microsoft_client_secret", return_value=""):
             self.assertTrue(microsoft_module._configured())
 
@@ -1536,16 +1555,18 @@ class ServiceConfigTest(unittest.TestCase):
             self.assertEqual(config.google_client_secret(), "shhh")
 
     def test_microsoft_settings_are_read_from_the_microsoft_section(self) -> None:
-        self.patch_config({"microsoft": {"client_id": "client", "secret": "shhh", "key": "-----BEGIN PRIVATE KEY-----"}})
+        self.patch_config(
+            {"microsoft": {"client_id": "client", "secret": "shhh", "certificate": "-----BEGIN CERTIFICATE-----"}}
+        )
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.microsoft_client_id(), "client")
             self.assertEqual(config.microsoft_client_secret(), "shhh")
-            self.assertEqual(config.microsoft_client_key(), "-----BEGIN PRIVATE KEY-----")
+            self.assertEqual(config.microsoft_client_certificate(), "-----BEGIN CERTIFICATE-----")
 
-    def test_a_missing_microsoft_key_is_empty(self) -> None:
+    def test_a_missing_microsoft_certificate_is_empty(self) -> None:
         self.patch_config({"microsoft": {"client_id": "client", "secret": "shhh"}})
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(config.microsoft_client_key(), "")
+            self.assertEqual(config.microsoft_client_certificate(), "")
 
     def test_a_non_mapping_google_section_is_ignored(self) -> None:
         self.patch_config({"google": "nonsense"})

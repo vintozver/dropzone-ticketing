@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import re
 import secrets
 import string
 import traceback
@@ -15,11 +14,11 @@ from urllib.parse import urlencode, parse_qs
 
 import requests
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa, utils
 from cryptography.x509 import load_pem_x509_certificate
 
 from .auth import AUTHN_CSRF_COOKIE, AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies, _session_user, _signed, _unsign
-from .config import microsoft_client_id, microsoft_client_key, microsoft_client_secret, microsoft_redirect_uri
+from .config import microsoft_client_certificate, microsoft_client_id, microsoft_client_secret, microsoft_redirect_uri
 from .http import error, read_form
 from ..model.auth import MicrosoftCredential, User
 
@@ -31,58 +30,66 @@ _CODE_VERIFIER_LENGTH = 128
 _ALPHABET = string.ascii_letters + string.digits
 _CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 _ASSERTION_TTL_SECONDS = 300
-_CERTIFICATE_PEM = re.compile(
-    r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.DOTALL
-)
+_EC_ALGORITHMS = {"secp256r1": ("ES256", hashes.SHA256()), "secp384r1": ("ES384", hashes.SHA384()), "secp521r1": ("ES512", hashes.SHA512())}
 
 
 def _configured() -> bool:
-    return bool(microsoft_client_id() and (microsoft_client_key() or microsoft_client_secret()))
+    return bool(microsoft_client_id() and (microsoft_client_certificate() or microsoft_client_secret()))
 
 
 def _b64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
 
 
-def _certificate_thumbprint(pem: str) -> str | None:
-    match = _CERTIFICATE_PEM.search(pem)
-    if match is None:
-        return None
-    certificate = load_pem_x509_certificate(match.group(0).encode())
-    # RFC 7515 defines "x5t" as the SHA-1 thumbprint; Microsoft requires that exact value.
-    return _b64url(certificate.fingerprint(hashes.SHA1()))
+def _algorithm(private_key) -> str:
+    """Return the JWS algorithm matching the private key type."""
+    if isinstance(private_key, rsa.RSAPrivateKey):
+        return "RS256"
+    if isinstance(private_key, ec.EllipticCurvePrivateKey):
+        return _EC_ALGORITHMS[private_key.curve.name][0]
+    if isinstance(private_key, ed25519.Ed25519PrivateKey):
+        return "EdDSA"
+    raise ValueError("Unsupported private key type.")
+
+
+def _sign(private_key, signing_input: bytes) -> bytes:
+    """Sign the JWT input, encoding the signature the way JWS expects for the key type."""
+    if isinstance(private_key, rsa.RSAPrivateKey):
+        return private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    if isinstance(private_key, ec.EllipticCurvePrivateKey):
+        digest = _EC_ALGORITHMS[private_key.curve.name][1]
+        r, s = utils.decode_dss_signature(private_key.sign(signing_input, ec.ECDSA(digest)))
+        length = (private_key.curve.key_size + 7) // 8
+        return r.to_bytes(length, "big") + s.to_bytes(length, "big")
+    return private_key.sign(signing_input)
 
 
 def _client_assertion(token_endpoint: str) -> str:
     """Build a JWT signed with the configured private key, as Microsoft expects."""
-    pem = microsoft_client_key()
+    pem = microsoft_client_certificate().encode()
     try:
-        private_key = serialization.load_pem_private_key(pem.encode(), None)
-        if not isinstance(private_key, rsa.RSAPrivateKey):
-            raise ValueError("Microsoft requires an RSA private key.")
-        header = {"alg": "RS256", "typ": "JWT"}
-        thumbprint = _certificate_thumbprint(pem)
-        if thumbprint:
-            header["x5t"] = thumbprint
+        private_key = serialization.load_pem_private_key(pem, None)
+        # RFC 7515 "x5t#S256" is the SHA-256 thumbprint of the certificate bundled with the key.
+        thumbprint = _b64url(load_pem_x509_certificate(pem).fingerprint(hashes.SHA256()))
     except Exception:
         # Never surface the key material or its parsing details.
-        raise ValueError("Microsoft private key is invalid.") from None
+        raise ValueError("Microsoft certificate is invalid.") from None
     client_id = microsoft_client_id()
     issued = int(time())
     claims = {
         "aud": token_endpoint, "iss": client_id, "sub": client_id, "jti": str(uuid.uuid4()),
         "iat": issued, "nbf": issued, "exp": issued + _ASSERTION_TTL_SECONDS,
     }
+    header = {"alg": _algorithm(private_key), "typ": "JWT", "x5t#S256": thumbprint}
     signing_input = ".".join(
         _b64url(json.dumps(part, separators=(",", ":")).encode()) for part in (header, claims)
     ).encode()
-    signature = private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
-    return f"{signing_input.decode()}.{_b64url(signature)}"
+    return f"{signing_input.decode()}.{_b64url(_sign(private_key, signing_input))}"
 
 
 def _client_authentication(token_endpoint: str) -> dict[str, str]:
-    """Private key authentication takes precedence over the client secret."""
-    if microsoft_client_key():
+    """Certificate authentication takes precedence over the client secret."""
+    if microsoft_client_certificate():
         return {
             "client_assertion_type": _CLIENT_ASSERTION_TYPE,
             "client_assertion": _client_assertion(token_endpoint),
