@@ -84,7 +84,7 @@ def _print_tickets(ticket_ids, user_id: str | None = None, display_name: str | N
         ticket_class=Ticket,
         pdf_class=PDF,
         render=_render,
-        local_timezone=local_timezone(),
+        display_timezone=local_timezone(),
     )
 
 
