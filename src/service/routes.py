@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
@@ -94,13 +95,14 @@ def dispatch(environ: dict, handlers):
             return render("redeem.html")
         return handlers._redeem(handlers._read_form(environ), handlers._current_user_ref(environ))
 
-    if path.startswith("/tickets/"):
+    ticket_match = re.match(r"^/ticket/([0-9a-fA-F]{24})/?$", path)
+    if ticket_match:
         if method != "GET":
             return method_not_allowed(["GET"])
         auth_response = handlers._require_auth(environ)
         if auth_response is not None:
             return auth_response
-        return handlers._view_ticket(path.removeprefix("/tickets/"))
+        return handlers._view_ticket(ticket_match.group(1))
 
     if path == "/tickets":
         if method != "GET":

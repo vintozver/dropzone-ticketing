@@ -83,7 +83,11 @@ class ServiceHelperTest(unittest.TestCase):
         redeemed_at = datetime(2026, 8, 22, tzinfo=timezone.utc)
         active = MagicMock(redeemed=None)
         already_redeemed = MagicMock(
-            redeemed=Redemption(dt=redeemed_at, reason="previous jump")
+            redeemed=Redemption(
+                dt=redeemed_at,
+                by=user_ref("previous-redeemer", object_id="507f1f77bcf86cd7994390ab"),
+                reason="previous jump",
+            )
         )
         tickets = {
             "active": active,
@@ -95,7 +99,8 @@ class ServiceHelperTest(unittest.TestCase):
         )
 
         status, _headers, body = service._redeem(
-            {"codes": "active used missing", "reason": " jump "}
+            {"codes": "active used missing", "reason": " jump "},
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1"},
         )
 
         self.assertEqual(status, service.HTTPStatus.OK)
@@ -103,10 +108,12 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"already redeemed", body)
         self.assertIn(b"not found", body)
         self.assertIn(b"2026-08-22", body)
+        self.assertIn(b"previous-redeemer", body)
         self.assertIn(b"previous jump", body)
         active.save.assert_called_once_with()
         self.assertEqual(active.redeemed.dt.tzinfo, timezone.utc)
-        self.assertIsNone(active.redeemed.by)
+        self.assertEqual(active.redeemed.by.id, ObjectId("507f1f77bcf86cd7994390aa"))
+        self.assertEqual(active.redeemed.by.display_name, "redeemer-1")
         self.assertEqual(active.redeemed.reason, "jump")
 
     @patch.object(service, "Ticket")
@@ -114,7 +121,10 @@ class ServiceHelperTest(unittest.TestCase):
         active = MagicMock(redeemed=None)
         ticket_class.objects.return_value.first.return_value = active
 
-        service._redeem({"codes": "active", "reason": "  "})
+        service._redeem(
+            {"codes": "active", "reason": "  "},
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1"},
+        )
 
         self.assertIsNone(active.redeemed.reason)
 
@@ -257,7 +267,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
         self.assertNotIn(b"secret-code", body)
-        self.assertIn(b'href="/tickets/507f1f77bcf86cd799439011"', body)
+        self.assertIn(b'href="/ticket/507f1f77bcf86cd799439011"', body)
         self.assertIn(b'href="/print?display_name=Jane"', body)
 
     def test_user_search_limits_results_to_ten(self) -> None:
@@ -347,7 +357,7 @@ class ServiceHelperTest(unittest.TestCase):
                 code="yesterday-code",
                 redeemed=Redemption(
                     dt=datetime(2026, 8, 23, 20, tzinfo=timezone.utc),
-                    by=None,
+                    by=user_ref("redeemer-2", object_id="507f1f77bcf86cd7994390ab"),
                     reason=None,
                 ),
             ),
@@ -374,11 +384,11 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"Today:", body)
         self.assertIn(b"Yesterday:", body)
         self.assertIn(
-            b'<a href="/tickets/64e3b8000000000000000000" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">1</a>',
+            b'<a href="/ticket/64e3b8000000000000000000" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">1</a>',
             body,
         )
         self.assertIn(
-            b'<a href="/tickets/64e3a0000000000000000000" title="Reason: ; By: ; At: 2026-08-23 20:00:00 UTC">1</a>',
+            b'<a href="/ticket/64e3a0000000000000000000" title="Reason: ; By: redeemer-2; At: 2026-08-23 20:00:00 UTC">1</a>',
             body,
         )
         self.assertNotIn(b">today-code</span>", body)
@@ -433,7 +443,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"redeemer-1", body)
         self.assertIn(b"jump", body)
         self.assertIn(b"Zoe", body)
-        self.assertIn(b'href="/tickets/64e3b8000000000000000000"', body)
+        self.assertIn(b'href="/ticket/64e3b8000000000000000000"', body)
         self.assertIn(b'href="/tickets?user_id=507f1f77bcf86cd799439011"', body)
         self.assertIn(b'href="/tickets?user_id=507f1f77bcf86cd799439012"', body)
         self.assertIn(b'href="/tickets?user_id=507f1f77bcf86cd799439013"', body)
@@ -632,11 +642,25 @@ class ServiceApplicationTest(unittest.TestCase):
 
     def test_ticket_detail_route_uses_handler(self) -> None:
         with patch.object(service, "_view_ticket", return_value=(service.HTTPStatus.OK, [], b"ticket")) as handler:
-            response = self.request("/tickets/64e3b8000000000000000000")
+            response = self.request("/ticket/64e3b8000000000000000000")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"], b"ticket")
         handler.assert_called_once_with("64e3b8000000000000000000")
+
+    def test_ticket_detail_route_accepts_a_trailing_slash(self) -> None:
+        with patch.object(service, "_view_ticket", return_value=(service.HTTPStatus.OK, [], b"ticket")) as handler:
+            response = self.request("/ticket/64e3b8000000000000000000/")
+
+        self.assertEqual(response["status"], "200 OK")
+        handler.assert_called_once_with("64e3b8000000000000000000")
+
+    def test_ticket_detail_route_requires_an_object_id_path(self) -> None:
+        with patch.object(service, "_view_ticket") as handler:
+            response = self.request("/ticket/not-an-id")
+
+        self.assertEqual(response["status"], "404 Not Found")
+        handler.assert_not_called()
 
     def test_protected_routes_redirect_to_authentication(self) -> None:
         response = self.request("/issue", authenticated=False)

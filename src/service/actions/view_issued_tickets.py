@@ -27,7 +27,7 @@ def view_issued_tickets(*, ticket_class, render):
     tickets = []
     for ticket in ticket_class.objects.order_by("-id").limit(500):
         redeemed = ticket.redeemed
-        ticket_url = f"/tickets/{ticket.id}"
+        ticket_url = f"/ticket/{ticket.id}"
         tickets.append(
             {
                 "issued": ticket.issued_utc(),

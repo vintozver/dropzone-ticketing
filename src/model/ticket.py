@@ -7,17 +7,17 @@ import mongoengine
 from . import mongoengine_alias
 
 
+class UserRef(mongoengine.EmbeddedDocument):
+    id = mongoengine.ObjectIdField(required=False)
+    display_name = mongoengine.StringField(required=False)
+
+
 class Redemption(mongoengine.EmbeddedDocument):
     """Details recorded when a ticket is redeemed."""
 
     dt = mongoengine.DateTimeField(required=True)
-    by = mongoengine.EmbeddedDocumentField("UserRef", required=False)
+    by = mongoengine.EmbeddedDocumentField(UserRef, required=True)
     reason = mongoengine.StringField(required=False)
-
-
-class UserRef(mongoengine.EmbeddedDocument):
-    id = mongoengine.ObjectIdField(required=False)
-    display_name = mongoengine.StringField(required=False)
 
 
 class Ticket(mongoengine.Document):
@@ -45,6 +45,7 @@ class Ticket(mongoengine.Document):
             "code",
             "issued_to.id",
             "issued_to.display_name",
+            "redeemed.by.id",
         ],
     }
 

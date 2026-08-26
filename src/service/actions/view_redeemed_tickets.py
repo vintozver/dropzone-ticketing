@@ -51,7 +51,7 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
         group[f"{day}_count"] += 1
         group[f"{day}_tickets"].append(
             {
-                "url": f"/tickets/{ticket.id}",
+                "url": f"/ticket/{ticket.id}",
                 "tooltip": "; ".join(
                     [
                         f"Reason: {redeemed.reason or ''}",
