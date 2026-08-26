@@ -31,7 +31,6 @@ _CODE_VERIFIER_LENGTH = 128
 _ALPHABET = string.ascii_letters + string.digits
 _CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 _ASSERTION_TTL_SECONDS = 300
-_EC_ALGORITHMS = {"secp256r1": ("ES256", hashes.SHA256()), "secp384r1": ("ES384", hashes.SHA384()), "secp521r1": ("ES512", hashes.SHA512())}
 
 
 def _configured() -> bool:
@@ -47,7 +46,7 @@ def _algorithm(private_key) -> str:
     if isinstance(private_key, rsa.RSAPrivateKey):
         return "RS256"
     if isinstance(private_key, ec.EllipticCurvePrivateKey):
-        return _EC_ALGORITHMS[private_key.curve.name][0]
+        return "ES256"
     if isinstance(private_key, ed25519.Ed25519PrivateKey):
         return "EdDSA"
     raise ValueError("Unsupported private key type.")
@@ -58,8 +57,7 @@ def _sign(private_key, signing_input: bytes) -> bytes:
     if isinstance(private_key, rsa.RSAPrivateKey):
         return private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
     if isinstance(private_key, ec.EllipticCurvePrivateKey):
-        digest = _EC_ALGORITHMS[private_key.curve.name][1]
-        r, s = utils.decode_dss_signature(private_key.sign(signing_input, ec.ECDSA(digest)))
+        r, s = utils.decode_dss_signature(private_key.sign(signing_input, ec.ECDSA(hashes.SHA256())))
         length = (private_key.curve.key_size + 7) // 8
         return r.to_bytes(length, "big") + s.to_bytes(length, "big")
     return private_key.sign(signing_input)
