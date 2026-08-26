@@ -13,6 +13,7 @@ from time import time
 from urllib.parse import urlencode, parse_qs
 
 import requests
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa, utils
 from cryptography.x509 import load_pem_x509_certificate
@@ -71,9 +72,8 @@ def _client_assertion(token_endpoint: str) -> str:
         private_key = serialization.load_pem_private_key(pem, None)
         # RFC 7515 "x5t#S256" is the SHA-256 thumbprint of the certificate bundled with the key.
         thumbprint = _b64url(load_pem_x509_certificate(pem).fingerprint(hashes.SHA256()))
-    except Exception:
-        # Never surface the key material or its parsing details.
-        raise ValueError("Microsoft certificate is invalid.") from None
+    except (TypeError, ValueError, UnsupportedAlgorithm) as exc:
+        raise ValueError("Microsoft certificate is invalid.") from exc
     client_id = microsoft_client_id()
     issued = int(time())
     claims = {

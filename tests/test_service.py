@@ -1464,7 +1464,22 @@ class ServiceMicrosoftTest(unittest.TestCase):
                 microsoft_module._client_authentication("https://login.test/token")
 
         self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
-        self.assertNotIn("secret", traceback.format_exception_only(type(raised.exception), raised.exception)[0])
+        report = "".join(traceback.format_exception(type(raised.exception), raised.exception, raised.exception.__traceback__))
+        self.assertNotIn("secret", report)
+
+    def test_an_encrypted_private_key_is_reported_as_an_invalid_certificate(self) -> None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(b"password"),
+        ).decode()
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem):
+            with self.assertRaises(ValueError) as raised:
+                microsoft_module._client_authentication("https://login.test/token")
+
+        self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
+        self.assertIsInstance(raised.exception.__cause__, TypeError)
 
     def test_a_certificate_alone_configures_microsoft_authentication(self) -> None:
         with patch.object(microsoft_module, "microsoft_client_id", return_value="client"), patch.object(
