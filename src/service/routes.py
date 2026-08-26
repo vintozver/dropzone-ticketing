@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
 from . import auth, google, register
 from .config import authn_config
 from .http import method_not_allowed, render
+
+_TICKET_PATH_RE = re.compile(r"^/ticket/([0-9a-fA-F]{24})/?$")
+
 
 def dispatch(environ: dict, handlers):
     path = environ.get("PATH_INFO", "/")
@@ -92,7 +96,16 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "GET":
             return render("redeem.html")
-        return handlers._redeem(handlers._read_form(environ), handlers._current_user_id(environ))
+        return handlers._redeem(handlers._read_form(environ), handlers._current_user_ref(environ))
+
+    ticket_match = _TICKET_PATH_RE.match(path)
+    if ticket_match:
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._view_ticket(ticket_match.group(1))
 
     if path == "/tickets":
         if method != "GET":

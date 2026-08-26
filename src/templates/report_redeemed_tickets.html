@@ -10,13 +10,13 @@
         <li>
 	Today:
         {% for ticket in owner.today_tickets %}
-        <span title="{{ ticket.tooltip }}">{{ loop.index }}</span>
+        <a href="{{ ticket.url }}" title="{{ ticket.tooltip }}">{{ loop.index }}</a>
         {% endfor %}
 	</li>
         <li>
 	Yesterday:
         {% for ticket in owner.yesterday_tickets %}
-        <span title="{{ ticket.tooltip }}">{{ loop.index }}</span> 
+        <a href="{{ ticket.url }}" title="{{ ticket.tooltip }}">{{ loop.index }}</a>
         {% endfor %}
 	</li>
       </ul>

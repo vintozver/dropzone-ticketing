@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 def _format_datetime(value: datetime | None) -> str:
     if value is None:
-        return "unknown"
+        return ""
     value = _as_utc(value)
     return value.strftime("%Y-%m-%d %H:%M:%S UTC")
 
@@ -15,6 +15,12 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _user_label(ref) -> str:
+    if ref is None:
+        return ""
+    return ref.display_name or (str(ref.id) if ref.id else "")
 
 
 def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
@@ -45,10 +51,11 @@ def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):
         group[f"{day}_count"] += 1
         group[f"{day}_tickets"].append(
             {
+                "url": f"/ticket/{ticket.id}",
                 "tooltip": "; ".join(
                     [
-                        f"Reason: {redeemed.reason or 'unknown'}",
-                        f"By: {redeemed.by_user or 'unknown'}",
+                        f"Reason: {redeemed.reason or ''}",
+                        f"By: {_user_label(redeemed.by)}",
                         f"At: {_format_datetime(redeemed.dt)}",
                     ]
                 ),

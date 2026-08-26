@@ -23,6 +23,7 @@ from .actions.view_issued_tickets import view_issued_tickets as _view_issued_tic
 from .actions.view_owner_tickets import view_owner_tickets as _view_owner_tickets_action
 from .actions.view_owners import view_owners as _view_owners_action
 from .actions.view_redeemed_tickets import view_redeemed_tickets as _view_redeemed_tickets_action
+from .actions.view_ticket import view_ticket as _view_ticket_action
 from .actions.search_users import search_users as _search_users_action
 from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
 from .http import (
@@ -71,8 +72,8 @@ def _issue(form: dict[str, str], issued_by: dict[str, object] | None = None):
     )
 
 
-def _redeem(form: dict[str, str], by_user: str | None = None):
-    return _redeem_action(form, ticket_class=Ticket, render=_render, split_codes=split_codes, by_user=by_user)
+def _redeem(form: dict[str, str], by: dict[str, object] | None = None):
+    return _redeem_action(form, ticket_class=Ticket, render=_render, split_codes=split_codes, user_ref_class=UserRef, by=by)
 
 
 def _print_tickets(ticket_ids, user_id: str | None = None, display_name: str | None = None):
@@ -92,6 +93,10 @@ def _view_owners():
 
 def _view_owner_tickets(user_id: str | None, display_name: str | None):
     return _view_owner_tickets_action(user_id, display_name, ticket_class=Ticket, render=_render)
+
+
+def _view_ticket(ticket_id: str):
+    return _view_ticket_action(ticket_id, ticket_class=Ticket, render=_render)
 
 
 def _view_redeemed_tickets():

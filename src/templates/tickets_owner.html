@@ -8,7 +8,7 @@
       <tbody>
         {% for ticket in tickets %}
           <tr>
-            <td><a href="/print?id={{ ticket.id|urlencode }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
+            <td><a href="{{ ticket.url }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
             <td>{{ ticket.issued_by or "unknown" }}</td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
@@ -16,7 +16,7 @@
         {% endfor %}
       </tbody>
     </table>
-    <p>Follow an issue timestamp to print that ticket as PDF.</p>
+    <p>Follow an issue timestamp to view that ticket and print it as PDF.</p>
     <p>
       <a href="/print?{% if user_id %}user_id={{ user_id|urlencode }}{% else %}display_name={{ display_name|urlencode }}{% endif %}">
         Print all active tickets of this owner as PDF

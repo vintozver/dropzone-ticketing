@@ -11,7 +11,7 @@
           <td>{{ item.result }}</td>
           <td>
             {% if item.redeemed %}
-              {{ item.redeemed.dt }}{% if item.redeemed.by_user %} by {{ item.redeemed.by_user }}{% endif %}{% if item.redeemed.reason %} ({{ item.redeemed.reason }}){% endif %}
+            {{ item.redeemed.dt }}{% if item.redeemed.by %} by {{ item.redeemed.by.display_name or item.redeemed.by.id }}{% endif %}{% if item.redeemed.reason %} ({{ item.redeemed.reason }}){% endif %}
             {% endif %}
           </td>
         </tr>

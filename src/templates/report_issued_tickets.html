@@ -19,13 +19,13 @@
       <tbody>
         {% for ticket in tickets %}
           <tr>
-            <td>{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
-            <td>{{ ticket.issued_to }}</td>
-            <td>{{ ticket.issued_by }}</td>
+            <td><a href="{{ ticket.url }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
+            <td>{% if ticket.issued_to.url %}<a href="{{ ticket.issued_to.url }}">{{ ticket.issued_to.label }}</a>{% else %}{{ ticket.issued_to.label }}{% endif %}</td>
+            <td>{% if ticket.issued_by.url %}<a href="{{ ticket.issued_by.url }}">{{ ticket.issued_by.label }}</a>{% else %}{{ ticket.issued_by.label }}{% endif %}</td>
             <td>{{ ticket.purpose }}</td>
             <td>{{ ticket.payment }}</td>
-            <td>{{ ticket.redeemed_at }}</td>
-            <td>{{ ticket.redeemed_by }}</td>
+            <td>{% if ticket.redeemed_at %}<a href="{{ ticket.url }}">{{ ticket.redeemed_at }}</a>{% endif %}</td>
+            <td>{% if ticket.redeemed_by.url %}<a href="{{ ticket.redeemed_by.url }}">{{ ticket.redeemed_by.label }}</a>{% else %}{{ ticket.redeemed_by.label }}{% endif %}</td>
             <td>{{ ticket.redeemed_reason }}</td>
           </tr>
         {% endfor %}

@@ -49,8 +49,9 @@ class StorageTicketDocumentTest(unittest.TestCase):
         redeemed_fields = Redemption._fields
         self.assertIsInstance(redeemed_fields["dt"], mongoengine.DateTimeField)
         self.assertTrue(redeemed_fields["dt"].required)
-        self.assertIsInstance(redeemed_fields["by_user"], mongoengine.StringField)
-        self.assertFalse(redeemed_fields["by_user"].required)
+        self.assertIsInstance(redeemed_fields["by"], mongoengine.EmbeddedDocumentField)
+        self.assertTrue(redeemed_fields["by"].required)
+        self.assertIs(redeemed_fields["by"].document_type_obj, UserRef)
         self.assertIsInstance(redeemed_fields["reason"], mongoengine.StringField)
         self.assertFalse(redeemed_fields["reason"].required)
 
@@ -60,19 +61,25 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertIsInstance(user_ref_fields["display_name"], mongoengine.StringField)
         self.assertFalse(user_ref_fields["display_name"].required)
 
-    def test_redemption_requires_datetime_and_omits_absent_reason(self) -> None:
+    def test_redemption_requires_datetime_and_user_ref_and_omits_absent_reason(self) -> None:
         with self.assertRaises(mongoengine.ValidationError):
             Redemption().validate()
 
-        redemption = Redemption(dt=datetime(2026, 8, 22, tzinfo=timezone.utc))
-        self.assertNotIn("by_user", redemption.to_mongo())
+        with self.assertRaises(mongoengine.ValidationError):
+            Redemption(dt=datetime(2026, 8, 22, tzinfo=timezone.utc)).validate()
+
+        redemption = Redemption(
+            dt=datetime(2026, 8, 22, tzinfo=timezone.utc),
+            by=UserRef(display_name="redeemer-1"),
+        )
         self.assertNotIn("reason", redemption.to_mongo())
 
     def test_collection_metadata(self) -> None:
-        self.assertEqual(Ticket._meta["collection"], "tickets")
+        self.assertEqual(Ticket._meta["collection"], "ticket")
         self.assertIn("code", Ticket._meta["indexes"])
         self.assertIn("issued_to.id", Ticket._meta["indexes"])
         self.assertIn("issued_to.display_name", Ticket._meta["indexes"])
+        self.assertIn("redeemed.by.id", Ticket._meta["indexes"])
         self.assertIs(Ticket._meta["db_alias"], mongoengine_alias)
 
     def test_fido2_credential_embedded_document_fields(self) -> None:

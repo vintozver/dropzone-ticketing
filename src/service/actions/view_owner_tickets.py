@@ -39,6 +39,7 @@ def view_owner_tickets(user_id: str | None, display_name: str | None, *, ticket_
     tickets = [
         {
             "id": str(ticket.id),
+            "url": f"/ticket/{ticket.id}",
             "issued": ticket.issued_utc(),
             "issued_by": ticket.issued_by.display_name if ticket.issued_by else None,
             "purpose": ticket.purpose,
