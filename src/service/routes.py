@@ -5,7 +5,7 @@ import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import auth, google, register
+from . import auth, google, microsoft, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
@@ -59,6 +59,21 @@ def dispatch(environ: dict, handlers):
     if path == "/authn/google/remove":
         if method == "POST":
             return google.remove(environ)
+        return method_not_allowed(["POST"])
+
+    if path == "/authn/microsoft":
+        if method == "GET":
+            return microsoft.begin(environ)
+        return method_not_allowed(["GET"])
+
+    if path == "/authn/microsoft/callback":
+        if method == "GET":
+            return microsoft.complete(environ)
+        return method_not_allowed(["GET"])
+
+    if path == "/authn/microsoft/remove":
+        if method == "POST":
+            return microsoft.remove(environ)
         return method_not_allowed(["POST"])
 
     if path == "/register":

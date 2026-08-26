@@ -331,6 +331,10 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "google_credentials", [])
         ],
         google_csrf=google_csrf,
+        microsoft_credentials=[
+            {"email": credential.email}
+            for credential in getattr(user, "microsoft_credentials", [])
+        ],
         current_display_name=user.display_name if user is not None else "",
     )
     payload = {"state": _state, "issued": time()}

@@ -19,6 +19,10 @@ google:
   client_id: your-client-id
   secret: your-client-secret
   redirect_uri: https://example.test/authn/google/callback
+microsoft:
+  client_id: your-application-client-id
+  secret: your-application-client-secret
+  redirect_uri: https://example.test/authn/microsoft/callback
 ```
 
 All settings come from this file only; `CONFIG_FILE` merely names it.

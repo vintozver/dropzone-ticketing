@@ -89,6 +89,27 @@ def _google_setting(name: str, default=None):
     return _section("google").get(name, default)
 
 
+def microsoft_client_id() -> str:
+    return str(_microsoft_setting("client_id", ""))
+
+
+def microsoft_client_secret() -> str:
+    return str(_microsoft_setting("secret", ""))
+
+
+def microsoft_redirect_uri(environ: dict) -> str:
+    configured = _microsoft_setting("redirect_uri")
+    if configured:
+        return configured
+    scheme = environ.get("wsgi.url_scheme") or "http"
+    host = environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+    return f"{scheme}://{host}/authn/microsoft/callback"
+
+
+def _microsoft_setting(name: str, default=None):
+    return _section("microsoft").get(name, default)
+
+
 def mongodb_uri() -> str:
     configured = _setting("mongodb_uri")
     if not configured:
