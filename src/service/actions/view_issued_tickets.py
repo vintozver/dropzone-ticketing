@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
 from urllib.parse import urlencode
 
 from dropzone_ticketing.service.config import local_timezone
 from dropzone_ticketing.time_utils import format_datetime
-
-
-def _format_datetime(value: datetime | None) -> str:
-    return format_datetime(value, local_timezone())
 
 
 def _user_link(ref) -> dict[str, str]:
@@ -24,6 +19,7 @@ def _user_link(ref) -> dict[str, str]:
 
 def view_issued_tickets(*, ticket_class, render):
     tickets = []
+    display_timezone = local_timezone()
     for ticket in ticket_class.objects.order_by("-id").limit(500):
         redeemed = ticket.redeemed
         ticket_url = f"/ticket/{ticket.id}"
@@ -35,7 +31,7 @@ def view_issued_tickets(*, ticket_class, render):
                 "issued_by": _user_link(ticket.issued_by),
                 "purpose": ticket.purpose,
                 "payment": ticket.payment,
-                "redeemed_at": _format_datetime(redeemed.dt) if redeemed else "",
+                "redeemed_at": format_datetime(redeemed.dt, display_timezone) if redeemed else "",
                 "redeemed_by": _user_link(redeemed.by) if redeemed else {"label": "", "url": ""},
                 "redeemed_reason": redeemed.reason if redeemed and redeemed.reason else "",
             }
