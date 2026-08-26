@@ -40,7 +40,10 @@ def _endpoints() -> tuple[str, str, str]:
     document = response.json()
     if not isinstance(document, dict):
         raise ValueError("Microsoft discovery document is invalid.")
-    values = tuple(document[key] for key in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint"))
+    try:
+        values = tuple(document[key] for key in ("authorization_endpoint", "token_endpoint", "userinfo_endpoint"))
+    except KeyError as exc:
+        raise ValueError("Microsoft discovery document is invalid.") from exc
     if not all(isinstance(value, str) for value in values):
         raise ValueError("Microsoft discovery document is invalid.")
     return values
