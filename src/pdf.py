@@ -13,7 +13,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .model import ticket as _ticket
-from .time_utils import as_timezone
+from .time_utils import DISPLAY_DATETIME_FORMAT, as_timezone
 
 
 PAGE_WIDTH = 5.25 * inch
@@ -115,7 +115,7 @@ class PDF(object):
 
     @staticmethod
     def _format_datetime(value: datetime) -> str:
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        return value.strftime(DISPLAY_DATETIME_FORMAT)
 
 
 def load_logo_bytes() -> bytes:
