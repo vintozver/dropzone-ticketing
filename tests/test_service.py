@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import base64
 import io
+import json
 import os
+import traceback
 import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import ANY, MagicMock, call, patch
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 from bson import ObjectId
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa
+from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+from cryptography.x509.oid import NameOID
 from fido2.webauthn import AttestationConveyancePreference
 from google.auth.exceptions import GoogleAuthError
 from mongoengine.errors import NotUniqueError
@@ -18,6 +26,7 @@ from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import config
 from dropzone_ticketing.service import google as google_module
+from dropzone_ticketing.service import microsoft as microsoft_module
 from dropzone_ticketing.service import register as register_module
 from dropzone_ticketing.service.actions.search_users import search_users
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
@@ -1142,6 +1151,49 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(user.display_name, "Jane Sky")
         user.save.assert_called_once_with()
 
+    def test_authenticated_page_orders_the_credential_sections(self) -> None:
+        auth = service._auth_module
+        server = MagicMock()
+        server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge"), "user_verification": None}
+        server.register_begin.return_value = (
+            {"publicKey": {"challenge": b"register challenge"}},
+            {"challenge": b64(b"register challenge"), "user_verification": "discouraged"},
+        )
+        user = SimpleNamespace(
+            id=ObjectId("507f1f77bcf86cd799439011"),
+            display_name="Jane",
+            fido2_credentials=[],
+            google_credentials=[SimpleNamespace(email="jane@gmail.test")],
+            microsoft_credentials=[SimpleNamespace(email="jane@outlook.test")],
+        )
+        environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
+
+        with patch.object(auth, "_server", return_value=server), patch.object(
+            auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
+        ), patch.object(auth, "_session_user", return_value=user), patch.object(
+            auth, "_credential_data", return_value="credential data"
+        ):
+            _status, _headers, body = auth.begin_authn(environ)
+
+        self.assertLess(body.index(b"My FIDO2 credentials"), body.index(b"My Google credentials"))
+        self.assertLess(body.index(b"My Google credentials"), body.index(b"My Microsoft credentials"))
+
+    def test_unauthenticated_page_keeps_the_sign_in_section_order(self) -> None:
+        auth = service._auth_module
+        server = MagicMock()
+        server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge"), "user_verification": None}
+        environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
+
+        with patch.object(auth, "_server", return_value=server), patch.object(
+            auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
+        ), patch.object(auth, "_session_user", return_value=None):
+            _status, _headers, body = auth.begin_authn(environ)
+
+        self.assertNotIn(b"My FIDO2 credentials", body)
+        self.assertLess(body.index(b"<h2>FIDO2/passkey</h2>"), body.index(b"<h2>Google</h2>"))
+        self.assertLess(body.index(b"<h2>Google</h2>"), body.index(b"<h2>Microsoft</h2>"))
+
+
 
 class ServiceGoogleTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -1273,6 +1325,197 @@ class ServiceGoogleTest(unittest.TestCase):
         self.assertIn(b"Traceback (most recent call last)", body)
 
 
+class ServiceMicrosoftTest(unittest.TestCase):
+    def environ(self, query: str = "", cookie: str = "") -> dict:
+        return {
+            "PATH_INFO": "/authn/microsoft",
+            "QUERY_STRING": query,
+            "REQUEST_METHOD": "GET",
+            "CONTENT_LENGTH": "0",
+            "wsgi.input": io.BytesIO(b""),
+            "HTTP_HOST": "example.test",
+            "HTTP_COOKIE": cookie,
+            "wsgi.url_scheme": "https",
+        }
+
+    def certificate_pem(self, key=None) -> tuple[str, "x509.Certificate"]:
+        key = key or rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "example.test")])
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(name)
+            .issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime(2026, 1, 1))
+            .not_valid_after(datetime(2027, 1, 1))
+            .sign(key, None if isinstance(key, ed25519.Ed25519PrivateKey) else hashes.SHA256())
+        )
+        pem = certificate.public_bytes(serialization.Encoding.PEM).decode() + key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        ).decode()
+        return pem, certificate
+
+    @staticmethod
+    def segment(value: str) -> dict:
+        return json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+
+    @staticmethod
+    def signature(value: str) -> bytes:
+        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+    def test_begin_requests_the_openid_and_email_scopes(self) -> None:
+        with patch.object(microsoft_module, "_configured", return_value=True), patch.object(
+            microsoft_module, "_session_user", return_value=None
+        ), patch.object(
+            microsoft_module,
+            "_endpoints",
+            return_value=("https://login.test/auth", "https://login.test/token", "https://login.test/me"),
+        ), patch.object(microsoft_module, "microsoft_client_id", return_value="client"):
+            status, headers, _body = microsoft_module.begin(self.environ())
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        location = dict(headers)["Location"]
+        scope = parse_qs(location.split("?", 1)[1])["scope"][0]
+        self.assertEqual(scope.split(), ["openid", "email"])
+
+    def test_the_certificate_takes_precedence_over_the_secret(self) -> None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem, certificate = self.certificate_pem(key)
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem), patch.object(
+            microsoft_module, "microsoft_client_secret", return_value="shhh"
+        ), patch.object(microsoft_module, "microsoft_client_id", return_value="client"):
+            authentication = microsoft_module._client_authentication("https://login.test/token")
+
+        self.assertNotIn("client_secret", authentication)
+        self.assertEqual(
+            authentication["client_assertion_type"],
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        )
+        header_segment, claims_segment, signature_segment = authentication["client_assertion"].split(".")
+        expected_thumbprint = base64.urlsafe_b64encode(
+            certificate.fingerprint(hashes.SHA256())
+        ).rstrip(b"=").decode()
+        self.assertEqual(
+            self.segment(header_segment), {"alg": "RS256", "typ": "JWT", "x5t#S256": expected_thumbprint}
+        )
+        claims = self.segment(claims_segment)
+        self.assertEqual(claims["aud"], "https://login.test/token")
+        self.assertEqual(claims["iss"], "client")
+        self.assertEqual(claims["sub"], "client")
+        self.assertGreater(claims["exp"], claims["iat"])
+        key.public_key().verify(
+            self.signature(signature_segment),
+            f"{header_segment}.{claims_segment}".encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+
+    def test_an_elliptic_curve_key_is_signed_with_the_matching_algorithm(self) -> None:
+        key = ec.generate_private_key(ec.SECP384R1())
+        pem, _certificate = self.certificate_pem(key)
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem), patch.object(
+            microsoft_module, "microsoft_client_id", return_value="client"
+        ):
+            assertion = microsoft_module._client_assertion("https://login.test/token")
+
+        header_segment, claims_segment, signature_segment = assertion.split(".")
+        self.assertEqual(self.segment(header_segment)["alg"], "ES384")
+        raw = self.signature(signature_segment)
+        self.assertEqual(len(raw), 96)
+        half = len(raw) // 2
+        key.public_key().verify(
+            encode_dss_signature(
+                int.from_bytes(raw[:half], "big"), int.from_bytes(raw[half:], "big")
+            ),
+            f"{header_segment}.{claims_segment}".encode(),
+            ec.ECDSA(hashes.SHA384()),
+        )
+
+    def test_the_certificate_is_read_when_the_key_comes_first_in_the_bundle(self) -> None:
+        pem, certificate = self.certificate_pem()
+        certificate_pem, key_pem = pem.split("-----BEGIN PRIVATE KEY-----", 1)
+        reversed_pem = "-----BEGIN PRIVATE KEY-----" + key_pem + certificate_pem
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=reversed_pem), patch.object(
+            microsoft_module, "microsoft_client_id", return_value="client"
+        ):
+            assertion = microsoft_module._client_assertion("https://login.test/token")
+
+        expected_thumbprint = base64.urlsafe_b64encode(
+            certificate.fingerprint(hashes.SHA256())
+        ).rstrip(b"=").decode()
+        self.assertEqual(self.segment(assertion.split(".", 1)[0])["x5t#S256"], expected_thumbprint)
+
+    def test_the_secret_is_used_without_a_certificate(self) -> None:
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=""), patch.object(
+            microsoft_module, "microsoft_client_secret", return_value="shhh"
+        ):
+            self.assertEqual(
+                microsoft_module._client_authentication("https://login.test/token"), {"client_secret": "shhh"}
+            )
+
+    def test_an_invalid_certificate_is_reported_without_the_key_material(self) -> None:
+        with patch.object(
+            microsoft_module, "microsoft_client_certificate", return_value="-----BEGIN PRIVATE KEY-----\nsecret\n"
+        ):
+            with self.assertRaises(ValueError) as raised:
+                microsoft_module._client_authentication("https://login.test/token")
+
+        self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
+        report = "".join(traceback.format_exception(type(raised.exception), raised.exception, raised.exception.__traceback__))
+        self.assertNotIn("secret", report)
+
+    def test_an_encrypted_private_key_is_reported_as_an_invalid_certificate(self) -> None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(b"password"),
+        ).decode()
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=pem):
+            with self.assertRaises(ValueError) as raised:
+                microsoft_module._client_authentication("https://login.test/token")
+
+        self.assertEqual(str(raised.exception), "Microsoft certificate is invalid.")
+        self.assertIsInstance(raised.exception.__cause__, (TypeError, ValueError))
+
+    def test_a_certificate_alone_configures_microsoft_authentication(self) -> None:
+        with patch.object(microsoft_module, "microsoft_client_id", return_value="client"), patch.object(
+            microsoft_module, "microsoft_client_certificate", return_value="pem"
+        ), patch.object(microsoft_module, "microsoft_client_secret", return_value=""):
+            self.assertTrue(microsoft_module._configured())
+
+    def test_complete_authenticates_the_token_request_with_the_client_assertion(self) -> None:
+        token_response = MagicMock()
+        token_response.json.return_value = {"access_token": "token"}
+        profile_response = MagicMock()
+        profile_response.json.return_value = {"email": "Jane@Example.test"}
+        user = MagicMock(id="Jane")
+        with patch.object(
+            microsoft_module, "_state", return_value={"state": "abc", "user": None, "code_verifier": "verifier"}
+        ), patch.object(
+            microsoft_module,
+            "_endpoints",
+            return_value=("https://login.test/auth", "https://login.test/token", "https://login.test/me"),
+        ), patch.object(microsoft_module, "microsoft_client_id", return_value="client"), patch.object(
+            microsoft_module, "_client_authentication", return_value={"client_assertion": "jwt"}
+        ), patch.object(microsoft_module.requests, "post", return_value=token_response) as post, patch.object(
+            microsoft_module.requests, "get", return_value=profile_response
+        ), patch.object(microsoft_module, "_session_user", return_value=None), patch.object(
+            microsoft_module, "User"
+        ) as user_class:
+            user_class.objects.return_value.first.return_value = user
+            status, _headers, _body = microsoft_module.complete(self.environ(query="state=abc&code=auth-code"))
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        data = post.call_args.kwargs["data"]
+        self.assertEqual(data["client_assertion"], "jwt")
+        self.assertNotIn("client_secret", data)
+        self.assertEqual(data["scope"], "openid email")
+
+
 class ServiceConfigTest(unittest.TestCase):
     def patch_config(self, values: dict) -> None:
         patcher = patch.object(config, "_file_config", return_value=values)
@@ -1339,6 +1582,20 @@ class ServiceConfigTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.google_client_id(), "client")
             self.assertEqual(config.google_client_secret(), "shhh")
+
+    def test_microsoft_settings_are_read_from_the_microsoft_section(self) -> None:
+        self.patch_config(
+            {"microsoft": {"client_id": "client", "secret": "shhh", "certificate": "-----BEGIN CERTIFICATE-----"}}
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.microsoft_client_id(), "client")
+            self.assertEqual(config.microsoft_client_secret(), "shhh")
+            self.assertEqual(config.microsoft_client_certificate(), "-----BEGIN CERTIFICATE-----")
+
+    def test_a_missing_microsoft_certificate_is_empty(self) -> None:
+        self.patch_config({"microsoft": {"client_id": "client", "secret": "shhh"}})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.microsoft_client_certificate(), "")
 
     def test_a_non_mapping_google_section_is_ignored(self) -> None:
         self.patch_config({"google": "nonsense"})
