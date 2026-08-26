@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from urllib.parse import urlencode
 
-
-def _format_datetime(value: datetime | None) -> str:
-    if value is None:
-        return ""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+from ...time_utils import format_datetime
+from ..config import local_timezone
 
 
 def _user_link(ref) -> dict[str, str]:
@@ -25,6 +19,7 @@ def _user_link(ref) -> dict[str, str]:
 
 def view_issued_tickets(*, ticket_class, render):
     tickets = []
+    display_timezone = local_timezone()
     for ticket in ticket_class.objects.order_by("-id").limit(500):
         redeemed = ticket.redeemed
         ticket_url = f"/ticket/{ticket.id}"
@@ -36,7 +31,7 @@ def view_issued_tickets(*, ticket_class, render):
                 "issued_by": _user_link(ticket.issued_by),
                 "purpose": ticket.purpose,
                 "payment": ticket.payment,
-                "redeemed_at": _format_datetime(redeemed.dt) if redeemed else "",
+                "redeemed_at": format_datetime(redeemed.dt, display_timezone) if redeemed else "",
                 "redeemed_by": _user_link(redeemed.by) if redeemed else {"label": "", "url": ""},
                 "redeemed_reason": redeemed.reason if redeemed and redeemed.reason else "",
             }

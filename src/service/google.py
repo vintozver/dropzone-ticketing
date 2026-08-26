@@ -27,7 +27,7 @@ from .auth import (
     _signed,
     _unsign,
 )
-from dropzone_ticketing.model.auth import GoogleCredential, User
+from ..model.auth import GoogleCredential, User
 
 GOOGLE_STATE_COOKIE = "google_oauth_state"
 GOOGLE_CSRF_COOKIE = "google_csrf"

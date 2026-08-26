@@ -4,6 +4,7 @@ import io
 import socketserver
 import os
 import socket
+from zoneinfo import ZoneInfo
 
 import bson
 
@@ -14,7 +15,7 @@ from dropzone_ticketing.model.ticket import UserRef
 class SingleFileHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         pdf_io = io.BytesIO()
-        pdf = dropzone_ticketing.PDF(pdf_io)
+        pdf = dropzone_ticketing.PDF(pdf_io, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
 
         dt = datetime.datetime.now(datetime.UTC)
         t = dropzone_ticketing.Ticket(

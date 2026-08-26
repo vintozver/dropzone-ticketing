@@ -4,6 +4,7 @@ import re
 import unittest
 from datetime import datetime, timezone
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 
@@ -45,7 +46,7 @@ class TicketPdfTest(unittest.TestCase):
             purpose="King Air full altitude 36$",
         )
 
-        pdf = PDF(output)
+        pdf = PDF(output, local_timezone=ZoneInfo("America/Los_Angeles"), business_name="The Dropzone")
         pdf.append(ticket)
         pdf.render()
 
@@ -56,8 +57,9 @@ class TicketPdfTest(unittest.TestCase):
         self.assertIn("(Jane Jumper) Tj", rendered)
         self.assertIn("(ABC123) Tj", rendered)
         self.assertIn("(2026-08-21 20:30:00 UTC) Tj", rendered)
-        self.assertIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", rendered)
-        self.assertIn("(Skydive Toledo LLC) Tj", rendered)
+        self.assertIn("(Issued: 2026-08-21 13:30:00) Tj", rendered)
+        self.assertNotIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", rendered)
+        self.assertIn("(The Dropzone) Tj", rendered)
         self.assertIn("(King Air full altitude 36$) Tj", rendered)
         self.assertIn("(Paid: credit card xxxx-1234) Tj", rendered)
         self.assertIn("(To: Jane Jumper) Tj", rendered)
@@ -65,6 +67,22 @@ class TicketPdfTest(unittest.TestCase):
         self.assertIn("(_____________________) Tj", rendered)
         self.assertNotIn("One jump 36$", rendered)
         self.assertNotIn("Paid with card xxxx-0000", rendered)
+
+    def test_ticket_pdf_uses_configured_business_name(self) -> None:
+        output = BytesIO()
+        ticket = make_ticket(
+            "ABC123",
+            "Jane Jumper",
+            datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
+        )
+
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="Skydive Example")
+        pdf.append(ticket)
+        pdf.render()
+
+        rendered = output.getvalue().decode("latin1")
+        self.assertIn("(Skydive Example) Tj", rendered)
+        self.assertNotIn("(The Dropzone) Tj", rendered)
 
     def test_issue_timestamp_is_derived_from_the_identifier(self) -> None:
         issued = datetime(2026, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -99,7 +117,7 @@ class TicketLogoTest(unittest.TestCase):
             datetime(2026, 8, 21, 20, 30, 0, tzinfo=timezone.utc),
         )
 
-        pdf = PDF(output)
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
         pdf.append(ticket)
         pdf.render()
 

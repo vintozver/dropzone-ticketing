@@ -11,6 +11,10 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
 registration_mode: false
+# List of available time zone names may be obtained by running:
+# $ echo "import zoneinfo; print(zoneinfo.available_timezones())" | python3
+timezone: UTC
+business_name: The Dropzone
 google:
   client_id: your-client-id
   secret: your-client-secret
@@ -18,6 +22,7 @@ google:
 ```
 
 All settings come from this file only; `CONFIG_FILE` merely names it.
+If `timezone` is omitted, displayed times default to UTC.
 
 ### Registration mode
 

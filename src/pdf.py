@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, tzinfo
 from importlib import resources
 from io import BytesIO
 from typing import BinaryIO
@@ -13,6 +13,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .model import ticket as _ticket
+from .time_utils import DISPLAY_DATETIME_FORMAT, as_timezone
 
 
 PAGE_WIDTH = 5.25 * inch
@@ -22,28 +23,29 @@ VERTICAL_MARGIN = 0.15 * inch
 HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
-PDT = timezone(timedelta(hours=-7), "PDT")
 
 
 class PDF(object):
     """A PDF document rendering one page per appended ticket."""
 
-    def __init__(self, destination: BinaryIO):
+    def __init__(self, destination: BinaryIO, local_timezone: tzinfo, business_name: str):
         self.canvas = canvas.Canvas(
             destination,
             pagesize=(PAGE_WIDTH, PAGE_HEIGHT),
             pageCompression=0,
         )
+        self.local_timezone = local_timezone
+        self.business_name = business_name
         self.canvas.setTitle("Tickets")
 
     def append(self, ticket: _ticket.Ticket) -> None:
         """Render ``ticket`` onto a new page of the document."""
         issued_utc = ticket.issued_utc()
-        issued_pdt = issued_utc.astimezone(PDT)
+        issued_local = as_timezone(issued_utc, self.local_timezone)
 
         self._draw_logo()
         self._draw_left_section(ticket, issued_utc)
-        self._draw_right_section(ticket, issued_pdt)
+        self._draw_right_section(ticket, issued_local)
         self._draw_qr_code(ticket)
         self.canvas.showPage()
 
@@ -58,21 +60,21 @@ class PDF(object):
         self.canvas.setFont("Helvetica", 8)
         self.canvas.drawString(x, y, ticket.issued_to.display_name or "")
         self.canvas.drawString(x, y - line_height, ticket.code)
-        self.canvas.drawString(x, y - 2 * line_height, self._format_datetime(issued_utc, "UTC"))
+        self.canvas.drawString(x, y - 2 * line_height, f"{self._format_datetime(issued_utc)} UTC")
 
-    def _draw_right_section(self, ticket: _ticket.Ticket, issued_pdt: datetime) -> None:
+    def _draw_right_section(self, ticket: _ticket.Ticket, issued_local: datetime) -> None:
         x = LEFT_SECTION_WIDTH + 0.12 * inch
         y = PAGE_HEIGHT - VERTICAL_MARGIN - 0.12 * inch
         line_height = 0.16 * inch
 
         self.canvas.setFont("Helvetica-Bold", 16)
-        self.canvas.drawString(x, y, "Skydive Toledo LLC")
+        self.canvas.drawString(x, y, self.business_name)
         self.canvas.setFont("Helvetica", 12)
 
         lines = [
             ticket.purpose,
             f"Paid: {ticket.payment}",
-            f"Issued: {self._format_datetime(issued_pdt, 'PDT')}",
+            f"Issued: {self._format_datetime(issued_local)}",
             f"To: {ticket.issued_to.display_name or ''}",
             "Jumper:",
             "_____________________",
@@ -113,8 +115,8 @@ class PDF(object):
         )
 
     @staticmethod
-    def _format_datetime(value: datetime, timezone_label: str) -> str:
-        return value.strftime("%Y-%m-%d %H:%M:%S ") + timezone_label
+    def _format_datetime(value: datetime) -> str:
+        return value.strftime(DISPLAY_DATETIME_FORMAT)
 
 
 def load_logo_bytes() -> bytes:

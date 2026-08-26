@@ -8,6 +8,8 @@ from urllib.parse import urlencode
 from bson import ObjectId
 from bson.errors import InvalidId
 
+from ..config import business_name, local_timezone
+
 
 def safe_filename(label: str) -> str:
     component = re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip(".-_")
@@ -18,7 +20,15 @@ def print_url(tickets) -> str:
     return "/print?" + urlencode([("id", str(ticket.id)) for ticket in tickets])
 
 
-def print_tickets(ticket_ids, user_id: str | None = None, display_name: str | None = None, *, ticket_class, pdf_class, render):
+def print_tickets(
+    ticket_ids,
+    user_id: str | None = None,
+    display_name: str | None = None,
+    *,
+    ticket_class,
+    pdf_class,
+    render,
+):
     ticket_ids = list(ticket_ids)
     user_id = (user_id or "").strip()
     display_name = (display_name or "").strip()
@@ -58,7 +68,7 @@ def print_tickets(ticket_ids, user_id: str | None = None, display_name: str | No
         return render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
-    pdf = pdf_class(output)
+    pdf = pdf_class(output, local_timezone=local_timezone(), business_name=business_name())
     for ticket in tickets:
         pdf.append(ticket)
     pdf.render()

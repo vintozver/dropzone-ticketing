@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from http import HTTPStatus
 
-from dropzone_ticketing.model.ticket import Redemption
+from ...model.ticket import Redemption
 
 
 def redeem(form: dict[str, str], *, ticket_class, render, split_codes, user_ref_class, by: dict[str, object] | None = None):

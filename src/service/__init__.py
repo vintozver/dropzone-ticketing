@@ -8,10 +8,10 @@ from typing import Callable
 import mongoengine
 from bson import ObjectId
 
-from dropzone_ticketing import PDF, Ticket
-from dropzone_ticketing.model.auth import User
-from dropzone_ticketing.model import mongoengine_alias
-from dropzone_ticketing.model.ticket import UserRef
+from .. import PDF, Ticket
+from ..model import mongoengine_alias
+from ..model.auth import User
+from ..model.ticket import UserRef
 
 from . import auth as _auth_module
 from .actions.issue import issue as _issue_action

@@ -7,15 +7,24 @@ from http import HTTPStatus
 from typing import Callable
 from urllib.parse import parse_qs
 
-from jinja2 import Environment, PackageLoader, select_autoescape
+from jinja2 import Environment, PackageLoader, pass_context, select_autoescape
 
-from .config import MAX_FORM_BYTES
+from ..time_utils import format_datetime
+from .config import MAX_FORM_BYTES, local_timezone
 
 _templates = Environment(
     loader=PackageLoader("dropzone_ticketing", "templates"),
     autoescape=select_autoescape(["html"]),
 )
 _request_context: ContextVar[dict[str, object]] = ContextVar("request_context", default={})
+
+
+@pass_context
+def _datetime_filter(context, value):
+    return format_datetime(value, context["local_timezone"])
+
+
+_templates.filters["datetime"] = _datetime_filter
 
 
 @contextmanager
@@ -30,6 +39,7 @@ def request_context(**context: object):
 def render(template_name: str, status: HTTPStatus = HTTPStatus.OK, **context: object):
     merged_context = dict(_request_context.get())
     merged_context.update(context)
+    merged_context.setdefault("local_timezone", local_timezone())
     body = _templates.get_template(template_name).render(**merged_context).encode("utf-8")
     return status, [("Content-Type", "text/html; charset=utf-8")], body
 

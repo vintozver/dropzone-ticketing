@@ -28,7 +28,7 @@ from fido2.webauthn import (
 
 from .config import authn_config, session_secret
 from .http import error, read_form, render
-from dropzone_ticketing.model.auth import Fido2Credential, User
+from ..model.auth import Fido2Credential, User
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
