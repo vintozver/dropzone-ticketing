@@ -49,6 +49,7 @@ def _certificate_thumbprint(pem: str) -> str | None:
     if match is None:
         return None
     certificate = load_pem_x509_certificate(match.group(0).encode())
+    # RFC 7515 defines "x5t" as the SHA-1 thumbprint; Microsoft requires that exact value.
     return _b64url(certificate.fingerprint(hashes.SHA1()))
 
 
@@ -58,7 +59,7 @@ def _client_assertion(token_endpoint: str) -> str:
     try:
         private_key = serialization.load_pem_private_key(pem.encode(), None)
         if not isinstance(private_key, rsa.RSAPrivateKey):
-            raise ValueError
+            raise ValueError("Microsoft requires an RSA private key.")
         header = {"alg": "RS256", "typ": "JWT"}
         thumbprint = _certificate_thumbprint(pem)
         if thumbprint:
