@@ -11,13 +11,15 @@ Configuration is loaded from the YAML file named by `CONFIG_FILE`, or
 ```yaml
 mongodb_uri: mongodb://localhost:27017/dropzone_ticketing
 registration_mode: false
+timezone: UTC
 google:
   client_id: your-client-id
   secret: your-client-secret
   redirect_uri: https://example.test/authn/google/callback
 ```
 
-All settings come from this file only; `CONFIG_FILE` merely names it.
+All settings come from this file only; `CONFIG_FILE` merely names it. If
+`timezone` is omitted, displayed times default to UTC.
 
 ### Registration mode
 

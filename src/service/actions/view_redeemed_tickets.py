@@ -3,18 +3,16 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
+from dropzone_ticketing.service.config import local_timezone
+from dropzone_ticketing.time_utils import as_utc, format_datetime
+
 
 def _format_datetime(value: datetime | None) -> str:
-    if value is None:
-        return ""
-    value = _as_utc(value)
-    return value.strftime("%Y-%m-%d %H:%M:%S UTC")
+    return format_datetime(value, local_timezone())
 
 
 def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+    return as_utc(value)
 
 
 def _user_label(ref) -> str:
@@ -25,12 +23,11 @@ def _user_label(ref) -> str:
 
 def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
     now = now or datetime.now(timezone.utc)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-    today = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    local_now = _as_utc(now).astimezone(local_timezone())
+    today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
-    return yesterday, today, tomorrow
+    return _as_utc(yesterday), _as_utc(today), _as_utc(tomorrow)
 
 
 def view_redeemed_tickets(*, ticket_class, render, now: datetime | None = None):

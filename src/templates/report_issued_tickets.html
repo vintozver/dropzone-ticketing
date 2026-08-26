@@ -19,7 +19,7 @@
       <tbody>
         {% for ticket in tickets %}
           <tr>
-            <td><a href="{{ ticket.url }}">{{ ticket.issued.strftime('%Y-%m-%d %H:%M:%S UTC') }}</a></td>
+            <td><a href="{{ ticket.url }}">{{ ticket.issued|datetime }}</a></td>
             <td>{% if ticket.issued_to.url %}<a href="{{ ticket.issued_to.url }}">{{ ticket.issued_to.label }}</a>{% else %}{{ ticket.issued_to.label }}{% endif %}</td>
             <td>{% if ticket.issued_by.url %}<a href="{{ ticket.issued_by.url }}">{{ ticket.issued_by.label }}</a>{% else %}{{ ticket.issued_by.label }}{% endif %}</td>
             <td>{{ ticket.purpose }}</td>

@@ -9,12 +9,15 @@ from urllib.parse import parse_qs
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from .config import MAX_FORM_BYTES
+from dropzone_ticketing.time_utils import format_datetime
+
+from .config import MAX_FORM_BYTES, local_timezone
 
 _templates = Environment(
     loader=PackageLoader("dropzone_ticketing", "templates"),
     autoescape=select_autoescape(["html"]),
 )
+_templates.filters["datetime"] = lambda value: format_datetime(value, local_timezone())
 _request_context: ContextVar[dict[str, object]] = ContextVar("request_context", default={})
 
 

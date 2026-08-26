@@ -18,7 +18,7 @@
       {% for credential in user_credentials %}
         <tr>
           <td><code>{{ credential.id }}</code></td>
-          <td>{% if credential.dt %}{{ credential.dt.strftime('%Y-%m-%d %H:%M:%S UTC') }}{% endif %}
+          <td>{{ credential.dt|datetime }}
             {% if credential.aaguid or credential.extensions %}<a href="#" class="toggle-attestation">+</a>{% endif %}
           </td>
           <td>

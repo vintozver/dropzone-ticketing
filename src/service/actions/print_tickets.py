@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+from datetime import timezone
 from http import HTTPStatus
 from urllib.parse import urlencode
 
@@ -18,7 +19,16 @@ def print_url(tickets) -> str:
     return "/print?" + urlencode([("id", str(ticket.id)) for ticket in tickets])
 
 
-def print_tickets(ticket_ids, user_id: str | None = None, display_name: str | None = None, *, ticket_class, pdf_class, render):
+def print_tickets(
+    ticket_ids,
+    user_id: str | None = None,
+    display_name: str | None = None,
+    *,
+    ticket_class,
+    pdf_class,
+    render,
+    local_timezone=timezone.utc,
+):
     ticket_ids = list(ticket_ids)
     user_id = (user_id or "").strip()
     display_name = (display_name or "").strip()
@@ -58,7 +68,7 @@ def print_tickets(ticket_ids, user_id: str | None = None, display_name: str | No
         return render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
-    pdf = pdf_class(output)
+    pdf = pdf_class(output, local_timezone=local_timezone)
     for ticket in tickets:
         pdf.append(ticket)
     pdf.render()

@@ -5,6 +5,7 @@ import secrets
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -49,6 +50,10 @@ class AuthnConfig:
 
 def registration_mode() -> bool:
     return bool(_setting("registration_mode", False))
+
+
+def local_timezone() -> ZoneInfo:
+    return ZoneInfo(str(_setting("timezone", "UTC") or "UTC"))
 
 
 def authn_config() -> AuthnConfig:

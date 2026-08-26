@@ -166,6 +166,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(("Content-Type", "application/pdf"), headers)
+        self.assertEqual(pdf_class.call_args.kwargs["local_timezone"].key, "UTC")
         ticket_class.objects.assert_called_once_with(
             id__in=[service.ObjectId("507f1f77bcf86cd799439011")]
         )
@@ -204,6 +205,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(("Content-Type", "application/pdf"), headers)
+        self.assertEqual(pdf_class.call_args.kwargs["local_timezone"].key, "UTC")
         ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
         self.assertEqual(
             pdf_class.return_value.append.call_args_list,
@@ -262,7 +264,8 @@ class ServiceHelperTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.OK)
         ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
-        self.assertIn(b"2026-08-22 00:00:00 UTC", body)
+        self.assertIn(b"2026-08-22 00:00:00", body)
+        self.assertNotIn(b"2026-08-22 00:00:00 UTC", body)
         self.assertIn(b"issuer-1", body)
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
@@ -384,14 +387,39 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"Today:", body)
         self.assertIn(b"Yesterday:", body)
         self.assertIn(
-            b'<a href="/ticket/64e3b8000000000000000000" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00 UTC">1</a>',
+            b'<a href="/ticket/64e3b8000000000000000000" title="Reason: jump; By: redeemer-1; At: 2026-08-24 09:00:00">1</a>',
             body,
         )
         self.assertIn(
-            b'<a href="/ticket/64e3a0000000000000000000" title="Reason: ; By: redeemer-2; At: 2026-08-23 20:00:00 UTC">1</a>',
+            b'<a href="/ticket/64e3a0000000000000000000" title="Reason: ; By: redeemer-2; At: 2026-08-23 20:00:00">1</a>',
             body,
         )
         self.assertNotIn(b">today-code</span>", body)
+        self.assertNotIn(b"(UTC)", body)
+
+    def test_redeemed_report_uses_configured_local_day_boundaries(self) -> None:
+        today = datetime(2026, 8, 24, 1, tzinfo=timezone.utc)
+        query_args = {}
+
+        def objects(**kwargs):
+            query_args.update(kwargs)
+            return []
+
+        with patch.object(config, "_file_config", return_value={"timezone": "America/Los_Angeles"}):
+            status, _headers, _body = view_redeemed_tickets(
+                ticket_class=SimpleNamespace(objects=objects),
+                render=service._render,
+                now=today,
+            )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertEqual(
+            query_args,
+            {
+                "redeemed__dt__gte": datetime(2026, 8, 22, 7, tzinfo=timezone.utc),
+                "redeemed__dt__lt": datetime(2026, 8, 24, 7, tzinfo=timezone.utc),
+            },
+        )
 
     def test_issued_report_limits_to_last_500_and_handles_missing_redemption(self) -> None:
         class Query:
@@ -439,7 +467,8 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"Jane", body)
         self.assertIn(b"C182 hop-and-hop", body)
         self.assertIn(b"cash", body)
-        self.assertIn(b"2026-08-24 09:00:00 UTC", body)
+        self.assertIn(b"2026-08-24 09:00:00", body)
+        self.assertNotIn(b"2026-08-24 09:00:00 UTC", body)
         self.assertIn(b"redeemer-1", body)
         self.assertIn(b"jump", body)
         self.assertIn(b"Zoe", body)
@@ -469,12 +498,18 @@ class ServiceHelperTest(unittest.TestCase):
         )
         ticket_class.objects.return_value.first.return_value = ticket
 
-        status, _headers, body = service._view_ticket("64e3b8000000000000000000")
+        with patch.object(config, "_file_config", return_value={"timezone": "America/Los_Angeles"}):
+            status, _headers, body = service._view_ticket("64e3b8000000000000000000")
 
         self.assertEqual(status, service.HTTPStatus.OK)
         ticket_class.objects.assert_called_once_with(id=ObjectId("64e3b8000000000000000000"))
         for expected in (b"secret-code", b"Jane", b"issuer-1", b"C182 hop-and-hop", b"cash", b"redeemer-1", b"jump"):
             self.assertIn(expected, body)
+        self.assertIn(b"<title>Ticket</title>", body)
+        self.assertNotIn(b"<title>Ticket 64e3b8000000000000000000</title>", body)
+        self.assertIn(b"2026-08-22 17:00:00", body)
+        self.assertIn(b"2026-08-24 02:00:00", body)
+        self.assertNotIn(b"2026-08-23 00:00:00 UTC", body)
         self.assertIn(b'href="/print?id=64e3b8000000000000000000"', body)
 
     @patch.object(service, "Ticket")
@@ -1276,6 +1311,16 @@ class ServiceConfigTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(KeyError):
                 config.mongodb_uri()
+
+    def test_timezone_defaults_to_utc(self) -> None:
+        self.patch_config({})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.local_timezone().key, "UTC")
+
+    def test_timezone_is_read_from_the_yaml_file(self) -> None:
+        self.patch_config({"timezone": "America/Los_Angeles"})
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(config.local_timezone().key, "America/Los_Angeles")
 
     def test_google_settings_are_read_from_the_google_section(self) -> None:
         self.patch_config({"google": {"client_id": "client", "secret": "shhh"}})

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlencode
+
+from dropzone_ticketing.service.config import local_timezone
+from dropzone_ticketing.time_utils import format_datetime
 
 
 def _format_datetime(value: datetime | None) -> str:
-    if value is None:
-        return ""
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return format_datetime(value, local_timezone())
 
 
 def _user_link(ref) -> dict[str, str]:
