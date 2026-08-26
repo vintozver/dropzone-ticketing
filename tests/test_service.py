@@ -1434,6 +1434,20 @@ class ServiceMicrosoftTest(unittest.TestCase):
             ec.ECDSA(hashes.SHA384()),
         )
 
+    def test_the_certificate_is_read_when_the_key_comes_first_in_the_bundle(self) -> None:
+        pem, certificate = self.certificate_pem()
+        certificate_pem, key_pem = pem.split("-----BEGIN PRIVATE KEY-----", 1)
+        reversed_pem = "-----BEGIN PRIVATE KEY-----" + key_pem + certificate_pem
+        with patch.object(microsoft_module, "microsoft_client_certificate", return_value=reversed_pem), patch.object(
+            microsoft_module, "microsoft_client_id", return_value="client"
+        ):
+            assertion = microsoft_module._client_assertion("https://login.test/token")
+
+        expected_thumbprint = base64.urlsafe_b64encode(
+            certificate.fingerprint(hashes.SHA256())
+        ).rstrip(b"=").decode()
+        self.assertEqual(self.segment(assertion.split(".", 1)[0])["x5t#S256"], expected_thumbprint)
+
     def test_the_secret_is_used_without_a_certificate(self) -> None:
         with patch.object(microsoft_module, "microsoft_client_certificate", return_value=""), patch.object(
             microsoft_module, "microsoft_client_secret", return_value="shhh"
