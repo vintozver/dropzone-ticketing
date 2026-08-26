@@ -1079,7 +1079,7 @@ class ServiceAuthnTest(unittest.TestCase):
         environ = {
             "CONTENT_LENGTH": str(len(body)),
             "wsgi.input": io.BytesIO(body),
-            "HTTP_COOKIE": "google_csrf=token",
+            "HTTP_COOKIE": "authn_csrf=token",
         }
 
         with patch.object(auth, "_session_user", return_value=user):

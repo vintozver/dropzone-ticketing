@@ -33,7 +33,6 @@ from ..model.auth import Fido2Credential, User
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
 AUTHN_CSRF_COOKIE = "authn_csrf"
-_LEGACY_CSRF_COOKIE = "google_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 
@@ -474,8 +473,7 @@ def remove_fido2_credential(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Authentication required.")
     form = read_form(environ)
     token = form.get("csrf", "")
-    cookies = _cookies(environ)
-    expected = cookies.get(AUTHN_CSRF_COOKIE) or cookies.get(_LEGACY_CSRF_COOKIE, "")
+    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "")
     if not token or not expected or not secrets.compare_digest(token, expected):
         return error(HTTPStatus.FORBIDDEN, "Invalid request.")
     try:
