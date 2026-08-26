@@ -25,7 +25,7 @@ from .actions.view_owners import view_owners as _view_owners_action
 from .actions.view_redeemed_tickets import view_redeemed_tickets as _view_redeemed_tickets_action
 from .actions.view_ticket import view_ticket as _view_ticket_action
 from .actions.search_users import search_users as _search_users_action
-from .config import CODE_ALPHABET, CODE_LENGTH, local_timezone, mongodb_uri
+from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
 from .http import (
     exception_response,
     read_form as _read_form,
@@ -84,7 +84,6 @@ def _print_tickets(ticket_ids, user_id: str | None = None, display_name: str | N
         ticket_class=Ticket,
         pdf_class=PDF,
         render=_render,
-        display_timezone=local_timezone(),
     )
 
 
