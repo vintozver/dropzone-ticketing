@@ -20,7 +20,7 @@ from ..model.auth import MicrosoftCredential, User
 MICROSOFT_STATE_COOKIE = "microsoft_oauth_state"
 _STATE_TTL_SECONDS = 300
 _DISCOVERY_URI = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
-_SCOPES = "openid email profile"
+_SCOPES = "email"
 _CODE_VERIFIER_LENGTH = 128
 _ALPHABET = string.ascii_letters + string.digits
 
