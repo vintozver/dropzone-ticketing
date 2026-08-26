@@ -28,7 +28,6 @@ def print_tickets(
     ticket_class,
     pdf_class,
     render,
-    display_timezone=None,
 ):
     ticket_ids = list(ticket_ids)
     user_id = (user_id or "").strip()
@@ -69,8 +68,7 @@ def print_tickets(
         return render("error.html", HTTPStatus.NOT_FOUND, message="No tickets found.")
 
     output = io.BytesIO()
-    display_timezone = display_timezone or local_timezone()
-    pdf = pdf_class(output, local_timezone=display_timezone)
+    pdf = pdf_class(output, local_timezone=local_timezone())
     for ticket in tickets:
         pdf.append(ticket)
     pdf.render()

@@ -59,7 +59,7 @@ class PDF(object):
         self.canvas.setFont("Helvetica", 8)
         self.canvas.drawString(x, y, ticket.issued_to.display_name or "")
         self.canvas.drawString(x, y - line_height, ticket.code)
-        self.canvas.drawString(x, y - 2 * line_height, self._format_datetime(issued_utc, "UTC"))
+        self.canvas.drawString(x, y - 2 * line_height, f"{self._format_datetime(issued_utc)} UTC")
 
     def _draw_right_section(self, ticket: _ticket.Ticket, issued_local: datetime) -> None:
         x = LEFT_SECTION_WIDTH + 0.12 * inch
@@ -114,11 +114,8 @@ class PDF(object):
         )
 
     @staticmethod
-    def _format_datetime(value: datetime, timezone_label: str | None = None) -> str:
-        result = value.strftime("%Y-%m-%d %H:%M:%S")
-        if timezone_label:
-            result += f" {timezone_label}"
-        return result
+    def _format_datetime(value: datetime) -> str:
+        return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def load_logo_bytes() -> bytes:
