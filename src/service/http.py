@@ -22,7 +22,7 @@ _request_context: ContextVar[dict[str, object]] = ContextVar("request_context", 
 
 @pass_context
 def _datetime_filter(context, value):
-    return format_datetime(value, context.get("local_timezone") or local_timezone())
+    return format_datetime(value, context["local_timezone"])
 
 
 _templates.filters["datetime"] = _datetime_filter
