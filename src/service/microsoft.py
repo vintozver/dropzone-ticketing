@@ -2,31 +2,91 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
+import re
 import secrets
 import string
 import traceback
+import uuid
 from functools import lru_cache
 from http import HTTPStatus
 from time import time
 from urllib.parse import urlencode, parse_qs
 
 import requests
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.x509 import load_pem_x509_certificate
 
 from .auth import AUTHN_CSRF_COOKIE, AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies, _session_user, _signed, _unsign
-from .config import microsoft_client_id, microsoft_client_secret, microsoft_redirect_uri
+from .config import microsoft_client_id, microsoft_client_key, microsoft_client_secret, microsoft_redirect_uri
 from .http import error, read_form
 from ..model.auth import MicrosoftCredential, User
 
 MICROSOFT_STATE_COOKIE = "microsoft_oauth_state"
 _STATE_TTL_SECONDS = 300
 _DISCOVERY_URI = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
-_SCOPES = "email"
+_SCOPES = "openid email"
 _CODE_VERIFIER_LENGTH = 128
 _ALPHABET = string.ascii_letters + string.digits
+_CLIENT_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+_ASSERTION_TTL_SECONDS = 300
+_CERTIFICATE_PEM = re.compile(
+    r"-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----", re.DOTALL
+)
 
 
 def _configured() -> bool:
-    return bool(microsoft_client_id() and microsoft_client_secret())
+    return bool(microsoft_client_id() and (microsoft_client_key() or microsoft_client_secret()))
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
+
+
+def _certificate_thumbprint(pem: str) -> str | None:
+    match = _CERTIFICATE_PEM.search(pem)
+    if match is None:
+        return None
+    certificate = load_pem_x509_certificate(match.group(0).encode())
+    return _b64url(certificate.fingerprint(hashes.SHA1()))
+
+
+def _client_assertion(token_endpoint: str) -> str:
+    """Build a JWT signed with the configured private key, as Microsoft expects."""
+    pem = microsoft_client_key()
+    try:
+        private_key = serialization.load_pem_private_key(pem.encode(), None)
+        if not isinstance(private_key, rsa.RSAPrivateKey):
+            raise ValueError
+        header = {"alg": "RS256", "typ": "JWT"}
+        thumbprint = _certificate_thumbprint(pem)
+        if thumbprint:
+            header["x5t"] = thumbprint
+    except Exception:
+        # Never surface the key material or its parsing details.
+        raise ValueError("Microsoft private key is invalid.") from None
+    client_id = microsoft_client_id()
+    issued = int(time())
+    claims = {
+        "aud": token_endpoint, "iss": client_id, "sub": client_id, "jti": str(uuid.uuid4()),
+        "iat": issued, "nbf": issued, "exp": issued + _ASSERTION_TTL_SECONDS,
+    }
+    signing_input = ".".join(
+        _b64url(json.dumps(part, separators=(",", ":")).encode()) for part in (header, claims)
+    ).encode()
+    signature = private_key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+    return f"{signing_input.decode()}.{_b64url(signature)}"
+
+
+def _client_authentication(token_endpoint: str) -> dict[str, str]:
+    """Private key authentication takes precedence over the client secret."""
+    if microsoft_client_key():
+        return {
+            "client_assertion_type": _CLIENT_ASSERTION_TYPE,
+            "client_assertion": _client_assertion(token_endpoint),
+        }
+    return {"client_secret": microsoft_client_secret()}
 
 
 def _generate_code_verifier() -> str:
@@ -101,9 +161,9 @@ def complete(environ: dict):
         redirect_uri = microsoft_redirect_uri(environ)
         _authorization_endpoint, token_endpoint, userinfo_endpoint = _endpoints()
         token = requests.post(token_endpoint, data={
-            "client_id": microsoft_client_id(), "client_secret": microsoft_client_secret(),
+            "client_id": microsoft_client_id(),
             "code": query["code"], "redirect_uri": redirect_uri, "grant_type": "authorization_code",
-            "scope": _SCOPES, "code_verifier": verifier,
+            "scope": _SCOPES, "code_verifier": verifier, **_client_authentication(token_endpoint),
         }, timeout=10)
         token.raise_for_status()
         token_data = token.json()

@@ -22,6 +22,12 @@ google:
 microsoft:
   client_id: your-client-id
   secret: your-client-secret
+  # Optional certificate authentication: RSA private key in PEM format, optionally
+  # followed by the matching certificate. When present it replaces `secret`.
+  key: |
+    -----BEGIN PRIVATE KEY-----
+    ...
+    -----END PRIVATE KEY-----
   redirect_uri: https://example.test/authn/microsoft/callback
 ```
 
