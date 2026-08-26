@@ -318,7 +318,7 @@ def begin_authn(environ: dict):
             }
             for credential in user.fido2_credentials
         ]
-    google_csrf = secrets.token_urlsafe(32)
+    authn_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
@@ -331,8 +331,7 @@ def begin_authn(environ: dict):
             {"email": credential.email}
             for credential in getattr(user, "google_credentials", [])
         ],
-        google_csrf=google_csrf,
-        authn_csrf=google_csrf,
+        authn_csrf=authn_csrf,
         microsoft_credentials=[
             {"email": credential.email}
             for credential in getattr(user, "microsoft_credentials", [])
@@ -344,7 +343,7 @@ def begin_authn(environ: dict):
         payload["register_state"] = register_state
         payload["register_user"] = str(user.id)
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
-    headers.append(_cookie(AUTHN_CSRF_COOKIE, google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
+    headers.append(_cookie(AUTHN_CSRF_COOKIE, authn_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
 
 

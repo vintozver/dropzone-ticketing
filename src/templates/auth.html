@@ -41,7 +41,7 @@
           <td>
             <form method="post" action="/authn/fido2/remove">
               <input type="hidden" name="credential_id" value="{{ credential.encoded_id }}">
-              <input type="hidden" name="csrf" value="{{ google_csrf }}">
+              <input type="hidden" name="csrf" value="{{ authn_csrf }}">
               <button type="submit">Remove</button>
             </form>
           </td>
@@ -79,7 +79,7 @@
     <li>{{ credential.email }}
       <form method="post" action="/authn/google/remove" style="display:inline">
         <input type="hidden" name="email" value="{{ credential.email }}">
-        <input type="hidden" name="csrf" value="{{ google_csrf }}">
+        <input type="hidden" name="csrf" value="{{ authn_csrf }}">
         <button type="submit">Remove</button>
       </form>
     </li>
