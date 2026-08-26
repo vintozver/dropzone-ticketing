@@ -32,6 +32,7 @@ from ..model.auth import Fido2Credential, User
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
+AUTHN_CSRF_COOKIE = "google_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 
@@ -343,7 +344,7 @@ def begin_authn(environ: dict):
         payload["register_state"] = register_state
         payload["register_user"] = str(user.id)
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
-    headers.append(_cookie("google_csrf", google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
+    headers.append(_cookie(AUTHN_CSRF_COOKIE, google_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
     return status, headers, body
 
 

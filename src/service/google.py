@@ -20,6 +20,7 @@ from .config import google_client_id, google_client_secret, google_redirect_uri
 from .http import error, read_form
 from .auth import (
     AUTHN_SESSION_COOKIE,
+    AUTHN_CSRF_COOKIE,
     _COOKIE_MAX_AGE_SECONDS,
     _cookie,
     _cookies,
@@ -30,7 +31,7 @@ from .auth import (
 from ..model.auth import GoogleCredential, User
 
 GOOGLE_STATE_COOKIE = "google_oauth_state"
-GOOGLE_CSRF_COOKIE = "google_csrf"
+GOOGLE_CSRF_COOKIE = AUTHN_CSRF_COOKIE
 _GOOGLE_STATE_TTL_SECONDS = 300
 # The cookie must survive Google's cross-site redirect back to the callback.
 _GOOGLE_STATE_SAME_SITE = "Lax"

@@ -12,13 +12,12 @@ from urllib.parse import urlencode, parse_qs
 
 import requests
 
-from .auth import AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies, _session_user, _signed, _unsign
+from .auth import AUTHN_CSRF_COOKIE, AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies, _session_user, _signed, _unsign
 from .config import microsoft_client_id, microsoft_client_secret, microsoft_redirect_uri
 from .http import error, read_form
 from ..model.auth import MicrosoftCredential, User
 
 MICROSOFT_STATE_COOKIE = "microsoft_oauth_state"
-AUTHN_CSRF_COOKIE = "google_csrf"
 _STATE_TTL_SECONDS = 300
 _DISCOVERY_URI = "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
 _SCOPES = "openid email profile"
