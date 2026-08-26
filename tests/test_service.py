@@ -509,7 +509,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertNotIn(b"<title>Ticket 64e3b8000000000000000000</title>", body)
         self.assertIn(b"2026-08-22 17:00:00", body)
         self.assertIn(b"2026-08-24 02:00:00", body)
-        self.assertNotIn(b"2026-08-23 00:00:00 UTC", body)
+        self.assertNotIn(b" UTC", body)
         self.assertIn(b'href="/print?id=64e3b8000000000000000000"', body)
 
     @patch.object(service, "Ticket")

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import timezone
 from http import HTTPStatus
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -27,7 +27,7 @@ def print_tickets(
     ticket_class,
     pdf_class,
     render,
-    local_timezone=timezone.utc,
+    local_timezone=ZoneInfo("UTC"),
 ):
     ticket_ids = list(ticket_ids)
     user_id = (user_id or "").strip()
