@@ -6,6 +6,7 @@ from io import BytesIO
 from typing import BinaryIO
 
 from reportlab.graphics import renderPDF
+from reportlab.graphics.barcode.code128 import Code128
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.pagesizes import inch
@@ -23,6 +24,9 @@ VERTICAL_MARGIN = 0.15 * inch
 HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
+QR_SIZE = 0.65 * inch
+BARCODE_HEIGHT = 0.5 * inch
+BARCODE_QUIET_ZONE = 0.25 * inch
 
 
 class PDF(object):
@@ -47,6 +51,7 @@ class PDF(object):
         self._draw_left_section(ticket, issued_utc)
         self._draw_right_section(ticket, issued_local)
         self._draw_qr_code(ticket)
+        self._draw_barcode(ticket)
         self.canvas.showPage()
 
     def render(self) -> None:
@@ -59,8 +64,7 @@ class PDF(object):
 
         self.canvas.setFont("Helvetica", 8)
         self.canvas.drawString(x, y, ticket.issued_to.display_name or "")
-        self.canvas.drawString(x, y - line_height, ticket.code)
-        self.canvas.drawString(x, y - 2 * line_height, f"{self._format_datetime(issued_utc)} UTC")
+        self.canvas.drawString(x, y - line_height, f"{self._format_datetime(issued_utc)} UTC")
 
     def _draw_right_section(self, ticket: _ticket.Ticket, issued_local: datetime) -> None:
         x = LEFT_SECTION_WIDTH + 0.12 * inch
@@ -84,14 +88,27 @@ class PDF(object):
 
     def _draw_qr_code(self, ticket: _ticket.Ticket) -> None:
         qr_code = QrCodeWidget(ticket.code)
-        qr_size = 1.0 * inch
         bounds = qr_code.getBounds()
         width = bounds[2] - bounds[0]
         height = bounds[3] - bounds[1]
 
-        drawing = Drawing(qr_size, qr_size, transform=[qr_size / width, 0, 0, qr_size / height, 0, 0])
+        drawing = Drawing(QR_SIZE, QR_SIZE, transform=[QR_SIZE / width, 0, 0, QR_SIZE / height, 0, 0])
         drawing.add(qr_code)
-        renderPDF.draw(drawing, self.canvas, PAGE_WIDTH - qr_size, VERTICAL_MARGIN)
+        renderPDF.draw(drawing, self.canvas, (LEFT_SECTION_WIDTH - QR_SIZE) / 2, VERTICAL_MARGIN)
+
+    def _draw_barcode(self, ticket: _ticket.Ticket) -> None:
+        barcode = Code128(
+            ticket.code,
+            barHeight=BARCODE_HEIGHT,
+            quiet=True,
+            lquiet=BARCODE_QUIET_ZONE,
+            rquiet=BARCODE_QUIET_ZONE,
+        )
+        barcode.drawOn(
+            self.canvas,
+            PAGE_WIDTH - HORIZONTAL_MARGIN - barcode.width,
+            VERTICAL_MARGIN,
+        )
 
     def _draw_logo(self) -> None:
         logo = ImageReader(BytesIO(load_logo_bytes()))
@@ -104,14 +121,6 @@ class PDF(object):
             width=LOGO_WIDTH,
             height=logo_height,
             mask="auto",
-        )
-        self.canvas.drawImage(
-            logo,
-            HORIZONTAL_MARGIN,
-            VERTICAL_MARGIN,
-            width=LOGO_WIDTH,
-            height=logo_height,
-            mask="auto"
         )
 
     @staticmethod
