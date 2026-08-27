@@ -581,6 +581,13 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'href="/reports/redeemed"', response["body"])
         self.assertIn(b'href="/reports/issued"', response["body"])
 
+    def test_redeem_page_offers_the_com_port_scanner(self) -> None:
+        response = self.request("/redeem")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertIn(b"Use COM port scanner", response["body"])
+        self.assertIn(b"navigator.serial", response["body"])
+
     def test_base_template_shows_authentication_status(self) -> None:
         response = self.request("/", authenticated=False)
 

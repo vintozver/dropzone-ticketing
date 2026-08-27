@@ -9,4 +9,87 @@
     <small>optional , for example: jump or something else, for your records</small><br>
     <button type="submit">Redeem</button>
   </form>
+  <p>
+    <button id="scanner-button" type="button">Use COM port scanner</button>
+    <span id="scanner-status"></span>
+  </p>
+  <script>
+    $(function() {
+      const $button = $("#scanner-button");
+      const $status = $("#scanner-status");
+      const $codes = $("textarea[name='codes']");
+      let connecting = false;
+      let connected = false;
+
+      function setStatus(message) {
+        $status.text(message);
+      }
+
+      function appendCode(code) {
+        const current = $codes.val();
+        $codes.val(current && !/\n$/.test(current) ? current + "\n" + code + "\n" : current + code + "\n");
+      }
+
+      function readLoop(reader) {
+        let buffer = "";
+        const decoder = new TextDecoder("ascii");
+
+        function step() {
+          return reader.read().then(function(result) {
+            if (result.done) {
+              return;
+            }
+            buffer += decoder.decode(result.value, { stream: true });
+            const parts = buffer.split(/\r\n|\r|\n/);
+            buffer = parts.pop();
+            parts.forEach(function(part) {
+              const code = part.trim();
+              if (code) {
+                appendCode(code);
+              }
+            });
+            return step();
+          });
+        }
+
+        return step();
+      }
+
+      $button.on("click", function() {
+        if (connecting || connected) {
+          return;
+        }
+        if (!navigator.serial) {
+          setStatus("Web Serial API is not supported by this browser.");
+          return;
+        }
+        connecting = true;
+        setStatus("Connecting...");
+        navigator.serial.requestPort().then(function(port) {
+          return port.open({ baudRate: 9600 }).then(function() {
+            connecting = false;
+            connected = true;
+            setStatus("Scanner connected.");
+            const reader = port.readable.getReader();
+            return readLoop(reader).then(function() {
+              reader.releaseLock();
+              return port.close();
+            }, function(error) {
+              reader.releaseLock();
+              return port.close().then(function() {
+                throw error;
+              });
+            });
+          });
+        }).then(function() {
+          connected = false;
+          setStatus("Scanner disconnected.");
+        }, function(error) {
+          connecting = false;
+          connected = false;
+          setStatus("Scanner error: " + (error && error.message ? error.message : error));
+        });
+      });
+    });
+  </script>
 {% endblock %}
