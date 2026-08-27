@@ -9,4 +9,86 @@
     <small>optional , for example: jump or something else, for your records</small><br>
     <button type="submit">Redeem</button>
   </form>
+  <p>
+    <button id="scanner-button" type="button">Use COM port scanner</button>
+    <span id="scanner-status"></span>
+  </p>
+  <script>
+    $(function() {
+      const $button = $("#scanner-button");
+      const $status = $("#scanner-status");
+      const $codes = $("textarea[name='codes']");
+      let connecting = false;
+      let connected = false;
+
+      function setStatus(message) {
+        $status.text(message);
+      }
+
+      function appendCode(code) {
+        const current = $codes.val();
+        $codes.val(current && !/\n$/.test(current) ? current + "\n" + code + "\n" : current + code + "\n");
+      }
+
+      async function readLoop(reader) {
+        let buffer = "";
+        const decoder = new TextDecoder("ascii");
+
+        while (true) {
+          const result = await reader.read();
+          if (result.done) {
+            return;
+          }
+          buffer += decoder.decode(result.value, { stream: true });
+          const parts = buffer.split(/\r\n|\r|\n/);
+          buffer = parts.pop();
+          parts.forEach(function(part) {
+            const code = part.trim();
+            if (code) {
+              appendCode(code);
+            }
+          });
+        }
+      }
+
+      async function runScanner() {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        connecting = false;
+        connected = true;
+        setStatus("Scanner connected.");
+        const reader = port.readable.getReader();
+        try {
+          await readLoop(reader);
+        } finally {
+          reader.releaseLock();
+          try {
+            await port.close();
+          } catch (error) {
+            // the port may already be gone, for example when the scanner was unplugged
+          }
+        }
+      }
+
+      $button.on("click", function() {
+        if (connecting || connected) {
+          return;
+        }
+        if (!navigator.serial) {
+          setStatus("Web Serial API is not supported by this browser.");
+          return;
+        }
+        connecting = true;
+        setStatus("Connecting...");
+        runScanner().then(function() {
+          setStatus("Scanner disconnected.");
+        }, function(error) {
+          setStatus("Scanner error: " + (error && error.message ? error.message : error));
+        }).then(function() {
+          connecting = false;
+          connected = false;
+        });
+      });
+    });
+  </script>
 {% endblock %}
