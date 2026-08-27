@@ -30,29 +30,44 @@
         $codes.val(current && !/\n$/.test(current) ? current + "\n" + code + "\n" : current + code + "\n");
       }
 
-      function readLoop(reader) {
+      async function readLoop(reader) {
         let buffer = "";
         const decoder = new TextDecoder("ascii");
 
-        function step() {
-          return reader.read().then(function(result) {
-            if (result.done) {
-              return;
+        while (true) {
+          const result = await reader.read();
+          if (result.done) {
+            return;
+          }
+          buffer += decoder.decode(result.value, { stream: true });
+          const parts = buffer.split(/\r\n|\r|\n/);
+          buffer = parts.pop();
+          parts.forEach(function(part) {
+            const code = part.trim();
+            if (code) {
+              appendCode(code);
             }
-            buffer += decoder.decode(result.value, { stream: true });
-            const parts = buffer.split(/\r\n|\r|\n/);
-            buffer = parts.pop();
-            parts.forEach(function(part) {
-              const code = part.trim();
-              if (code) {
-                appendCode(code);
-              }
-            });
-            return step();
           });
         }
+      }
 
-        return step();
+      async function runScanner() {
+        const port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 9600 });
+        connecting = false;
+        connected = true;
+        setStatus("Scanner connected.");
+        const reader = port.readable.getReader();
+        try {
+          await readLoop(reader);
+        } finally {
+          reader.releaseLock();
+          try {
+            await port.close();
+          } catch (error) {
+            // the port may already be gone, for example when the scanner was unplugged
+          }
+        }
       }
 
       $button.on("click", function() {
@@ -65,29 +80,13 @@
         }
         connecting = true;
         setStatus("Connecting...");
-        navigator.serial.requestPort().then(function(port) {
-          return port.open({ baudRate: 9600 }).then(function() {
-            connecting = false;
-            connected = true;
-            setStatus("Scanner connected.");
-            const reader = port.readable.getReader();
-            return readLoop(reader).then(function() {
-              reader.releaseLock();
-              return port.close();
-            }, function(error) {
-              reader.releaseLock();
-              return port.close().then(function() {
-                throw error;
-              });
-            });
-          });
-        }).then(function() {
-          connected = false;
+        runScanner().then(function() {
           setStatus("Scanner disconnected.");
         }, function(error) {
+          setStatus("Scanner error: " + (error && error.message ? error.message : error));
+        }).then(function() {
           connecting = false;
           connected = false;
-          setStatus("Scanner error: " + (error && error.message ? error.message : error));
         });
       });
     });
