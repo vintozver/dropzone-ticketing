@@ -25,7 +25,8 @@ HORIZONTAL_MARGIN = 0.08 * inch
 LOGO_RESOURCE = "logo.png"
 LOGO_WIDTH = 1 * inch
 QR_SIZE = 0.65 * inch
-BARCODE_HEIGHT = 0.5 * inch
+BARCODE_BAR_WIDTH = 0.016 * inch
+BARCODE_HEIGHT = 0.3 * inch
 BARCODE_QUIET_ZONE = 0.25 * inch
 
 
@@ -99,6 +100,7 @@ class PDF(object):
     def _draw_barcode(self, ticket: _ticket.Ticket) -> None:
         barcode = Code128(
             ticket.code,
+            barWidth=BARCODE_BAR_WIDTH,
             barHeight=BARCODE_HEIGHT,
             quiet=True,
             lquiet=BARCODE_QUIET_ZONE,
@@ -106,7 +108,7 @@ class PDF(object):
         )
         barcode.drawOn(
             self.canvas,
-            PAGE_WIDTH - HORIZONTAL_MARGIN - barcode.width,
+            LEFT_SECTION_WIDTH,
             VERTICAL_MARGIN,
         )
 

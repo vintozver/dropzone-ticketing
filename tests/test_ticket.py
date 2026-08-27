@@ -13,9 +13,9 @@ from reportlab.lib.pagesizes import inch
 from dropzone_ticketing import PDF, Ticket
 from dropzone_ticketing.model.ticket import UserRef
 from dropzone_ticketing.pdf import (
+    BARCODE_BAR_WIDTH,
     BARCODE_HEIGHT,
     BARCODE_QUIET_ZONE,
-    HORIZONTAL_MARGIN,
     LEFT_SECTION_WIDTH,
     PAGE_HEIGHT,
     PAGE_WIDTH,
@@ -91,7 +91,7 @@ class TicketPdfTest(unittest.TestCase):
         self.assertEqual(y, VERTICAL_MARGIN)
         self.assertLess(QR_SIZE, 1 * inch)
 
-    def test_code128_has_exact_height_quiet_zones_and_right_alignment(self) -> None:
+    def test_code128_has_configured_geometry_and_placement(self) -> None:
         output = BytesIO()
         ticket = make_ticket("ABC123", "Jane Jumper", datetime.now(timezone.utc))
         pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
@@ -103,15 +103,17 @@ class TicketPdfTest(unittest.TestCase):
 
         barcode_class.assert_called_once_with(
             ticket.code,
+            barWidth=BARCODE_BAR_WIDTH,
             barHeight=BARCODE_HEIGHT,
             quiet=True,
             lquiet=BARCODE_QUIET_ZONE,
             rquiet=BARCODE_QUIET_ZONE,
         )
-        self.assertEqual(BARCODE_HEIGHT, 0.5 * inch)
+        self.assertEqual(BARCODE_BAR_WIDTH, 0.016 * inch)
+        self.assertEqual(BARCODE_HEIGHT, 0.3 * inch)
         barcode.drawOn.assert_called_once_with(
             pdf.canvas,
-            PAGE_WIDTH - HORIZONTAL_MARGIN - barcode.width,
+            LEFT_SECTION_WIDTH,
             VERTICAL_MARGIN,
         )
 
