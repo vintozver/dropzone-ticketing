@@ -4,15 +4,23 @@ import re
 import unittest
 from datetime import datetime, timezone
 from io import BytesIO
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
+from reportlab.lib.pagesizes import inch
 
 from dropzone_ticketing import PDF, Ticket
 from dropzone_ticketing.model.ticket import UserRef
 from dropzone_ticketing.pdf import (
+    BARCODE_BAR_WIDTH,
+    BARCODE_HEIGHT,
+    BARCODE_QUIET_ZONE,
+    LEFT_SECTION_WIDTH,
     PAGE_HEIGHT,
     PAGE_WIDTH,
+    QR_SIZE,
+    VERTICAL_MARGIN,
     load_logo_bytes,
 )
 
@@ -55,7 +63,7 @@ class TicketPdfTest(unittest.TestCase):
         self.assertEqual(len(re.findall(r"/Type /Page\b", rendered)), 1)
         self.assertIn(f"/MediaBox [ 0 0 {PAGE_WIDTH:g} {PAGE_HEIGHT:g} ]", rendered)
         self.assertIn("(Jane Jumper) Tj", rendered)
-        self.assertIn("(ABC123) Tj", rendered)
+        self.assertNotIn("(ABC123) Tj", rendered)
         self.assertIn("(2026-08-21 20:30:00 UTC) Tj", rendered)
         self.assertIn("(Issued: 2026-08-21 13:30:00) Tj", rendered)
         self.assertNotIn("(Issued: 2026-08-21 13:30:00 PDT) Tj", rendered)
@@ -67,6 +75,47 @@ class TicketPdfTest(unittest.TestCase):
         self.assertIn("(_____________________) Tj", rendered)
         self.assertNotIn("One jump 36$", rendered)
         self.assertNotIn("Paid with card xxxx-0000", rendered)
+
+    def test_qr_code_is_reduced_and_positioned_in_left_section(self) -> None:
+        output = BytesIO()
+        ticket = make_ticket("ABC123", "Jane Jumper", datetime.now(timezone.utc))
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
+
+        with patch("dropzone_ticketing.pdf.renderPDF.draw") as draw:
+            pdf._draw_qr_code(ticket)
+
+        drawing, canvas_arg, x, y = draw.call_args.args
+        self.assertIs(canvas_arg, pdf.canvas)
+        self.assertEqual((drawing.width, drawing.height), (QR_SIZE, QR_SIZE))
+        self.assertEqual(x, (LEFT_SECTION_WIDTH - QR_SIZE) / 2)
+        self.assertEqual(y, VERTICAL_MARGIN)
+        self.assertLess(QR_SIZE, 1 * inch)
+
+    def test_code128_has_configured_geometry_and_placement(self) -> None:
+        output = BytesIO()
+        ticket = make_ticket("ABC123", "Jane Jumper", datetime.now(timezone.utc))
+        pdf = PDF(output, local_timezone=ZoneInfo("UTC"), business_name="The Dropzone")
+
+        with patch("dropzone_ticketing.pdf.Code128") as barcode_class:
+            barcode = barcode_class.return_value
+            barcode.width = 100
+            pdf._draw_barcode(ticket)
+
+        barcode_class.assert_called_once_with(
+            ticket.code,
+            barWidth=BARCODE_BAR_WIDTH,
+            barHeight=BARCODE_HEIGHT,
+            quiet=True,
+            lquiet=BARCODE_QUIET_ZONE,
+            rquiet=BARCODE_QUIET_ZONE,
+        )
+        self.assertEqual(BARCODE_BAR_WIDTH, 0.016 * inch)
+        self.assertEqual(BARCODE_HEIGHT, 0.3 * inch)
+        barcode.drawOn.assert_called_once_with(
+            pdf.canvas,
+            LEFT_SECTION_WIDTH,
+            VERTICAL_MARGIN,
+        )
 
     def test_ticket_pdf_uses_configured_business_name(self) -> None:
         output = BytesIO()
