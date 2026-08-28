@@ -2,9 +2,9 @@
 {% block title %}Authenticate{% endblock %}
 {% block content %}
 {% if authenticated %}
-{% include "auth_authenticated.html" %}
+{% include "auth_known.html" %}
 {% else %}
-{% include "auth_unauthenticated.html" %}
+{% include "auth_unknown.html" %}
 {% endif %}
 <script>
 const challenge = "{{ challenge }}";
