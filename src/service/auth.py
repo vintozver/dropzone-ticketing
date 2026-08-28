@@ -4,6 +4,7 @@ import base64
 import binascii
 import hmac
 import json
+import logging
 import secrets
 import smtplib
 import traceback
@@ -41,6 +42,7 @@ _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 _EMAIL_CODE_TTL_SECONDS = 300
 _EMAIL_RESEND_DELAY_SECONDS = 60
 EMAIL_PENDING_COOKIE = "email_authentication"
+_logger = logging.getLogger(__name__)
 
 
 def _b64encode(value: bytes) -> str:
@@ -373,13 +375,13 @@ def send_email_code(environ: dict):
     if not requested or "@" not in requested or len(requested) > 320:
         return error(HTTPStatus.BAD_REQUEST, "A valid email address is required.")
     session_user = _session_user(environ)
-    user = session_user
-    if user is None:
+    if session_user is None:
         user = User.objects(email=requested).first()
         if user is None:
             return error(HTTPStatus.FORBIDDEN, "This email address is not registered.")
         purpose_user_id = str(user.id)
     else:
+        user = session_user
         if user.email and requested == user.email.casefold():
             return error(HTTPStatus.BAD_REQUEST, "This is already your current email address.")
         existing = User.objects(email=requested).first()
@@ -394,10 +396,10 @@ def send_email_code(environ: dict):
     try:
         send_code(requested, new_code)
     except (OSError, smtplib.SMTPException, ValueError):
+        _logger.exception("Could not send authentication email")
         return error(
             HTTPStatus.SERVICE_UNAVAILABLE,
             "Could not send the authentication email.",
-            traceback.format_exc(),
         )
     user.email_authentication = EmailAuthentication(
         email=requested,
