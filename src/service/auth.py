@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from uuid import UUID
 
 from bson import ObjectId
@@ -35,6 +35,7 @@ AUTHN_SESSION_COOKIE = "authn_session"
 AUTHN_CSRF_COOKIE = "authn_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
+_RETURN_URI_PARAM = "return_uri"
 
 
 def _b64encode(value: bytes) -> str:
@@ -97,6 +98,41 @@ def _clear_cookie(name: str, *, path: str = "/") -> tuple[str, str]:
 
 def _request_host(environ: dict) -> str:
     return environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+
+
+def _safe_return_uri(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if "\\" in value or any(ord(character) < 0x20 for character in value):
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return None
+    if parsed.path == "/authn" or parsed.path.startswith("/authn/"):
+        return None
+    return value
+
+
+def return_uri(environ: dict) -> str:
+    query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+    requested = _safe_return_uri(query.get(_RETURN_URI_PARAM, [None])[0])
+    if requested is not None:
+        return requested
+    path = environ.get("PATH_INFO", "/")
+    query_string = environ.get("QUERY_STRING", "")
+    current = f"{path}?{query_string}" if query_string else path
+    return _safe_return_uri(current) or "/"
+
+
+def _authn_url(destination: str) -> str:
+    return f"/authn?{urlencode({_RETURN_URI_PARAM: destination})}"
+
+
+def authentication_error(environ: dict, message: str, trace: str = "", destination: str | None = None):
+    from .http import render
+
+    destination = destination or return_uri(environ)
+    return render("error.html", HTTPStatus.FORBIDDEN, message=message, trace=trace, retry_uri=_authn_url(destination))
 
 
 def _rp_id(environ: dict) -> str:
@@ -294,6 +330,7 @@ def begin_authn(environ: dict):
         for credential in credentials
     ]
     user = _session_user(environ)
+    destination = return_uri(environ)
     registration_options = None
     user_credentials = []
     register_state = None
@@ -337,8 +374,9 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "microsoft_credentials", [])
         ],
         current_display_name=user.display_name if user is not None else "",
+        retry_uri=_authn_url(destination),
     )
-    payload = {"state": _state, "issued": time()}
+    payload = {"state": _state, "issued": time(), "return_uri": destination}
     if register_state is not None and user is not None:
         payload["register_state"] = register_state
         payload["register_user"] = str(user.id)
@@ -350,7 +388,7 @@ def begin_authn(environ: dict):
 def complete_authn(environ: dict):
     state = _authn_state_from_cookie(environ)
     if state is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication challenge is missing or expired.")
+        return authentication_error(environ, "Authentication challenge is missing or expired.")
     form = read_form(environ)
     try:
         response = {
@@ -376,10 +414,16 @@ def complete_authn(environ: dict):
         )
         serial = _b64encode(credential.id)
     except (binascii.Error, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.", traceback.format_exc())
+        return authentication_error(
+            environ,
+            "FIDO2 authentication failed.",
+            traceback.format_exc(),
+            _safe_return_uri(state.get("return_uri")),
+        )
+    destination = _safe_return_uri(state.get("return_uri")) or "/"
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [
-        ("Location", "/"),
+        ("Location", destination),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"serial": serial, "issued": time()})),
         _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn"),
     ]
@@ -493,7 +537,7 @@ def require_auth(environ: dict):
     if _is_authenticated(environ):
         return None
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication required.")
-    headers = [("Location", "/authn")]
+    headers = [("Location", _authn_url(return_uri(environ)))]
     return status, headers, body
 
 import fido2.features

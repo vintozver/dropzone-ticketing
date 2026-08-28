@@ -3,5 +3,6 @@
 {% block content %}
   <h1>Error</h1>
   <p>{{ message }}</p>
+  {% if retry_uri %}<p><a href="{{ retry_uri }}">Try authentication again</a></p>{% endif %}
   {% if trace %}<div><pre>{{ trace }}</pre></div>{% endif %}
 {% endblock %}

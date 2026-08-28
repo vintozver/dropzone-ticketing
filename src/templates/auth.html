@@ -100,7 +100,7 @@
 <section>
   <h2>FIDO2/passkey</h2>
   <p>Use a registered FIDO2 credential or passkey to sign in securely.</p>
-  <form id="authn-form" method="post" action="/authn">
+  <form id="authn-form" method="post" action="{{ retry_uri }}">
     <input type="hidden" name="id" id="id">
     <input type="hidden" name="rawId" id="rawId">
     <input type="hidden" name="clientDataJSON" id="clientDataJSON">
@@ -113,14 +113,14 @@
 <section>
   <h2>Google</h2>
   <p>Use your Google account to sign in.</p>
-  <form method="get" action="/authn/google">
+  <form method="get" action="{{ retry_uri|replace('/authn?', '/authn/google?') }}">
     <button type="submit">Proceed</button>
   </form>
 </section>
 <section>
   <h2>Microsoft</h2>
   <p>Use your Microsoft account to sign in.</p>
-  <form method="get" action="/authn/microsoft"><button type="submit">Proceed</button></form>
+  <form method="get" action="{{ retry_uri|replace('/authn?', '/authn/microsoft?') }}"><button type="submit">Proceed</button></form>
 </section>
 {% endif %}
 <script>

@@ -18,7 +18,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding, rsa, utils
 from cryptography.x509 import load_pem_x509_certificate
 
-from .auth import AUTHN_CSRF_COOKIE, AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies, _session_user, _signed, _unsign
+from .auth import (
+    AUTHN_CSRF_COOKIE, AUTHN_SESSION_COOKIE, _COOKIE_MAX_AGE_SECONDS, _cookie, _cookies,
+    _session_user, _signed, _unsign, _safe_return_uri, authentication_error, return_uri,
+)
 from .config import microsoft_client_certificate, microsoft_client_id, microsoft_client_secret, microsoft_redirect_uri
 from .http import error, read_form
 from ..model.auth import MicrosoftCredential, User
@@ -121,7 +124,10 @@ def begin(environ: dict):
     state = secrets.token_urlsafe(32)
     verifier = _generate_code_verifier()
     user = _session_user(environ)
-    payload = {"state": state, "issued": time(), "user": str(user.id) if user else None, "code_verifier": verifier}
+    payload = {
+        "state": state, "issued": time(), "user": str(user.id) if user else None,
+        "code_verifier": verifier, "return_uri": return_uri(environ),
+    }
     redirect_uri = microsoft_redirect_uri(environ)
     try:
         authorization_endpoint, _token_endpoint, _userinfo_endpoint = _endpoints()
@@ -157,12 +163,16 @@ def complete(environ: dict):
     state = _state(environ)
     query = {key: values[0] for key, values in parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).items()}
     if state is None or not secrets.compare_digest(str(state.get("state", "")), query.get("state", "")):
-        return error(HTTPStatus.FORBIDDEN, "Microsoft authentication state is missing or invalid.")
+        return authentication_error(environ, "Microsoft authentication state is missing or invalid.")
     if query.get("error") or not query.get("code"):
-        return error(HTTPStatus.FORBIDDEN, "Microsoft authentication was cancelled or failed.")
+        return authentication_error(
+            environ, "Microsoft authentication was cancelled or failed.", destination=_safe_return_uri(state.get("return_uri"))
+        )
     verifier = state.get("code_verifier")
     if not isinstance(verifier, str) or not verifier:
-        return error(HTTPStatus.FORBIDDEN, "Microsoft authentication state is missing or invalid.")
+        return authentication_error(
+            environ, "Microsoft authentication state is missing or invalid.", destination=_safe_return_uri(state.get("return_uri"))
+        )
     try:
         redirect_uri = microsoft_redirect_uri(environ)
         _authorization_endpoint, token_endpoint, userinfo_endpoint = _endpoints()
@@ -185,7 +195,9 @@ def complete(environ: dict):
             raise ValueError("Microsoft profile response is invalid.")
         email = _email(profile)
     except (KeyError, ValueError, requests.RequestException):
-        return error(HTTPStatus.FORBIDDEN, "Microsoft authentication failed.", traceback.format_exc())
+        return authentication_error(
+            environ, "Microsoft authentication failed.", traceback.format_exc(), _safe_return_uri(state.get("return_uri"))
+        )
     user = _session_user(environ)
     if user is not None and state.get("user") == str(user.id):
         if any(credential.email.casefold() == email for credential in user.microsoft_credentials):
@@ -197,7 +209,7 @@ def complete(environ: dict):
         if user is None:
             return error(HTTPStatus.FORBIDDEN, "This Microsoft account is not registered.")
     return HTTPStatus.SEE_OTHER, [
-        ("Location", "/authn"),
+        ("Location", _safe_return_uri(state.get("return_uri")) or "/"),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
         _cookie(MICROSOFT_STATE_COOKIE, "", max_age=0, path="/authn/microsoft"),
     ], b""

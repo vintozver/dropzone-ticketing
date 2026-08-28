@@ -27,6 +27,9 @@ from .auth import (
     _session_user,
     _signed,
     _unsign,
+    _safe_return_uri,
+    authentication_error,
+    return_uri,
 )
 from ..model.auth import GoogleCredential, User
 
@@ -97,6 +100,7 @@ def begin(environ: dict):
         "issued": time(),
         "user": str(user.id) if user else None,
         "code_verifier": code_verifier,
+        "return_uri": return_uri(environ),
     }
     redirect_uri = google_redirect_uri(environ)
     try:
@@ -137,12 +141,16 @@ def complete(environ: dict):
     state = _state(environ)
     query = {key: values[0] for key, values in parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).items()}
     if state is None or not secrets.compare_digest(str(state.get("state", "")), query.get("state", "")):
-        return error(HTTPStatus.FORBIDDEN, "Google authentication state is missing or invalid.")
+        return authentication_error(environ, "Google authentication state is missing or invalid.")
     if query.get("error") or not query.get("code"):
-        return error(HTTPStatus.FORBIDDEN, "Google authentication was cancelled or failed.")
+        return authentication_error(
+            environ, "Google authentication was cancelled or failed.", destination=_safe_return_uri(state.get("return_uri"))
+        )
     code_verifier = state.get("code_verifier")
     if not isinstance(code_verifier, str) or not code_verifier:
-        return error(HTTPStatus.FORBIDDEN, "Google authentication state is missing or invalid.")
+        return authentication_error(
+            environ, "Google authentication state is missing or invalid.", destination=_safe_return_uri(state.get("return_uri"))
+        )
     try:
         redirect_uri = google_redirect_uri(environ)
         flow = _oauth_flow(redirect_uri, code_verifier)
@@ -153,7 +161,9 @@ def complete(environ: dict):
             raise ValueError("Google profile response is invalid.")
         email = _google_email(profile)
     except (GoogleAuthError, GoogleApiError, OAuth2Error, KeyError, ValueError, requests.RequestException):
-        return error(HTTPStatus.FORBIDDEN, "Google authentication failed.", traceback.format_exc())
+        return authentication_error(
+            environ, "Google authentication failed.", traceback.format_exc(), _safe_return_uri(state.get("return_uri"))
+        )
 
     user = _session_user(environ)
     if user is not None and state.get("user") == str(user.id):
@@ -168,7 +178,7 @@ def complete(environ: dict):
     return (
         HTTPStatus.SEE_OTHER,
         [
-            ("Location", "/authn"),
+            ("Location", _safe_return_uri(state.get("return_uri")) or "/"),
             _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
             _cookie(GOOGLE_STATE_COOKIE, "", max_age=0, path="/authn/google", same_site=_GOOGLE_STATE_SAME_SITE),
         ],
