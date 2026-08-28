@@ -383,11 +383,11 @@ def begin_authn(environ: dict):
             ],
             "google_credentials": [
                 {"email": credential.email}
-                for credential in user.google_credentials
+                for credential in getattr(user, "google_credentials", [])
             ],
             "microsoft_credentials": [
                 {"email": credential.email}
-                for credential in user.microsoft_credentials
+                for credential in getattr(user, "microsoft_credentials", [])
             ],
         }
     else:
@@ -415,7 +415,7 @@ def begin_authn(environ: dict):
         google_auth_uri=f"/authn/google?{urlencode({_RETURN_URI_PARAM: destination})}",
         microsoft_auth_uri=f"/authn/microsoft?{urlencode({_RETURN_URI_PARAM: destination})}",
         current_display_name=user.display_name if user is not None and user.display_name is not None else "",
-        email=user.email if user is not None and user.email is not None else "",
+        email=getattr(user, "email", None) if user is not None else "",
         email_pending=email_pending,
         email_pending_address=email_pending_address or "",
         email_pending_purpose=email_pending_purpose or "",
