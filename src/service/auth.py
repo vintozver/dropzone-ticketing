@@ -403,7 +403,7 @@ def send_email_code(environ: dict):
         existing = User.objects(email=requested).first()
         if existing is not None and existing.id != user.id:
             return error(HTTPStatus.CONFLICT, "This email address is already registered.")
-    pending = user.email_authentication
+    pending = getattr(user, "email_authentication", None)
     if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
         return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
     purpose = "change" if session_user is not None else "signin"
