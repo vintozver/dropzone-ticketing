@@ -165,7 +165,11 @@ def _authn_state_from_cookie(environ: dict) -> dict[str, object] | None:
     challenge = payload.get("challenge")
     if not isinstance(challenge, str):
         return None
-    return {"challenge": challenge, "user_verification": None}
+    state = {"challenge": challenge, "user_verification": None}
+    return_uri = _safe_return_uri(payload.get("return_uri"))
+    if return_uri is not None:
+        state["return_uri"] = return_uri
+    return state
 
 
 def _register_state_from_cookie(environ: dict) -> tuple[dict[str, object], str] | None:
