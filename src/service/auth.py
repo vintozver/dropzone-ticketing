@@ -18,6 +18,7 @@ from uuid import UUID
 from bson import ObjectId
 from bson.errors import InvalidId
 from fido2.server import Fido2Server
+from mongoengine.errors import OperationError, ValidationError
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
@@ -413,7 +414,7 @@ def send_email_code(environ: dict):
     )
     try:
         user.save()
-    except Exception:
+    except (OperationError, ValidationError):
         return error(
             HTTPStatus.INTERNAL_SERVER_ERROR,
             "Could not save the authentication code.",
