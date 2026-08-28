@@ -167,9 +167,9 @@ def _authn_state_from_cookie(environ: dict) -> dict[str, object] | None:
     if not isinstance(challenge, str):
         return None
     state = {"challenge": challenge, "user_verification": None}
-    return_uri = _safe_return_uri(payload.get("return_uri"))
-    if return_uri is not None:
-        state["return_uri"] = return_uri
+    saved_return_uri = _safe_return_uri(payload.get("return_uri"))
+    if saved_return_uri is not None:
+        state["return_uri"] = saved_return_uri
     return state
 
 
