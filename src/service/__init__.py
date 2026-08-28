@@ -55,7 +55,11 @@ def _ensure_storage() -> None:
         return
     with _storage_lock:
         if not _storage_connected:
-            mongoengine.register_connection(mongoengine_alias, host=mongodb_uri())
+            mongoengine.register_connection(
+                mongoengine_alias,
+                host=mongodb_uri(),
+                tz_aware=True,
+            )
             _storage_connected = True
 
 
