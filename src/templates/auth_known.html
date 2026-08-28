@@ -4,12 +4,12 @@
     <label>Display name <input type="text" name="display_name" value="{{ current_display_name|default('') }}"></label>
     <button type="submit">Save</button>
   </form>
-  <form method="post" action="/authn/email/send">
+  <form method="post" action="/auth/email">
     <label>Email <input type="email" name="email" value="{{ email|default('') }}" required></label>
     <button type="submit">Change email</button>
   </form>
   {% if email_pending and email_pending_purpose == 'change' %}
-  <form method="post" action="/authn/email/verify">
+  <form method="post" action="/auth/email/verify">
     <input type="hidden" name="email" value="{{ email_pending_address }}">
     <label>Confirmation code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Confirm email</button>

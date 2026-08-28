@@ -41,12 +41,12 @@ def dispatch(environ: dict, handlers):
             return auth.update_display_name(environ)
         return method_not_allowed(["POST"])
 
-    if path in {"/authn/email", "/authn/email/send"}:
+    if path == "/auth/email":
         if method == "POST":
             return auth.send_email_code(environ)
         return method_not_allowed(["POST"])
 
-    if path == "/authn/email/verify":
+    if path == "/auth/email/verify":
         if method == "POST":
             return auth.verify_email_code(environ)
         return method_not_allowed(["POST"])

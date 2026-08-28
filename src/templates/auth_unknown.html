@@ -1,7 +1,7 @@
 <section>
   <h2>Email</h2>
   <p>Enter your registered email address to receive an authentication code.</p>
-  <form method="post" action="/authn/email">
+  <form method="post" action="/auth/email">
     <label>Email <input type="email" name="email" value="{{ email_pending_address|default('') }}" {% if email_pending %}readonly{% endif %} required></label>
     <button type="submit">Proceed</button>
   </form>
