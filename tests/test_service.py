@@ -312,6 +312,7 @@ class ServiceHelperTest(unittest.TestCase):
         register_connection.assert_called_once_with(
             service.mongoengine_alias,
             host="mongodb://yaml.example/test",
+            tz_aware=True,
         )
         self.assertTrue(service._storage_connected)
 

@@ -17,20 +17,6 @@
   {% endif %}
 </section>
 <section>
-  <h2>Email</h2>
-  <form method="post" action="/authn/email/send">
-    <label>Email <input type="email" name="email" required></label>
-    <button type="submit">Send authentication code</button>
-  </form>
-  {% if email_pending and email_pending_purpose == 'signin' %}
-  <form method="post" action="/authn/email/verify">
-    <input type="hidden" name="email" value="{{ email_pending_address }}">
-    <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
-    <button type="submit">Sign in</button>
-  </form>
-  {% endif %}
-</section>
-<section>
   <h2>My FIDO2 credentials</h2>
   {% if user_credentials %}
   <table>
