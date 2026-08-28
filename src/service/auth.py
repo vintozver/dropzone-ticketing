@@ -441,20 +441,21 @@ def verify_email_code(environ: dict):
     if user is not None:
         stored = user.email_authentication
         if stored is None:
-            return error(HTTPStatus.FORBIDDEN, "Current user email authn document is missing or expired.")
+            return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
         if time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
             user.email_authentication = None
             user.save()
-            return error(HTTPStatus.FORBIDDEN, "Current user email authn document is expired and has been erased.")
+            return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
         if stored.purpose != "change":
-            return error(HTTPStatus.FORBIDDEN, "Current user email authn purpose is incorrect.")
+            return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
         if not secrets.compare_digest(stored.code, sha256(code.encode("ascii")).hexdigest()):
-            return error(HTTPStatus.FORBIDDEN, "Current user email authn code mismatch.")
+            return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
         user.email = stored.email
         user.email_authentication = None
         user.save()
         status, headers, body = error(HTTPStatus.SEE_OTHER, "Profile updated")
-        return status, [("Location", "/authn")], body
+        headers.append(("Location", "/authn"))
+        return status, headers, body
 
     requested = form.get("email", "").strip().casefold()
     if not requested:
@@ -464,15 +465,15 @@ def verify_email_code(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "User with supplied email does not exist.")
     stored = user.email_authentication
     if stored is None:
-        return error(HTTPStatus.FORBIDDEN, "User email authn document is missing or expired.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     if time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
         user.email_authentication = None
         user.save()
-        return error(HTTPStatus.FORBIDDEN, "User email authn document is expired and has been erased.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     if stored.purpose != "signin":
-        return error(HTTPStatus.FORBIDDEN, "User email authn purpose is incorrect.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     if not secrets.compare_digest(stored.code, sha256(code.encode("ascii")).hexdigest()):
-        return error(HTTPStatus.FORBIDDEN, "User email authn code mismatch.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     user.email_authentication = None
     user.save()
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
