@@ -303,7 +303,6 @@ def begin_authn(environ: dict):
     ]
     user = _session_user(environ)
     registration_options = None
-    user_credentials = []
     register_state = None
     if user is not None:
         register_options, register_state = server.register_begin(
@@ -316,7 +315,7 @@ def begin_authn(environ: dict):
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
-        pending = getattr(user, "email_authentication", None)
+        pending = user.email_authentication
         if pending is not None and time() - pending.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
             user.email_authentication = None
             user.save()
@@ -330,7 +329,7 @@ def begin_authn(environ: dict):
             email_pending_address = None
             email_pending_purpose = None
         render_extras = {
-            "user_credentials": [
+            "fido2_credentials": [
                 {
                     "id": _credential_display_id(credential),
                     "dt": credential.dt,
@@ -342,11 +341,11 @@ def begin_authn(environ: dict):
             ],
             "google_credentials": [
                 {"email": credential.email}
-                for credential in getattr(user, "google_credentials", [])
+                for credential in user.google_credentials
             ],
             "microsoft_credentials": [
                 {"email": credential.email}
-                for credential in getattr(user, "microsoft_credentials", [])
+                for credential in user.microsoft_credentials
             ],
         }
     else:
@@ -371,7 +370,7 @@ def begin_authn(environ: dict):
         authenticated=user is not None,
         authn_csrf=authn_csrf,
         current_display_name=user.display_name if user is not None and user.display_name is not None else "",
-        email=getattr(user, "email", "") if user is not None else "",
+        email=user.email if user is not None and user.email is not None else "",
         email_pending=email_pending,
         email_pending_address=email_pending_address or "",
         email_pending_purpose=email_pending_purpose or "",
@@ -403,7 +402,7 @@ def send_email_code(environ: dict):
         existing = User.objects(email=requested).first()
         if existing is not None and existing.id != user.id:
             return error(HTTPStatus.CONFLICT, "This email address is already registered.")
-    pending = getattr(user, "email_authentication", None)
+    pending = user.email_authentication
     if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
         return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
     purpose = "change" if session_user is not None else "signin"

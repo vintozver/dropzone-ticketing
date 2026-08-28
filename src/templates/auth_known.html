@@ -18,11 +18,11 @@
 </section>
 <section>
   <h2>My FIDO2 credentials</h2>
-  {% if user_credentials %}
+  {% if fido2_credentials %}
   <table>
     <thead><tr><th>Credential ID</th><th>Registered at</th><th></th></tr></thead>
     <tbody>
-      {% for credential in user_credentials %}
+      {% for credential in fido2_credentials %}
         <tr>
           <td><code>{{ credential.id }}</code></td>
           <td>{{ credential.dt|datetime }}
