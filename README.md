@@ -39,6 +39,9 @@ email:
     name: The Dropzone
 ```
 
+The configured SMTP server is expected to be on a trusted local network; delivery
+does not use STARTTLS.
+
 All settings come from this file only; `CONFIG_FILE` merely names it.
 If `timezone` is omitted, displayed times default to UTC.
 
