@@ -357,7 +357,7 @@ def begin_authn(environ: dict):
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
-        pending = user.email_authentication
+        pending = getattr(user, "email_authentication", None)
         if pending is not None and time() - pending.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
             user.email_authentication = None
             user.save()
