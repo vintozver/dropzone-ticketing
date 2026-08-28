@@ -29,11 +29,22 @@ class MicrosoftCredential(mongoengine.EmbeddedDocument):
     email = mongoengine.StringField(required=True)
 
 
+class EmailAuthentication(mongoengine.EmbeddedDocument):
+    """A temporary code for signing in or confirming an email address."""
+
+    email = mongoengine.StringField(required=True)
+    code = mongoengine.StringField(required=True)
+    purpose = mongoengine.StringField(required=True, default="signin")
+    issued = mongoengine.DateTimeField(required=True, default=lambda: datetime.now(timezone.utc))
+
+
 class User(mongoengine.Document):
     """A user and their registered authentication credentials."""
 
     id = mongoengine.ObjectIdField(primary_key=True)
     display_name = mongoengine.StringField(required=False)
+    email = mongoengine.StringField(required=False, unique=True, sparse=True)
+    email_authentication = mongoengine.EmbeddedDocumentField(EmailAuthentication, required=False)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
     google_credentials = mongoengine.EmbeddedDocumentListField(GoogleCredential, default=list)
     microsoft_credentials = mongoengine.EmbeddedDocumentListField(MicrosoftCredential, default=list)

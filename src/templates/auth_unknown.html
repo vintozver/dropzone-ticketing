@@ -1,0 +1,40 @@
+<section>
+  <h2>Email</h2>
+  <p>Enter your registered email address to receive an authentication code.</p>
+  <form method="post" action="/auth/email">
+    <label>Email <input type="email" name="email" value="{{ email_pending_address|default('') }}" {% if email_pending %}readonly{% endif %} required></label>
+    <button type="submit">Proceed</button>
+  </form>
+  {% if email_pending and email_pending_purpose == 'signin' %}
+  <form method="post" action="/auth/email/verify">
+    <input type="hidden" name="email" value="{{ email_pending_address }}">
+    <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
+    <button type="submit">Confirm code</button>
+  </form>
+  {% endif %}
+</section>
+<section>
+  <h2>FIDO2/passkey</h2>
+  <p>Use a registered FIDO2 credential or passkey to sign in securely.</p>
+  <form id="authn-form" method="post" action="{{ retry_uri }}">
+    <input type="hidden" name="id" id="id">
+    <input type="hidden" name="rawId" id="rawId">
+    <input type="hidden" name="clientDataJSON" id="clientDataJSON">
+    <input type="hidden" name="authenticatorData" id="authenticatorData">
+    <input type="hidden" name="signature" id="signature">
+    <button type="submit">Proceed</button>
+  </form>
+  <p id="authn-error" role="alert"></p>
+</section>
+<section>
+  <h2>Google</h2>
+  <p>Use your Google account to sign in.</p>
+  <form method="get" action="{{ google_auth_uri }}">
+    <button type="submit">Proceed</button>
+  </form>
+</section>
+<section>
+  <h2>Microsoft</h2>
+  <p>Use your Microsoft account to sign in.</p>
+  <form method="get" action="{{ microsoft_auth_uri }}"><button type="submit">Proceed</button></form>
+</section>

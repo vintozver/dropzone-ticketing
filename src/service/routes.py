@@ -41,6 +41,16 @@ def dispatch(environ: dict, handlers):
             return auth.update_display_name(environ)
         return method_not_allowed(["POST"])
 
+    if path == "/auth/email":
+        if method == "POST":
+            return auth.send_email_code(environ)
+        return method_not_allowed(["POST"])
+
+    if path == "/auth/email/verify":
+        if method == "POST":
+            return auth.verify_email_code(environ)
+        return method_not_allowed(["POST"])
+
     if path == "/authn/fido2/remove":
         if method == "POST":
             return auth.remove_fido2_credential(environ)

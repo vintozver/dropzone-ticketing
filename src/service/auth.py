@@ -4,9 +4,11 @@ import base64
 import binascii
 import hmac
 import json
+import logging
 import secrets
+import smtplib
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
@@ -16,6 +18,7 @@ from uuid import UUID
 from bson import ObjectId
 from bson.errors import InvalidId
 from fido2.server import Fido2Server
+from mongoengine.errors import OperationError, ValidationError
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
@@ -29,6 +32,8 @@ from fido2.webauthn import (
 from .config import authn_config, session_secret
 from .http import error, read_form, render
 from ..model.auth import Fido2Credential, User
+from ..model.auth import EmailAuthentication
+from .email import code as generate_email_code, send_code
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
@@ -36,6 +41,9 @@ AUTHN_CSRF_COOKIE = "authn_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 _RETURN_URI_PARAM = "return_uri"
+_EMAIL_CODE_TTL_SECONDS = 300
+_EMAIL_RESEND_DELAY_SECONDS = 60
+_logger = logging.getLogger(__name__)
 
 
 def _b64encode(value: bytes) -> str:
@@ -337,7 +345,6 @@ def begin_authn(environ: dict):
     user = _session_user(environ)
     destination = return_uri(environ)
     registration_options = None
-    user_credentials = []
     register_state = None
     if user is not None:
         register_options, register_state = server.register_begin(
@@ -350,16 +357,51 @@ def begin_authn(environ: dict):
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
-        user_credentials = [
-            {
-                "id": _credential_display_id(credential),
-                "dt": credential.dt,
-                "aaguid": _aaguid_display(credential),
-                "extensions": _extensions_display(credential),
-                "encoded_id": _b64encode(credential.id),
-            }
-            for credential in user.fido2_credentials
-        ]
+        pending = user.email_authentication
+        if pending is not None and time() - pending.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+            user.email_authentication = None
+            user.save()
+            pending = None
+        if pending is not None and pending.purpose == "change":
+            email_pending = True
+            email_pending_address = pending.email
+            email_pending_purpose = "change"
+        else:
+            email_pending = False
+            email_pending_address = None
+            email_pending_purpose = None
+        render_extras = {
+            "fido2_credentials": [
+                {
+                    "id": _credential_display_id(credential),
+                    "dt": credential.dt,
+                    "aaguid": _aaguid_display(credential),
+                    "extensions": _extensions_display(credential),
+                    "encoded_id": _b64encode(credential.id),
+                }
+                for credential in user.fido2_credentials
+            ],
+            "google_credentials": [
+                {"email": credential.email}
+                for credential in user.google_credentials
+            ],
+            "microsoft_credentials": [
+                {"email": credential.email}
+                for credential in user.microsoft_credentials
+            ],
+        }
+    else:
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+        email = query.get("email", [""])[0].strip().casefold()
+        if email:
+            email_pending = True
+            email_pending_address = email
+            email_pending_purpose = "signin"
+        else:
+            email_pending = False
+            email_pending_address = None
+            email_pending_purpose = None
+        render_extras = {}
     authn_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
@@ -367,21 +409,17 @@ def begin_authn(environ: dict):
         rp_id=_rp_id(environ),
         allow_credentials=allow_credentials,
         registration_options=registration_options,
-        user_credentials=user_credentials,
         authenticated=user is not None,
-        google_credentials=[
-            {"email": credential.email}
-            for credential in getattr(user, "google_credentials", [])
-        ],
         authn_csrf=authn_csrf,
-        microsoft_credentials=[
-            {"email": credential.email}
-            for credential in getattr(user, "microsoft_credentials", [])
-        ],
-        current_display_name=user.display_name if user is not None else "",
         retry_uri=_authn_url(destination),
         google_auth_uri=f"/authn/google?{urlencode({_RETURN_URI_PARAM: destination})}",
         microsoft_auth_uri=f"/authn/microsoft?{urlencode({_RETURN_URI_PARAM: destination})}",
+        current_display_name=user.display_name if user is not None and user.display_name is not None else "",
+        email=user.email if user is not None and user.email is not None else "",
+        email_pending=email_pending,
+        email_pending_address=email_pending_address or "",
+        email_pending_purpose=email_pending_purpose or "",
+        **render_extras,
     )
     payload = {"state": _state, "issued": time(), "return_uri": destination}
     if register_state is not None and user is not None:
@@ -389,6 +427,106 @@ def begin_authn(environ: dict):
         payload["register_user"] = str(user.id)
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     headers.append(_cookie(AUTHN_CSRF_COOKIE, authn_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
+    return status, headers, body
+
+
+def send_email_code(environ: dict):
+    form = read_form(environ)
+    requested = form.get("email", "").strip().casefold()
+    if not requested or "@" not in requested or len(requested) > 320:
+        return error(HTTPStatus.BAD_REQUEST, "A valid email address is required.")
+    session_user = _session_user(environ)
+    if session_user is None:
+        user = User.objects(email=requested).first()
+        if user is None:
+            return error(HTTPStatus.FORBIDDEN, "This email address is not registered.")
+    else:
+        user = session_user
+        if user.email and requested == user.email.casefold():
+            return error(HTTPStatus.BAD_REQUEST, "This is already your current email address.")
+        existing = User.objects(email=requested).first()
+        if existing is not None and existing.id != user.id:
+            return error(HTTPStatus.CONFLICT, "This email address is already registered.")
+    pending = user.email_authentication
+    if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
+        return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
+    purpose = "change" if session_user is not None else "signin"
+    new_code = generate_email_code()
+    try:
+        send_code(requested, new_code, user.display_name if user is not None else None)
+    except (OSError, smtplib.SMTPException, ValueError):
+        _logger.exception("Could not send authentication email")
+        return error(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Could not send the authentication email.",
+            traceback.format_exc(),
+        )
+    user.email_authentication = EmailAuthentication(
+        email=requested,
+        code=sha256(new_code.encode("ascii")).hexdigest(),
+        purpose=purpose,
+    )
+    try:
+        user.save()
+    except (OperationError, ValidationError):
+        return error(
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            "Could not save the authentication code.",
+            traceback.format_exc(),
+        )
+    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
+    headers = [("Location", f"/authn?email={quote(requested, safe='')}")]
+    return status, headers, body
+
+
+def verify_email_code(environ: dict):
+    form = read_form(environ)
+    code = form.get("code", "").strip()
+    if len(code) != 6 or not code.isdigit():
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is invalid.")
+    user = _session_user(environ)
+    if user is not None:
+        stored = user.email_authentication
+        if stored is None:
+            return error(HTTPStatus.FORBIDDEN, "Current user email authn document is missing or expired.")
+        if time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+            user.email_authentication = None
+            user.save()
+            return error(HTTPStatus.FORBIDDEN, "Current user email authn document is expired and has been erased.")
+        if stored.purpose != "change":
+            return error(HTTPStatus.FORBIDDEN, "Current user email authn purpose is incorrect.")
+        if not secrets.compare_digest(stored.code, sha256(code.encode("ascii")).hexdigest()):
+            return error(HTTPStatus.FORBIDDEN, "Current user email authn code mismatch.")
+        user.email = stored.email
+        user.email_authentication = None
+        user.save()
+        status, headers, body = error(HTTPStatus.SEE_OTHER, "Profile updated")
+        return status, [("Location", "/authn")], body
+
+    requested = form.get("email", "").strip().casefold()
+    if not requested:
+        return error(HTTPStatus.FORBIDDEN, "Email is required to complete the flow.")
+    user = User.objects(email=requested).first()
+    if user is None:
+        return error(HTTPStatus.FORBIDDEN, "User with supplied email does not exist.")
+    stored = user.email_authentication
+    if stored is None:
+        return error(HTTPStatus.FORBIDDEN, "User email authn document is missing or expired.")
+    if time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+        user.email_authentication = None
+        user.save()
+        return error(HTTPStatus.FORBIDDEN, "User email authn document is expired and has been erased.")
+    if stored.purpose != "signin":
+        return error(HTTPStatus.FORBIDDEN, "User email authn purpose is incorrect.")
+    if not secrets.compare_digest(stored.code, sha256(code.encode("ascii")).hexdigest()):
+        return error(HTTPStatus.FORBIDDEN, "User email authn code mismatch.")
+    user.email_authentication = None
+    user.save()
+    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
+    headers = [
+        ("Location", "/authn"),
+        _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
+    ]
     return status, headers, body
 
 
