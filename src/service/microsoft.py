@@ -196,7 +196,10 @@ def complete(environ: dict):
         email = _email(profile)
     except (KeyError, ValueError, requests.RequestException):
         return authentication_error(
-            environ, "Microsoft authentication failed.", traceback.format_exc(), _safe_return_uri(state.get("return_uri"))
+            environ,
+            "Microsoft authentication failed.",
+            traceback.format_exc(),
+            destination=_safe_return_uri(state.get("return_uri")),
         )
     user = _session_user(environ)
     if user is not None and state.get("user") == str(user.id):

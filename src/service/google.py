@@ -162,7 +162,10 @@ def complete(environ: dict):
         email = _google_email(profile)
     except (GoogleAuthError, GoogleApiError, OAuth2Error, KeyError, ValueError, requests.RequestException):
         return authentication_error(
-            environ, "Google authentication failed.", traceback.format_exc(), _safe_return_uri(state.get("return_uri"))
+            environ,
+            "Google authentication failed.",
+            traceback.format_exc(),
+            destination=_safe_return_uri(state.get("return_uri")),
         )
 
     user = _session_user(environ)

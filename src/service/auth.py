@@ -129,6 +129,7 @@ def _authn_url(destination: str) -> str:
 
 
 def authentication_error(environ: dict, message: str, trace: str = "", destination: str | None = None):
+    """Render an authentication failure with a link that retries the original destination."""
     from .http import render
 
     destination = destination or return_uri(environ)
