@@ -459,7 +459,7 @@ def verify_email_code(environ: dict):
 
     requested = form.get("email", "").strip().casefold()
     if not requested:
-        return error(HTTPStatus.FORBIDDEN, "Email is required to complete the flow.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     user = User.objects(email=requested).first()
     if user is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
