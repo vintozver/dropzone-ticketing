@@ -375,6 +375,8 @@ def begin_authn(environ: dict):
         ],
         current_display_name=user.display_name if user is not None else "",
         retry_uri=_authn_url(destination),
+        google_auth_uri=f"/authn/google?{urlencode({_RETURN_URI_PARAM: destination})}",
+        microsoft_auth_uri=f"/authn/microsoft?{urlencode({_RETURN_URI_PARAM: destination})}",
     )
     payload = {"state": _state, "issued": time(), "return_uri": destination}
     if register_state is not None and user is not None:

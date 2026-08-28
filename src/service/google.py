@@ -178,7 +178,7 @@ def complete(environ: dict):
     return (
         HTTPStatus.SEE_OTHER,
         [
-            ("Location", _safe_return_uri(state.get("return_uri")) or "/"),
+            ("Location", _safe_return_uri(state.get("return_uri")) or "/authn"),
             _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
             _cookie(GOOGLE_STATE_COOKIE, "", max_age=0, path="/authn/google", same_site=_GOOGLE_STATE_SAME_SITE),
         ],

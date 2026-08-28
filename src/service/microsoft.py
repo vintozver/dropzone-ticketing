@@ -209,7 +209,7 @@ def complete(environ: dict):
         if user is None:
             return error(HTTPStatus.FORBIDDEN, "This Microsoft account is not registered.")
     return HTTPStatus.SEE_OTHER, [
-        ("Location", _safe_return_uri(state.get("return_uri")) or "/"),
+        ("Location", _safe_return_uri(state.get("return_uri")) or "/authn"),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()}), max_age=_COOKIE_MAX_AGE_SECONDS),
         _cookie(MICROSOFT_STATE_COOKIE, "", max_age=0, path="/authn/microsoft"),
     ], b""

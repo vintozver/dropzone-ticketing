@@ -719,7 +719,7 @@ class ServiceApplicationTest(unittest.TestCase):
         response = self.request("/issue", authenticated=False)
 
         self.assertEqual(response["status"], "303 See Other")
-        self.assertEqual(response["headers"]["Location"], "/authn")
+        self.assertEqual(response["headers"]["Location"], "/authn?return_uri=%2Fissue")
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")
@@ -810,6 +810,26 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIn(b"registrationOptions = null", body)
         self.assertNotIn(b"Register credential", body)
 
+    def test_authn_begin_remembers_the_requested_return_uri(self) -> None:
+        auth = service._auth_module
+        server = MagicMock()
+        server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge")}
+        user_class = MagicMock()
+        user_class.objects.return_value.only.return_value = []
+        environ = {
+            "PATH_INFO": "/authn",
+            "QUERY_STRING": "return_uri=%2Ftickets%3Fuser_id%3D123",
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.object(auth, "_server", return_value=server), patch.object(auth, "User", user_class):
+            _status, headers, _body = auth.begin_authn(environ)
+
+        cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_challenge=" in value)
+        payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
+        self.assertEqual(payload["return_uri"], "/tickets?user_id=123")
+
     def test_fido2_server_requests_enterprise_attestation(self) -> None:
         auth = service._auth_module
         environ = {
@@ -825,7 +845,7 @@ class ServiceAuthnTest(unittest.TestCase):
         auth = service._auth_module
         challenge = b"challenge"
         cookie = "authn_challenge=" + auth._signed(
-            {"challenge": b64(challenge), "issued": auth.time()}
+            {"challenge": b64(challenge), "issued": auth.time(), "return_uri": "/issue"}
         )
         server = MagicMock()
         credential = SimpleNamespace(id=b"credential")
@@ -847,7 +867,7 @@ class ServiceAuthnTest(unittest.TestCase):
             )
 
         self.assertEqual(response["status"], "303 See Other")
-        self.assertEqual(response["headers"]["Location"], "/")
+        self.assertEqual(response["headers"]["Location"], "/issue")
         self.assertIn("authn_session=", "\n".join(value for name, value in response["raw_headers"] if name == "Set-Cookie"))
         server.authenticate_complete.assert_called_once()
 

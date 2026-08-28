@@ -113,14 +113,14 @@
 <section>
   <h2>Google</h2>
   <p>Use your Google account to sign in.</p>
-  <form method="get" action="{{ retry_uri|replace('/authn?', '/authn/google?') }}">
+  <form method="get" action="{{ google_auth_uri }}">
     <button type="submit">Proceed</button>
   </form>
 </section>
 <section>
   <h2>Microsoft</h2>
   <p>Use your Microsoft account to sign in.</p>
-  <form method="get" action="{{ retry_uri|replace('/authn?', '/authn/microsoft?') }}"><button type="submit">Proceed</button></form>
+  <form method="get" action="{{ microsoft_auth_uri }}"><button type="submit">Proceed</button></form>
 </section>
 {% endif %}
 <script>
