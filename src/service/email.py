@@ -8,7 +8,7 @@ from email.utils import formataddr
 from .config import business_name, email_from_address, email_from_name, email_smtp
 
 
-def send_code(recipient: str, code: str, recipient_name: str = "") -> None:
+def send_code(recipient: str, code: str, recipient_name: str = None) -> None:
     sender = email_from_address()
     if not email_smtp() or not sender:
         raise ValueError("Email authentication is not configured.")
