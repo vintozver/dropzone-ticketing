@@ -211,8 +211,7 @@ def _session_user(environ: dict) -> User | None:
 
 
 def current_user_id(environ: dict) -> str | None:
-    session_user = _session_user(environ)
-    user = session_user
+    user = _session_user(environ)
     if user is None:
         return None
     return str(user.id)
@@ -373,7 +372,8 @@ def send_email_code(environ: dict):
     requested = form.get("email", "").strip().casefold()
     if not requested or "@" not in requested or len(requested) > 320:
         return error(HTTPStatus.BAD_REQUEST, "A valid email address is required.")
-    user = _session_user(environ)
+    session_user = _session_user(environ)
+    user = session_user
     if user is None:
         user = User.objects(email=requested).first()
         if user is None:
@@ -394,7 +394,11 @@ def send_email_code(environ: dict):
     try:
         send_code(requested, new_code)
     except (OSError, smtplib.SMTPException, ValueError):
-        return error(HTTPStatus.SERVICE_UNAVAILABLE, "Could not send the authentication email.")
+        return error(
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            "Could not send the authentication email.",
+            traceback.format_exc(),
+        )
     user.email_authentication = EmailAuthentication(
         email=requested,
         code=sha256(new_code.encode("ascii")).hexdigest(),

@@ -3,8 +3,9 @@ from __future__ import annotations
 import secrets
 import smtplib
 from email.message import EmailMessage
+from email.utils import formataddr
 
-from .config import email_from_address, email_from_name, email_smtp
+from .config import business_name, email_from_address, email_from_name, email_smtp
 
 
 def send_code(recipient: str, code: str) -> None:
@@ -13,15 +14,14 @@ def send_code(recipient: str, code: str) -> None:
         raise ValueError("Email authentication is not configured.")
     message = EmailMessage()
     message["To"] = recipient
-    message["From"] = f"{email_from_name()} <{sender}>" if email_from_name() else sender
-    message["Subject"] = "Your authentication code"
+    message["From"] = formataddr((email_from_name(), sender)) if email_from_name() else sender
+    message["Subject"] = f"{business_name()} authentication code"
     message.set_content(f"Your authentication code is {code}. It expires in 5 minutes.")
     smtp_server = email_smtp()
     host, separator, port = smtp_server.rpartition(":")
     smtp_args = (host, int(port)) if separator and port.isdigit() else (smtp_server,)
     with smtplib.SMTP(*smtp_args) as smtp:
-        smtp.starttls()
-        smtp.send_message(message)
+        smtp.send_message(message, from_addr=sender, to_addrs=[recipient])
 
 
 def code() -> str:
