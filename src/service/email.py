@@ -16,7 +16,10 @@ def send_code(recipient: str, code: str) -> None:
     message["From"] = f"{email_from_name()} <{sender}>" if email_from_name() else sender
     message["Subject"] = "Your authentication code"
     message.set_content(f"Your authentication code is {code}. It expires in 5 minutes.")
-    with smtplib.SMTP(email_smtp()) as smtp:
+    smtp_server = email_smtp()
+    host, separator, port = smtp_server.rpartition(":")
+    smtp_args = (host, int(port)) if separator and port.isdigit() else (smtp_server,)
+    with smtplib.SMTP(*smtp_args) as smtp:
         smtp.starttls()
         smtp.send_message(message)
 

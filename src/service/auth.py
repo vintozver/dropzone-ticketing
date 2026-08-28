@@ -211,7 +211,8 @@ def _session_user(environ: dict) -> User | None:
 
 
 def current_user_id(environ: dict) -> str | None:
-    user = _session_user(environ)
+    session_user = _session_user(environ)
+    user = session_user
     if user is None:
         return None
     return str(user.id)
@@ -380,7 +381,7 @@ def send_email_code(environ: dict):
         purpose_user_id = str(user.id)
     else:
         if user.email and requested == user.email.casefold():
-            return error(HTTPStatus.BAD_REQUEST, "This email address is already registered.")
+            return error(HTTPStatus.BAD_REQUEST, "This is already your current email address.")
         existing = User.objects(email=requested).first()
         if existing is not None and existing.id != user.id:
             return error(HTTPStatus.CONFLICT, "This email address is already registered.")
@@ -388,6 +389,7 @@ def send_email_code(environ: dict):
     pending = getattr(user, "email_authentication", None)
     if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
         return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
+    purpose = "change" if session_user is not None else "signin"
     new_code = generate_email_code()
     try:
         send_code(requested, new_code)
@@ -396,7 +398,7 @@ def send_email_code(environ: dict):
     user.email_authentication = EmailAuthentication(
         email=requested,
         code=sha256(new_code.encode("ascii")).hexdigest(),
-        purpose="change" if _session_user(environ) is not None else "signin",
+        purpose=purpose,
     )
     user.save()
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
@@ -405,7 +407,7 @@ def send_email_code(environ: dict):
         _signed({
             "user_id": purpose_user_id,
             "email": requested,
-            "purpose": "change" if _session_user(environ) is not None else "signin",
+            "purpose": purpose,
             "issued": time(),
         }),
         max_age=_EMAIL_CODE_TTL_SECONDS,
