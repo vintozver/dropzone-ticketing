@@ -121,6 +121,20 @@
 </section>
 {% else %}
 <section>
+  <h2>Email</h2>
+  <p>Enter your registered email address to receive an authentication code.</p>
+  <form method="post" action="/authn/email">
+    <label>Email <input type="email" name="email" required></label>
+    <button type="submit">Proceed</button>
+  </form>
+  {% if email_pending and email_pending_purpose == 'signin' %}
+  <form method="post" action="/authn/email/verify">
+    <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
+    <button type="submit">Confirm code</button>
+  </form>
+  {% endif %}
+</section>
+<section>
   <h2>FIDO2/passkey</h2>
   <p>Use a registered FIDO2 credential or passkey to sign in securely.</p>
   <form id="authn-form" method="post" action="/authn">

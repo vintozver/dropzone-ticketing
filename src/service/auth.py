@@ -363,6 +363,11 @@ def begin_authn(environ: dict):
 def _email_pending(environ: dict) -> dict[str, object] | None:
     payload = _unsign(_cookies(environ).get(EMAIL_PENDING_COOKIE, ""))
     if not payload or time() - float(payload.get("issued", 0)) > _EMAIL_CODE_TTL_SECONDS:
+        if payload and isinstance(payload.get("user_id"), str):
+            user = _user_by_id_str(payload["user_id"])
+            if user is not None and getattr(user, "email_authentication", None) is not None:
+                user.email_authentication = None
+                user.save()
         return None
     if not isinstance(payload.get("user_id"), str) or not isinstance(payload.get("email"), str):
         return None
