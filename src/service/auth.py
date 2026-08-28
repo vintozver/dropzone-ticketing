@@ -393,7 +393,9 @@ def begin_authn(environ: dict):
     else:
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
         email = query.get("email", [""])[0].strip().casefold()
-        if email:
+        pending_user = User.objects(email=email).first() if email else None
+        pending = getattr(pending_user, "email_authentication", None)
+        if pending is not None and pending.purpose == "signin" and time() - pending.issued.timestamp() <= _EMAIL_CODE_TTL_SECONDS:
             email_pending = True
             email_pending_address = email
             email_pending_purpose = "signin"
