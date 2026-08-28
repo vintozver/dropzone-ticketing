@@ -12,7 +12,7 @@
     <label>Email <input type="email" name="email" value="{{ email|default('') }}" required></label>
     <button type="submit">Change email</button>
   </form>
-  {% if email_pending %}
+  {% if email_pending and email_pending_purpose == 'change' %}
   <form method="post" action="/authn/email/verify">
     <label>Confirmation code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Confirm email</button>
@@ -25,7 +25,7 @@
     <label>Email <input type="email" name="email" required></label>
     <button type="submit">Send authentication code</button>
   </form>
-  {% if email_pending %}
+  {% if email_pending and email_pending_purpose == 'signin' %}
   <form method="post" action="/authn/email/verify">
     <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Sign in</button>

@@ -347,6 +347,7 @@ def begin_authn(environ: dict):
         email=getattr(user, "email", "") if user is not None else "",
         email_pending=email_pending is not None,
         email_pending_address=email_pending.get("email") if email_pending else "",
+        email_pending_purpose=email_pending.get("purpose") if email_pending else "",
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
@@ -392,12 +393,21 @@ def send_email_code(environ: dict):
         send_code(requested, new_code)
     except (OSError, smtplib.SMTPException, ValueError):
         return error(HTTPStatus.SERVICE_UNAVAILABLE, "Could not send the authentication email.")
-    user.email_authentication = EmailAuthentication(email=requested, code=new_code)
+    user.email_authentication = EmailAuthentication(
+        email=requested,
+        code=sha256(new_code.encode("ascii")).hexdigest(),
+        purpose="change" if _session_user(environ) is not None else "signin",
+    )
     user.save()
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
     headers = [("Location", "/authn"), _cookie(
         EMAIL_PENDING_COOKIE,
-        _signed({"user_id": purpose_user_id, "email": requested, "issued": time()}),
+        _signed({
+            "user_id": purpose_user_id,
+            "email": requested,
+            "purpose": "change" if _session_user(environ) is not None else "signin",
+            "issued": time(),
+        }),
         max_age=_EMAIL_CODE_TTL_SECONDS,
         path="/authn",
     )]
@@ -414,11 +424,17 @@ def verify_email_code(environ: dict):
     form = read_form(environ)
     supplied = form.get("code", "").strip()
     stored = user.email_authentication
-    if stored.email != pending["email"] or time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+    if len(supplied) != 6 or not supplied.isdigit():
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is invalid.")
+    if (
+        stored.email != pending["email"]
+        or stored.purpose != pending.get("purpose")
+        or time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS
+    ):
         user.email_authentication = None
         user.save()
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
-    if not secrets.compare_digest(stored.code, supplied):
+    if not secrets.compare_digest(stored.code, sha256(supplied.encode("ascii")).hexdigest()):
         return error(HTTPStatus.FORBIDDEN, "Authentication code is invalid.")
     new_email = stored.email
     if user.email != new_email:

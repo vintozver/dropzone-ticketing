@@ -17,6 +17,7 @@ def send_code(recipient: str, code: str) -> None:
     message["Subject"] = "Your authentication code"
     message.set_content(f"Your authentication code is {code}. It expires in 5 minutes.")
     with smtplib.SMTP(email_smtp()) as smtp:
+        smtp.starttls()
         smtp.send_message(message)
 
 

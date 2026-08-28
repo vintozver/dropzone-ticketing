@@ -34,6 +34,7 @@ class EmailAuthentication(mongoengine.EmbeddedDocument):
 
     email = mongoengine.StringField(required=True)
     code = mongoengine.StringField(required=True)
+    purpose = mongoengine.StringField(required=True, default="signin")
     issued = mongoengine.DateTimeField(required=True, default=lambda: datetime.now(timezone.utc))
 
 
@@ -55,6 +56,5 @@ class User(mongoengine.Document):
             {"fields": ["fido2_credentials._id"], "unique": True},
             {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
             {"fields": ["microsoft_credentials.email"], "unique": True, "sparse": True},
-            {"fields": ["email"], "unique": True, "sparse": True},
         ],
     }
