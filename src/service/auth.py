@@ -5,8 +5,9 @@ import binascii
 import hmac
 import json
 import secrets
+import smtplib
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
@@ -29,12 +30,17 @@ from fido2.webauthn import (
 from .config import authn_config, session_secret
 from .http import error, read_form, render
 from ..model.auth import Fido2Credential, User
+from ..model.auth import EmailAuthentication
+from .email import code as generate_email_code, send_code
 
 AUTHN_CHALLENGE_COOKIE = "authn_challenge"
 AUTHN_SESSION_COOKIE = "authn_session"
 AUTHN_CSRF_COOKIE = "authn_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
+_EMAIL_CODE_TTL_SECONDS = 300
+_EMAIL_RESEND_DELAY_SECONDS = 60
+EMAIL_PENDING_COOKIE = "email_authentication"
 
 
 def _b64encode(value: bytes) -> str:
@@ -318,6 +324,7 @@ def begin_authn(environ: dict):
             }
             for credential in user.fido2_credentials
         ]
+    email_pending = _email_pending(environ)
     authn_csrf = secrets.token_urlsafe(32)
     status, headers, body = render(
         "auth.html",
@@ -337,6 +344,9 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "microsoft_credentials", [])
         ],
         current_display_name=user.display_name if user is not None else "",
+        email=user.email if user is not None else "",
+        email_pending=email_pending is not None,
+        email_pending_address=email_pending.get("email") if email_pending else "",
     )
     payload = {"state": _state, "issued": time()}
     if register_state is not None and user is not None:
@@ -344,6 +354,83 @@ def begin_authn(environ: dict):
         payload["register_user"] = str(user.id)
     headers.append(_cookie(AUTHN_CHALLENGE_COOKIE, _signed(payload), max_age=_CHALLENGE_TTL_SECONDS, path="/authn"))
     headers.append(_cookie(AUTHN_CSRF_COOKIE, authn_csrf, max_age=_COOKIE_MAX_AGE_SECONDS, path="/authn"))
+    return status, headers, body
+
+
+def _email_pending(environ: dict) -> dict[str, object] | None:
+    payload = _unsign(_cookies(environ).get(EMAIL_PENDING_COOKIE, ""))
+    if not payload or time() - float(payload.get("issued", 0)) > _EMAIL_CODE_TTL_SECONDS:
+        return None
+    if not isinstance(payload.get("user_id"), str) or not isinstance(payload.get("email"), str):
+        return None
+    return payload
+
+
+def send_email_code(environ: dict):
+    form = read_form(environ)
+    requested = form.get("email", "").strip().casefold()
+    if not requested or "@" not in requested or len(requested) > 320:
+        return error(HTTPStatus.BAD_REQUEST, "A valid email address is required.")
+    user = _session_user(environ)
+    if user is None:
+        user = User.objects(email=requested).first()
+        if user is None:
+            return error(HTTPStatus.FORBIDDEN, "This email address is not registered.")
+        purpose_user_id = str(user.id)
+    else:
+        if user.email and requested == user.email.casefold():
+            return error(HTTPStatus.BAD_REQUEST, "This email address is already registered.")
+        existing = User.objects(email=requested).first()
+        if existing is not None and existing.id != user.id:
+            return error(HTTPStatus.CONFLICT, "This email address is already registered.")
+        purpose_user_id = str(user.id)
+    pending = user.email_authentication
+    if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
+        return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
+    new_code = generate_email_code()
+    try:
+        send_code(requested, new_code)
+    except (OSError, smtplib.SMTPException, ValueError):
+        return error(HTTPStatus.SERVICE_UNAVAILABLE, "Could not send the authentication email.")
+    user.email_authentication = EmailAuthentication(email=requested, code=new_code)
+    user.save()
+    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
+    headers = [("Location", "/authn"), _cookie(
+        EMAIL_PENDING_COOKIE,
+        _signed({"user_id": purpose_user_id, "email": requested, "issued": time()}),
+        max_age=_EMAIL_CODE_TTL_SECONDS,
+        path="/authn",
+    )]
+    return status, headers, body
+
+
+def verify_email_code(environ: dict):
+    pending = _email_pending(environ)
+    if pending is None:
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
+    user = _user_by_id_str(pending["user_id"])
+    if user is None or user.email_authentication is None:
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
+    form = read_form(environ)
+    supplied = form.get("code", "").strip()
+    stored = user.email_authentication
+    if stored.email != pending["email"] or time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+        user.email_authentication = None
+        user.save()
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
+    if not secrets.compare_digest(stored.code, supplied):
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is invalid.")
+    new_email = stored.email
+    if user.email != new_email:
+        user.email = new_email
+    user.email_authentication = None
+    user.save()
+    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
+    headers = [
+        ("Location", "/authn"),
+        _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
+        _clear_cookie(EMAIL_PENDING_COOKIE, path="/authn"),
+    ]
     return status, headers, body
 
 

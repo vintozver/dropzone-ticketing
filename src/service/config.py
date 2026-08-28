@@ -114,6 +114,27 @@ def _microsoft_setting(name: str, default=None):
     return _section("microsoft").get(name, default)
 
 
+def email_smtp() -> str:
+    return str(_email_setting("smtp", "") or "")
+
+
+def email_from_address() -> str:
+    return str(_email_from_setting("address", "") or "")
+
+
+def email_from_name() -> str:
+    return str(_email_from_setting("name", "") or "")
+
+
+def _email_setting(name: str, default=None):
+    return _section("email").get(name, default)
+
+
+def _email_from_setting(name: str, default=None):
+    sender = _email_setting("from", {})
+    return sender.get(name, default) if isinstance(sender, dict) else default
+
+
 def mongodb_uri() -> str:
     configured = _setting("mongodb_uri")
     if not configured:

@@ -32,6 +32,11 @@ microsoft:
     ...
     -----END PRIVATE KEY-----
   redirect_uri: https://example.test/authn/microsoft/callback
+email:
+  smtp: smtp.example.test
+  from:
+    address: no-reply@example.test
+    name: The Dropzone
 ```
 
 All settings come from this file only; `CONFIG_FILE` merely names it.

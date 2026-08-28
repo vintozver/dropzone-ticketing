@@ -6,6 +6,7 @@
 <form id="authn-form" method="{% if registration_options %}post{% else %}get{% endif %}" action="/register">
   <input type="hidden" name="user_id" id="user_id" value="{{ user_id }}">
   <label>Display name <input name="display_name" id="display_name" value="{{ display_name|default('') }}" required {% if registration_options %}readonly{% endif %}></label>
+  <label>Email <input type="email" name="email" value="{{ email|default('') }}" {% if registration_options %}readonly{% endif %}></label>
   <input type="hidden" name="id" id="id">
   <input type="hidden" name="rawId" id="rawId">
   <input type="hidden" name="attestationObject" id="attestationObject">

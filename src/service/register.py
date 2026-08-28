@@ -70,6 +70,7 @@ def begin_register(environ: dict):
     raw_user_id = query.get("user_id", [""])[0].strip()
     user_id = raw_user_id or str(ObjectId())
     display_name = query.get("display_name", [""])[0].strip()
+    email = query.get("email", [""])[0].strip().casefold()
     registration_options = None
     if raw_user_id:
         try:
@@ -98,6 +99,7 @@ def begin_register(environ: dict):
         rp_id=_rp_id(environ),
         user_id=user_id,
         display_name=display_name,
+        email=email,
         registration_options=registration_options,
     )
     if registration_options is not None:
@@ -112,8 +114,11 @@ def complete_register(environ: dict):
     form = read_form(environ)
     user_id = form.get("user_id", "").strip()
     display_name = form.get("display_name", "").strip()
+    email = form.get("email", "").strip().casefold()
     if not user_id:
         return error(HTTPStatus.BAD_REQUEST, "User ID is required.")
+    if email and ("@" not in email or len(email) > 320):
+        return error(HTTPStatus.BAD_REQUEST, "A valid email address is required.")
     registration = _registration_from_cookie(environ)
     if registration is None:
         return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
@@ -143,9 +148,13 @@ def complete_register(environ: dict):
             return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
         user = User.objects(id=user_object_id).first()
         if user is None:
-            user = User(id=user_object_id, display_name=display_name or None)
+            user = User(id=user_object_id, display_name=display_name or None, email=email or None)
         elif display_name:
             user.display_name = display_name
+        if user.email and email and user.email != email:
+            return error(HTTPStatus.BAD_REQUEST, "Email cannot be changed during registration.")
+        if not user.email and email:
+            user.email = email
         user.fido2_credentials.append(
             Fido2Credential(
                 id=credential_id,
