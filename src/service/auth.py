@@ -344,7 +344,7 @@ def begin_authn(environ: dict):
             for credential in getattr(user, "microsoft_credentials", [])
         ],
         current_display_name=user.display_name if user is not None else "",
-        email=user.email if user is not None else "",
+        email=getattr(user, "email", "") if user is not None else "",
         email_pending=email_pending is not None,
         email_pending_address=email_pending.get("email") if email_pending else "",
     )

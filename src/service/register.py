@@ -148,7 +148,10 @@ def complete_register(environ: dict):
             return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
         user = User.objects(id=user_object_id).first()
         if user is None:
-            user = User(id=user_object_id, display_name=display_name or None, email=email or None)
+            user_kwargs = {"id": user_object_id, "display_name": display_name or None}
+            if email:
+                user_kwargs["email"] = email
+            user = User(**user_kwargs)
         elif display_name:
             user.display_name = display_name
         if user.email and email and user.email != email:
