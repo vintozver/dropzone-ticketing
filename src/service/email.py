@@ -21,6 +21,7 @@ def send_code(recipient: str, code: str, recipient_name: str = "") -> None:
     host, separator, port = smtp_server.rpartition(":")
     smtp_args = (host, int(port)) if separator and port.isdigit() else (smtp_server,)
     with smtplib.SMTP(*smtp_args) as smtp:
+        smtp.starttls()
         smtp.send_message(message, to_addrs=[recipient])
 
 
