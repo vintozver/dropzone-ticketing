@@ -394,7 +394,7 @@ def send_email_code(environ: dict):
     purpose = "change" if session_user is not None else "signin"
     new_code = generate_email_code()
     try:
-        send_code(requested, new_code)
+        send_code(requested, new_code, getattr(user, "display_name", "") or "")
     except (OSError, smtplib.SMTPException, ValueError):
         _logger.exception("Could not send authentication email")
         return error(
