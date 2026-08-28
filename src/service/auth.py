@@ -462,7 +462,7 @@ def verify_email_code(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Email is required to complete the flow.")
     user = User.objects(email=requested).first()
     if user is None:
-        return error(HTTPStatus.FORBIDDEN, "User with supplied email does not exist.")
+        return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
     stored = user.email_authentication
     if stored is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing, expired, or invalid.")
