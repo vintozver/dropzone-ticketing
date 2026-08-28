@@ -404,13 +404,21 @@ def send_email_code(environ: dict):
         return error(
             HTTPStatus.SERVICE_UNAVAILABLE,
             "Could not send the authentication email.",
+            traceback.format_exc(),
         )
     user.email_authentication = EmailAuthentication(
         email=requested,
         code=sha256(new_code.encode("ascii")).hexdigest(),
         purpose=purpose,
     )
-    user.save()
+    try:
+        user.save()
+    except Exception:
+        return error(
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            "Could not save the authentication code.",
+            traceback.format_exc(),
+        )
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
     headers = [("Location", f"/authn?email={quote(requested, safe='')}")]
     return status, headers, body
