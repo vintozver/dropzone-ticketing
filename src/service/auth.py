@@ -411,6 +411,7 @@ def begin_authn(environ: dict):
         registration_options=registration_options,
         authenticated=user is not None,
         authn_csrf=authn_csrf,
+        return_uri=destination,
         retry_uri=_authn_url(destination),
         google_auth_uri=f"/authn/google?{urlencode({_RETURN_URI_PARAM: destination})}",
         microsoft_auth_uri=f"/authn/microsoft?{urlencode({_RETURN_URI_PARAM: destination})}",
@@ -475,7 +476,8 @@ def send_email_code(environ: dict):
             traceback.format_exc(),
         )
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
-    headers = [("Location", f"/authn?email={quote(requested, safe='')}")]
+    destination = _safe_return_uri(form.get(_RETURN_URI_PARAM)) or "/"
+    headers = [("Location", f"/authn?{urlencode({'email': requested, _RETURN_URI_PARAM: destination})}")]
     return status, headers, body
 
 
@@ -522,9 +524,10 @@ def verify_email_code(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "User email authn code mismatch.")
     user.email_authentication = None
     user.save()
+    destination = _safe_return_uri(form.get(_RETURN_URI_PARAM)) or "/"
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [
-        ("Location", "/authn"),
+        ("Location", destination),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
     ]
     return status, headers, body
