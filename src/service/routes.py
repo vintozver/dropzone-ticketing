@@ -41,7 +41,7 @@ def dispatch(environ: dict, handlers):
             return auth.update_display_name(environ)
         return method_not_allowed(["POST"])
 
-    if path == "/authn/email/send":
+    if path in {"/authn/email", "/authn/email/send"}:
         if method == "POST":
             return auth.send_email_code(environ)
         return method_not_allowed(["POST"])

@@ -384,7 +384,7 @@ def send_email_code(environ: dict):
         if existing is not None and existing.id != user.id:
             return error(HTTPStatus.CONFLICT, "This email address is already registered.")
         purpose_user_id = str(user.id)
-    pending = user.email_authentication
+    pending = getattr(user, "email_authentication", None)
     if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
         return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
     new_code = generate_email_code()
@@ -409,7 +409,7 @@ def verify_email_code(environ: dict):
     if pending is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
     user = _user_by_id_str(pending["user_id"])
-    if user is None or user.email_authentication is None:
+    if user is None or getattr(user, "email_authentication", None) is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
     form = read_form(environ)
     supplied = form.get("code", "").strip()
