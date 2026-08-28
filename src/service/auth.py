@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 from uuid import UUID
 
 from bson import ObjectId
@@ -41,7 +41,6 @@ _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
 _EMAIL_CODE_TTL_SECONDS = 300
 _EMAIL_RESEND_DELAY_SECONDS = 60
-EMAIL_PENDING_COOKIE = "email_authentication"
 _logger = logging.getLogger(__name__)
 
 
@@ -361,17 +360,19 @@ def begin_authn(environ: dict):
 
 
 def _email_pending(environ: dict) -> dict[str, object] | None:
-    payload = _unsign(_cookies(environ).get(EMAIL_PENDING_COOKIE, ""))
-    if not payload or time() - float(payload.get("issued", 0)) > _EMAIL_CODE_TTL_SECONDS:
-        if payload and isinstance(payload.get("user_id"), str):
-            user = _user_by_id_str(payload["user_id"])
-            if user is not None and getattr(user, "email_authentication", None) is not None:
-                user.email_authentication = None
-                user.save()
+    user = _session_user(environ)
+    if user is None:
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+        email = query.get("email", [""])[0].strip().casefold()
+        user = User.objects(email=email).first() if email else None
+    pending = getattr(user, "email_authentication", None) if user is not None else None
+    if pending is None:
         return None
-    if not isinstance(payload.get("user_id"), str) or not isinstance(payload.get("email"), str):
+    if time() - pending.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
+        user.email_authentication = None
+        user.save()
         return None
-    return payload
+    return {"user_id": str(user.id), "email": pending.email, "purpose": pending.purpose}
 
 
 def send_email_code(environ: dict):
@@ -384,7 +385,6 @@ def send_email_code(environ: dict):
         user = User.objects(email=requested).first()
         if user is None:
             return error(HTTPStatus.FORBIDDEN, "This email address is not registered.")
-        purpose_user_id = str(user.id)
     else:
         user = session_user
         if user.email and requested == user.email.casefold():
@@ -392,7 +392,6 @@ def send_email_code(environ: dict):
         existing = User.objects(email=requested).first()
         if existing is not None and existing.id != user.id:
             return error(HTTPStatus.CONFLICT, "This email address is already registered.")
-        purpose_user_id = str(user.id)
     pending = getattr(user, "email_authentication", None)
     if pending and pending.email == requested and (datetime.now(timezone.utc) - pending.issued).total_seconds() < _EMAIL_RESEND_DELAY_SECONDS:
         return error(HTTPStatus.TOO_MANY_REQUESTS, "Please wait before requesting another code.")
@@ -413,17 +412,7 @@ def send_email_code(environ: dict):
     )
     user.save()
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
-    headers = [("Location", "/authn"), _cookie(
-        EMAIL_PENDING_COOKIE,
-        _signed({
-            "user_id": purpose_user_id,
-            "email": requested,
-            "purpose": purpose,
-            "issued": time(),
-        }),
-        max_age=_EMAIL_CODE_TTL_SECONDS,
-        path="/authn",
-    )]
+    headers = [("Location", f"/authn?email={quote(requested, safe='')}")]
     return status, headers, body
 
 
@@ -431,16 +420,17 @@ def verify_email_code(environ: dict):
     pending = _email_pending(environ)
     if pending is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
-    user = _user_by_id_str(pending["user_id"])
+    form = read_form(environ)
+    requested = form.get("email", "").strip().casefold()
+    user = _session_user(environ) or User.objects(email=requested).first()
     if user is None or getattr(user, "email_authentication", None) is None:
         return error(HTTPStatus.FORBIDDEN, "Authentication code is missing or expired.")
-    form = read_form(environ)
     supplied = form.get("code", "").strip()
     stored = user.email_authentication
     if len(supplied) != 6 or not supplied.isdigit():
         return error(HTTPStatus.FORBIDDEN, "Authentication code is invalid.")
     if (
-        stored.email != pending["email"]
+        stored.email != requested
         or stored.purpose != pending.get("purpose")
         or time() - stored.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS
     ):
@@ -458,7 +448,6 @@ def verify_email_code(environ: dict):
     headers = [
         ("Location", "/authn"),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
-        _clear_cookie(EMAIL_PENDING_COOKIE, path="/authn"),
     ]
     return status, headers, body
 

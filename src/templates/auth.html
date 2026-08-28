@@ -14,6 +14,7 @@
   </form>
   {% if email_pending and email_pending_purpose == 'change' %}
   <form method="post" action="/authn/email/verify">
+    <input type="hidden" name="email" value="{{ email_pending_address }}">
     <label>Confirmation code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Confirm email</button>
   </form>
@@ -27,6 +28,7 @@
   </form>
   {% if email_pending and email_pending_purpose == 'signin' %}
   <form method="post" action="/authn/email/verify">
+    <input type="hidden" name="email" value="{{ email_pending_address }}">
     <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Sign in</button>
   </form>
@@ -124,11 +126,12 @@
   <h2>Email</h2>
   <p>Enter your registered email address to receive an authentication code.</p>
   <form method="post" action="/authn/email">
-    <label>Email <input type="email" name="email" required></label>
+    <label>Email <input type="email" name="email" value="{{ email_pending_address|default('') }}" {% if email_pending %}readonly{% endif %} required></label>
     <button type="submit">Proceed</button>
   </form>
   {% if email_pending and email_pending_purpose == 'signin' %}
   <form method="post" action="/authn/email/verify">
+    <input type="hidden" name="email" value="{{ email_pending_address }}">
     <label>Authentication code <input name="code" inputmode="numeric" pattern="[0-9]{6}" required></label>
     <button type="submit">Confirm code</button>
   </form>
