@@ -26,9 +26,21 @@ def admin_index(*, render):
 
 
 def list_users(*, user_class, render):
+    users = [
+        {
+            "id": user.id,
+            "display_name": user.display_name,
+            "roles": user.roles,
+            "email": user.email,
+            "google_credentials": [credential.email for credential in user.google_credentials],
+            "microsoft_credentials": [credential.email for credential in user.microsoft_credentials],
+            "fido2_credentials": [credential.id.hex() for credential in user.fido2_credentials],
+        }
+        for user in user_class.objects().order_by("display_name", "id")
+    ]
     return render(
         "admin_user_list.html",
-        users=user_class.objects().order_by("display_name", "id"),
+        users=users,
     )
 
 
@@ -160,7 +172,7 @@ def update_user(user_id, form, *, user_class, render):
     if user is None:
         return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
 
-    action = form.get("action", "update")
+    action = form.get("action", "")
     if action == "update":
         name = form.get("name", "").strip()
         email = form.get("email", "").strip().casefold()

@@ -15,9 +15,9 @@
           <td>{{ user.email or '' }}</td>
           <td>
             <ul>
-              {% for credential in user.google_credentials %}<li>Google: {{ credential.email }}</li>{% endfor %}
-              {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential.email }}</li>{% endfor %}
-              {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential.id.hex() }}</code></li>{% endfor %}
+              {% for credential in user.google_credentials %}<li>Google: {{ credential }}</li>{% endfor %}
+              {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential }}</li>{% endfor %}
+              {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential }}</code></li>{% endfor %}
             </ul>
           </td>
         </tr>
