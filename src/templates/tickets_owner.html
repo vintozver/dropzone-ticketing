@@ -16,14 +16,16 @@
         {% endfor %}
       </tbody>
     </table>
-    <p>Follow an issue timestamp to view that ticket and print it as PDF.</p>
-    <p>
-      <a href="/print?{% if user_id %}user_id={{ user_id|urlencode }}{% else %}display_name={{ display_name|urlencode }}{% endif %}">
-        Print all active tickets of this owner as PDF
-      </a>
-    </p>
+    {% if 'admin' in current_user_roles %}
+      <p>Follow an issue timestamp to view that ticket and print it as PDF.</p>
+      <p>
+        <a href="/print?{% if user_id %}user_id={{ user_id|urlencode }}{% else %}display_name={{ display_name|urlencode }}{% endif %}">
+          Print all active tickets of this owner as PDF
+        </a>
+      </p>
+    {% endif %}
   {% else %}
     <p>No active tickets found for this owner.</p>
   {% endif %}
-  <p><a href="/tickets">Back to the owners list</a></p>
+  {% if 'admin' in current_user_roles %}<p><a href="/tickets">Back to the owners list</a></p>{% endif %}
 {% endblock %}

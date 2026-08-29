@@ -14,6 +14,12 @@ from ..model.auth import User
 from ..model.ticket import UserRef
 
 from . import auth as _auth_module
+from .actions.admin_users import admin_index as _admin_index_action
+from .actions.admin_users import create_user as _create_user_action
+from .actions.admin_users import list_users as _list_users_action
+from .actions.admin_users import new_user as _new_user_action
+from .actions.admin_users import update_user as _update_user_action
+from .actions.admin_users import view_user as _view_user_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
@@ -99,8 +105,8 @@ def _view_owner_tickets(user_id: str | None, display_name: str | None):
     return _view_owner_tickets_action(user_id, display_name, ticket_class=Ticket, render=_render)
 
 
-def _view_ticket(ticket_id: str):
-    return _view_ticket_action(ticket_id, ticket_class=Ticket, render=_render)
+def _view_ticket(ticket_id: str, viewer):
+    return _view_ticket_action(ticket_id, viewer, ticket_class=Ticket, render=_render)
 
 
 def _view_redeemed_tickets():
@@ -119,6 +125,10 @@ def _require_auth(environ: dict):
     return _auth_module.require_auth(environ)
 
 
+def _require_admin(environ: dict):
+    return _auth_module.require_role(environ, "admin")
+
+
 def _current_user_id(environ: dict) -> str | None:
     return _auth_module.current_user_id(environ)
 
@@ -133,6 +143,36 @@ def _current_user_ref(environ: dict) -> dict[str, object] | None:
 
 def _search_users(query: str):
     return _search_users_action(query, user_class=User)
+
+
+def _create_user(form: dict[str, str]):
+    return _create_user_action(
+        form,
+        user_class=User,
+        google_credential_class=_auth_module.GoogleCredential,
+        microsoft_credential_class=_auth_module.MicrosoftCredential,
+        render=_render,
+    )
+
+
+def _new_user():
+    return _new_user_action(render=_render)
+
+
+def _admin_index():
+    return _admin_index_action(render=_render)
+
+
+def _list_users():
+    return _list_users_action(user_class=User, render=_render)
+
+
+def _view_user(user_id: str):
+    return _view_user_action(user_id, user_class=User, render=_render)
+
+
+def _update_user(user_id: str, form: dict[str, str]):
+    return _update_user_action(user_id, form, user_class=User, render=_render)
 
 
 def _method_not_allowed(allowed):
@@ -151,6 +191,7 @@ def application(environ: dict, start_response: Callable):
         authenticated=_auth_module._is_authenticated(environ),
         current_user_id=_auth_module.current_user_id(environ),
         current_user_display_name=_auth_module.current_user_display_name(environ),
+        current_user_roles=_auth_module.current_user_roles(environ),
         registration_mode=_auth_module.authn_config().register,
     ):
         try:

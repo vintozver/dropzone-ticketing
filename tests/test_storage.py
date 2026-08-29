@@ -109,10 +109,11 @@ class StorageTicketDocumentTest(unittest.TestCase):
             ],
         )
 
-    def test_user_id_and_display_name_fields(self) -> None:
+    def test_user_uses_implicit_id_and_display_name_fields(self) -> None:
         fields = User._fields
         self.assertIsInstance(fields["id"], mongoengine.ObjectIdField)
-        self.assertTrue(fields["id"].primary_key)
+        self.assertEqual(User._meta["id_field"], "id")
+        self.assertFalse(fields["id"].primary_key)
         self.assertIsInstance(fields["display_name"], mongoengine.StringField)
         self.assertFalse(fields["display_name"].required)
 

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+  <h1>Users</h1>
+  <p><a href="/admin/user/new">Add user</a></p>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Role</th><th>Email</th><th>External credentials</th></tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+        <tr>
+          <td><a href="/admin/user/view/{{ user.id }}">{{ user.display_name or user.id }}</a></td>
+          <td>{{ user.roles|join(', ') }}</td>
+          <td>{{ user.email or '' }}</td>
+          <td>
+            {% if user.google_credentials or user.microsoft_credentials or user.fido2_credentials %}
+            <ul>
+              {% for credential in user.google_credentials %}<li>Google: {{ credential }}</li>{% endfor %}
+              {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential }}</li>{% endfor %}
+              {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential }}</code></li>{% endfor %}
+            </ul>
+            {% else %}None{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">No users</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
