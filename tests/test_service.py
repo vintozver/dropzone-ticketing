@@ -189,6 +189,10 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b'href="/admin/user/view/507f1f77bcf86cd799439011"', body)
         for expected in (b"Jane", b"admin", b"jane@example.test", b"google@example.test", b"microsoft@example.test"):
             self.assertIn(expected, body)
+        self.assertIn(b'jquery-ui@1.14.1', body)
+        self.assertIn(b'class="external-credentials"', body)
+        self.assertIn(b'.accordion({ collapsible: true, active: false })', body)
+        self.assertGreater(body.index(b'href="/admin/user/new">Add user</a>'), body.index(b"</table>"))
 
     def test_admin_updates_user_profile_without_email_validation_flow(self) -> None:
         user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
@@ -1285,7 +1289,8 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'href="/admin/user/list">Users</a>', response["body"])
-        self.assertIn(b'href="/admin/user/new">Add user</a>', response["body"])
+        self.assertIn(b'href="/admin/partner/list">Partners</a>', response["body"])
+        self.assertNotIn(b'href="/admin/user/new">Add user</a>', response["body"])
 
     def test_admin_user_list_route_uses_handler(self) -> None:
         with patch.object(service, "_list_users", return_value=(service.HTTPStatus.OK, [], b"users")) as handler:
