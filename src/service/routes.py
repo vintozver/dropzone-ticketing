@@ -5,7 +5,6 @@ import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import _fido2, api, auth, google, microsoft, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
@@ -15,6 +14,8 @@ _PARTNER_VIEW_PATH_RE = re.compile(r"^/admin/partner/view/([0-9a-fA-F]{24})/?$")
 
 
 def dispatch(environ: dict, handlers):
+    from . import _fido2, api, auth, google, microsoft, register
+
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET").upper()
     registration_mode = authn_config().register
