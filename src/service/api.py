@@ -8,7 +8,7 @@ from bson.errors import InvalidId
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 import jwt
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError, MissingRequiredClaimError
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from ..model.auth import User
 from ..model.partner import Partner
@@ -60,13 +60,11 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
         algorithm = header.get("alg")
         if algorithm not in {"RS256", "PS256", "ES256", "EdDSA"}:
             raise PermissionError("Unsupported JWT signing algorithm.")
-        payload = jwt.decode(token, public_key, algorithms=[algorithm], options={"require": ["exp"]})
+        payload = jwt.decode(token, public_key, algorithms=[algorithm])
     except PermissionError:
         raise
     except ExpiredSignatureError as exc:
         raise PermissionError("JWT has expired.") from exc
-    except MissingRequiredClaimError as exc:
-        raise PermissionError("JWT exp claim is missing or invalid.") from exc
     except (ValueError, TypeError, InvalidTokenError) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
     return partner, payload

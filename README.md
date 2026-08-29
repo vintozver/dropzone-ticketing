@@ -54,8 +54,8 @@ Partners call these endpoints with an Authorization header carrying a bearer JWT
   signed JWT claims.
 
 The JWT must use a `partner` header containing the partner ObjectId and a `kid`
-header selecting a configured key, and must include an `exp` claim. Supported
-signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by
+header selecting a configured key. If present, the `exp` claim is validated.
+Supported signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by
 authenticated administrators at `/admin/partner/list`; PEM public keys and
 certificates are converted to DER before storage.
 
