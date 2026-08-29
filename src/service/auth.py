@@ -357,7 +357,7 @@ def begin_authn(environ: dict):
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
-        pending = getattr(user, "email_authentication", None)
+        pending = user.email_authentication
         if pending is not None and time() - pending.issued.timestamp() > _EMAIL_CODE_TTL_SECONDS:
             user.email_authentication = None
             user.save()
@@ -383,18 +383,18 @@ def begin_authn(environ: dict):
             ],
             "google_credentials": [
                 {"email": credential.email}
-                for credential in getattr(user, "google_credentials", [])
+                for credential in user.google_credentials
             ],
             "microsoft_credentials": [
                 {"email": credential.email}
-                for credential in getattr(user, "microsoft_credentials", [])
+                for credential in user.microsoft_credentials
             ],
         }
     else:
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
         email = query.get("email", [""])[0].strip().casefold()
         pending_user = User.objects(email=email).first() if email else None
-        pending = getattr(pending_user, "email_authentication", None)
+        pending = pending_user.email_authentication if pending_user is not None else None
         if pending is not None and pending.purpose == "signin" and time() - pending.issued.timestamp() <= _EMAIL_CODE_TTL_SECONDS:
             email_pending = True
             email_pending_address = email
@@ -418,7 +418,7 @@ def begin_authn(environ: dict):
         google_auth_uri=f"/authn/google?{urlencode({_RETURN_URI_PARAM: destination})}",
         microsoft_auth_uri=f"/authn/microsoft?{urlencode({_RETURN_URI_PARAM: destination})}",
         current_display_name=user.display_name if user is not None and user.display_name is not None else "",
-        email=getattr(user, "email", None) if user is not None else "",
+        email=user.email if user is not None and user.email is not None else "",
         email_pending=email_pending,
         email_pending_address=email_pending_address or "",
         email_pending_purpose=email_pending_purpose or "",

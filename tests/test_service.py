@@ -1017,6 +1017,10 @@ class ServiceAuthnTest(unittest.TestCase):
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
             display_name="Jane",
+            email=None,
+            email_authentication=None,
+            google_credentials=[],
+            microsoft_credentials=[],
             fido2_credentials=[
                 SimpleNamespace(
                     id=b"abcdefgh",
@@ -1190,6 +1194,8 @@ class ServiceAuthnTest(unittest.TestCase):
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
             display_name="Jane",
+            email=None,
+            email_authentication=None,
             fido2_credentials=[],
             google_credentials=[SimpleNamespace(email="jane@gmail.test")],
             microsoft_credentials=[SimpleNamespace(email="jane@outlook.test")],
