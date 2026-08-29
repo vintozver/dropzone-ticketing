@@ -825,7 +825,7 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(fido2_module, "server", return_value=server), patch.object(fido2_module.auth, "User", user_class):
+        with patch.object(fido2_module, "server", return_value=server), patch.object(auth, "User", user_class):
             _status, headers, _body = auth.begin_authn(environ)
 
         cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_challenge=" in value)
