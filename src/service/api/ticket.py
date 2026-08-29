@@ -5,16 +5,7 @@ from http import HTTPStatus
 
 from ...model.auth import User
 from ...model.ticket import Redemption, Ticket, UserRef
-from ._shared import _json_response, _method_not_allowed, _payload
-
-
-def dispatch(method: str, path: str, environ: dict, claims: dict, partner):
-    """Handle `/api/ticket/*` endpoints. Returns None if `path` is not handled here."""
-    if path == "/api/ticket/redeem":
-        if method != "POST":
-            return _method_not_allowed(["POST"])
-        return _redeem_ticket(environ, claims, partner)
-    return None
+from ._shared import _json_response, _payload
 
 
 def _redeem_ticket(environ: dict, claims: dict, partner):

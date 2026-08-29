@@ -6,20 +6,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from ...model.auth import User
-from ._shared import _json_response, _method_not_allowed, _payload
-
-
-def dispatch(method: str, path: str, environ: dict, claims: dict, partner):
-    """Handle `/api/user*` endpoints. Returns None if `path` is not handled here."""
-    if path == "/api/user/list":
-        if method != "GET":
-            return _method_not_allowed(["GET"])
-        return _json_response(HTTPStatus.OK, _list_users(partner))
-    if path == "/api/user":
-        if method != "PATCH":
-            return _method_not_allowed(["PATCH"])
-        return _update_user(environ, claims, partner)
-    return None
+from ._shared import _json_response, _payload
 
 
 def _list_users(partner):
