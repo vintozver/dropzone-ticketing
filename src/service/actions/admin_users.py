@@ -122,21 +122,18 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""
 
 
-def _find_user(user_id, *, user_class, render):
+def _find_user(user_id, *, user_class):
     try:
         object_id = ObjectId(user_id)
     except (InvalidId, TypeError):
-        return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
-    user = user_class.objects(id=object_id).first()
-    if user is None:
-        return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
-    return user
+        return None
+    return user_class.objects(id=object_id).first()
 
 
 def view_user(user_id, *, user_class, render):
-    user = _find_user(user_id, user_class=user_class, render=render)
-    if isinstance(user, tuple):
-        return user
+    user = _find_user(user_id, user_class=user_class)
+    if user is None:
+        return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
 
     fido2_credentials = [
         {
@@ -159,9 +156,9 @@ def view_user(user_id, *, user_class, render):
 
 
 def update_user(user_id, form, *, user_class, render):
-    user = _find_user(user_id, user_class=user_class, render=render)
-    if isinstance(user, tuple):
-        return user
+    user = _find_user(user_id, user_class=user_class)
+    if user is None:
+        return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
 
     action = form.get("action", "update")
     if action == "update":
