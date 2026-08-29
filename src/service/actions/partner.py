@@ -6,8 +6,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from mongoengine.errors import ValidationError
 
-from ..model.partner import Partner, PartnerKeyItem
-from .http import read_form, render
+from ...model.partner import Partner, PartnerKeyItem
+from ..http import read_form, render
 
 
 def _der(value: str, kind: str) -> bytes:
@@ -49,7 +49,7 @@ def create(environ: dict):
     if not name:
         raise ValueError("Display name is required.")
     Partner(display_name=name).save()
-    return HTTPStatus.SEE_OTHER, [("Location", "/admin/partners")], b""
+    return HTTPStatus.SEE_OTHER, [("Location", "/admin/partner/list")], b""
 
 
 def update(environ: dict, partner_id: str):
@@ -84,4 +84,4 @@ def update(environ: dict, partner_id: str):
     if delete_id:
         partner.keyset = [item for item in partner.keyset if item.id != delete_id]
     partner.save()
-    return HTTPStatus.SEE_OTHER, [("Location", f"/admin/partners/{partner.id}")], b""
+    return HTTPStatus.SEE_OTHER, [("Location", f"/admin/partner/view/{partner.id}")], b""

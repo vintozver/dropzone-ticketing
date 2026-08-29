@@ -49,7 +49,7 @@ header containing a bearer JWT. The JWT must use a `partner` header
 containing the partner ObjectId and a `kid` header selecting a configured key.
 The signed claims for a user update are `internal_id` and `external_id`.
 Supported signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by
-authenticated administrators at `/admin/partners`; PEM public keys and
+authenticated administrators at `/admin/partner/list`; PEM public keys and
 certificates are converted to DER before storage.
 
 All settings come from this file only; `CONFIG_FILE` merely names it.
