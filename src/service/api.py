@@ -102,12 +102,11 @@ def dispatch(environ: dict):
             if method != "GET":
                 return _method_not_allowed(["GET"])
             users = []
-            users_query = User.objects(__raw__={"partner_uid_map." + str(partner.id): {"$exists": True}})
+            users_query = User.objects()
             for user in users_query:
                 external_id = (user.partner_uid_map or {}).get(str(partner.id))
-                if external_id is not None:
-                    users.append({"external_id": external_id, "internal_id": str(user.id),
-                                  "display_name": user.display_name, "email": user.email})
+                users.append({"external_id": external_id, "internal_id": str(user.id),
+                              "display_name": user.display_name, "email": user.email})
             return _json_response(HTTPStatus.OK, users)
         if path == "/api/user":
             if method != "PATCH":
