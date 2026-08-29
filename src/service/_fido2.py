@@ -42,7 +42,7 @@ def server(environ: dict) -> Fido2Server:
     )
 
 
-def credential_data(credential: Fido2Credential):
+def credential_data(credential: Fido2Credential) -> AttestedCredentialData:
     return AttestedCredentialData(credential.data)
 
 
