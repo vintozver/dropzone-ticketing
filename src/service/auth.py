@@ -20,6 +20,7 @@ from bson.errors import InvalidId
 from mongoengine.errors import OperationError, ValidationError
 from .config import authn_config, session_secret
 from .http import error, read_form, render
+from . import _fido2
 from ..model.auth import Fido2Credential, User
 from ..model.auth import EmailAuthentication
 from .email import code as generate_email_code, send_code
@@ -308,16 +309,14 @@ def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
     challenge = secrets.token_bytes(32)
-    from ._fido2 import PublicKeyCredentialUserEntity, credential_data, rp_id, server
-
-    fido2_server = server(environ)
+    fido2_server = _fido2.server(environ)
     credentials = [
         credential
         for user in User.objects().only("fido2_credentials")
         for credential in user.fido2_credentials
     ]
     _options, _state = fido2_server.authenticate_begin(
-        [credential_data(credential) for credential in credentials],
+        [_fido2.credential_data(credential) for credential in credentials],
         challenge=challenge,
     )
     allow_credentials = [
@@ -330,12 +329,12 @@ def begin_authn(environ: dict):
     register_state = None
     if user is not None:
         register_options, register_state = fido2_server.register_begin(
-            PublicKeyCredentialUserEntity(
+            _fido2.PublicKeyCredentialUserEntity(
                 id=str(user.id).encode("utf-8"),
                 name=str(user.id),
                 display_name=user.display_name or str(user.id),
             ),
-            [credential_data(credential) for credential in user.fido2_credentials],
+            [_fido2.credential_data(credential) for credential in user.fido2_credentials],
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
@@ -390,7 +389,7 @@ def begin_authn(environ: dict):
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
-        rp_id=rp_id(environ),
+        rp_id=_fido2.rp_id(environ),
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         authenticated=user is not None,
