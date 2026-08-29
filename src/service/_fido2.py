@@ -25,15 +25,18 @@ from fido2.webauthn import (
 
 
 def rp_id(environ: dict) -> str:
+    """Return the relying-party ID for the current request."""
     return request_host(environ).split(":", 1)[0]
 
 
 def origin(environ: dict) -> str:
+    """Return the expected WebAuthn origin for the current request."""
     scheme = environ.get("wsgi.url_scheme") or "http"
     return f"{scheme}://{request_host(environ)}"
 
 
 def server(environ: dict) -> Fido2Server:
+    """Build the WebAuthn server configured for the current request."""
     rp = PublicKeyCredentialRpEntity("dropzone-ticketing", rp_id(environ))
     return Fido2Server(
         rp,
@@ -43,6 +46,7 @@ def server(environ: dict) -> Fido2Server:
 
 
 def credential_data(credential: Fido2Credential) -> AttestedCredentialData:
+    """Convert a stored credential into the FIDO2 library representation."""
     return AttestedCredentialData(credential.data)
 
 
