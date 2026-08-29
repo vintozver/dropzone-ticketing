@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Users{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/themes/base/jquery-ui.min.css" integrity="sha256-Y6jCdwjQRMCYr1alUxqNKUiK/cdfQd8PvQ/AcEj3TNM=" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/jquery-ui.min.js" integrity="sha256-AlTido85uXPlSyyaZNsjJXeCs07eSv3r43kyCVc8ChI=" crossorigin="anonymous"></script>
+{% endblock %}
 {% block content %}
   <h1>Users</h1>
-  <p><a href="/admin/user/new">Add user</a></p>
   <table>
     <thead>
       <tr><th>Name</th><th>Role</th><th>Email</th><th>External credentials</th></tr>
@@ -14,13 +17,18 @@
           <td>{{ user.roles|join(', ') }}</td>
           <td>{{ user.email or '' }}</td>
           <td>
-            {% if user.google_credentials or user.microsoft_credentials or user.fido2_credentials %}
-            <ul>
-              {% for credential in user.google_credentials %}<li>Google: {{ credential }}</li>{% endfor %}
-              {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential }}</li>{% endfor %}
-              {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential }}</code></li>{% endfor %}
-            </ul>
-            {% else %}None{% endif %}
+            <div class="external-credentials">
+              <h3>External credentials</h3>
+              <div>
+                {% if user.google_credentials or user.microsoft_credentials or user.fido2_credentials %}
+                <ul>
+                  {% for credential in user.google_credentials %}<li>Google: {{ credential }}</li>{% endfor %}
+                  {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential }}</li>{% endfor %}
+                  {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential }}</code></li>{% endfor %}
+                </ul>
+                {% else %}None{% endif %}
+              </div>
+            </div>
           </td>
         </tr>
       {% else %}
@@ -28,4 +36,10 @@
       {% endfor %}
     </tbody>
   </table>
+  <p><a href="/admin/user/new">Add user</a></p>
+  <script>
+    $(function() {
+      $(".external-credentials").accordion({ collapsible: true, active: false });
+    });
+  </script>
 {% endblock %}
