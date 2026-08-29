@@ -15,6 +15,7 @@ from ..model.ticket import UserRef
 
 from . import auth as _auth_module
 from .actions.admin_users import create_user as _create_user_action
+from .actions.admin_users import new_user as _new_user_action
 from .actions.admin_users import view_user as _view_user_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
@@ -149,6 +150,10 @@ def _create_user(form: dict[str, str]):
         microsoft_credential_class=_auth_module.MicrosoftCredential,
         render=_render,
     )
+
+
+def _new_user():
+    return _new_user_action(render=_render)
 
 
 def _view_user(user_id: str):

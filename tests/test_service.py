@@ -29,6 +29,7 @@ from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import microsoft as microsoft_module
 from dropzone_ticketing.service import register as register_module
+from dropzone_ticketing.service.actions.admin_users import create_user, view_user
 from dropzone_ticketing.service.actions.search_users import search_users
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
 from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
@@ -56,6 +57,105 @@ class ServiceHelperTest(unittest.TestCase):
             service.split_codes("one two\tthree\nfour\r\nfive"),
             ["one", "two", "three", "four", "five"],
         )
+
+    def test_admin_create_user_assigns_selected_role_and_email_identity(self) -> None:
+        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
+        user.google_credentials = []
+        user.microsoft_credentials = []
+        user_class = MagicMock(return_value=user)
+        render = MagicMock()
+
+        status, headers, body = create_user(
+            {
+                "name": "Jane",
+                "email": "JANE@EXAMPLE.TEST",
+                "identity_type": "google",
+                "role": "admin",
+            },
+            user_class=user_class,
+            google_credential_class=service._auth_module.GoogleCredential,
+            microsoft_credential_class=service._auth_module.MicrosoftCredential,
+            render=render,
+        )
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(headers, [("Location", "/admin/user/view/507f1f77bcf86cd799439011")])
+        self.assertEqual(body, b"")
+        user_class.assert_called_once_with(display_name="Jane", roles=["admin"])
+        self.assertEqual(user.google_credentials[0].email, "jane@example.test")
+        self.assertEqual(user.microsoft_credentials, [])
+        user.save.assert_called_once_with()
+
+    def test_admin_create_user_rejects_unknown_role(self) -> None:
+        render = MagicMock(return_value=("rendered", [], b""))
+
+        create_user(
+            {
+                "name": "Jane",
+                "email": "jane@example.test",
+                "identity_type": "email",
+                "role": "owner",
+            },
+            user_class=MagicMock(),
+            google_credential_class=MagicMock(),
+            microsoft_credential_class=MagicMock(),
+            render=render,
+        )
+
+        self.assertEqual(render.call_args.args[1], service.HTTPStatus.BAD_REQUEST)
+        self.assertEqual(render.call_args.kwargs["error"], "Choose a role.")
+
+    def test_admin_create_user_supports_regular_and_microsoft_email_identities(self) -> None:
+        for identity_type in ("email", "microsoft"):
+            with self.subTest(identity_type=identity_type):
+                user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
+                user.google_credentials = []
+                user.microsoft_credentials = []
+                user_class = MagicMock(return_value=user)
+
+                create_user(
+                    {
+                        "name": "Jane",
+                        "email": "jane@example.test",
+                        "identity_type": identity_type,
+                        "role": "user",
+                    },
+                    user_class=user_class,
+                    google_credential_class=service._auth_module.GoogleCredential,
+                    microsoft_credential_class=service._auth_module.MicrosoftCredential,
+                    render=MagicMock(),
+                )
+
+                if identity_type == "email":
+                    self.assertEqual(user.email, "jane@example.test")
+                    self.assertEqual(user.microsoft_credentials, [])
+                else:
+                    self.assertEqual(user.microsoft_credentials[0].email, "jane@example.test")
+
+    def test_admin_view_user_returns_full_identity_details(self) -> None:
+        user = SimpleNamespace(
+            id=ObjectId("507f1f77bcf86cd799439011"),
+            display_name="Jane",
+            email="jane@example.test",
+            roles=["admin"],
+            fido2_credentials=[],
+            google_credentials=[SimpleNamespace(email="google@example.test")],
+            microsoft_credentials=[SimpleNamespace(email="microsoft@example.test")],
+        )
+        user_class = MagicMock()
+        user_class.objects.return_value.first.return_value = user
+
+        status, _headers, body = view_user(
+            str(user.id),
+            user_class=user_class,
+            render=service._render,
+        )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(b"jane@example.test", body)
+        self.assertIn(b"google@example.test", body)
+        self.assertIn(b"microsoft@example.test", body)
+        self.assertIn(b"admin", body)
 
     def test_pdf_filename_is_safe_for_response_headers(self) -> None:
         self.assertEqual(service._safe_filename("Jane\r\nJumper / ✈"), "tickets-Jane-Jumper.pdf")
@@ -604,6 +704,33 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'Signed in as <a href="/authn">Jane</a>', response["body"])
         self.assertNotIn(b'<a href="/authn">Sign in</a>', response["body"])
 
+    def test_admin_navigation_is_only_shown_to_administrators(self) -> None:
+        with patch.object(service._auth_module, "current_user_roles", return_value=["admin"]):
+            admin_response = self.request("/")
+        user_response = self.request("/")
+
+        self.assertIn(b'href="/admin/user/new"', admin_response["body"])
+        self.assertNotIn(b'href="/admin/user/new"', user_response["body"])
+
+    def test_admin_new_user_route_requires_admin_role(self) -> None:
+        with patch.object(
+            service._auth_module,
+            "require_role",
+            return_value=(service.HTTPStatus.FORBIDDEN, [], b"denied"),
+        ) as require_role:
+            response = self.request("/admin/user/new")
+
+        self.assertEqual(response["status"], "403 Forbidden")
+        require_role.assert_called_once_with(ANY, "admin")
+
+    def test_admin_new_user_route_renders_form_for_admin(self) -> None:
+        with patch.object(service._auth_module, "require_role", return_value=None):
+            response = self.request("/admin/user/new")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertIn(b'name="identity_type"', response["body"])
+        self.assertIn(b'name="role"', response["body"])
+
     def test_issue_rejects_out_of_range_count(self) -> None:
         response = self.request(
             "/issue",
@@ -1002,7 +1129,11 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertEqual(server.register_complete.call_args.kwargs["response"], "registration response")
         registration_response.assert_called_once()
         user_class.objects.assert_called_once_with(id=ObjectId(user_id))
-        user_class.assert_called_once_with(id=ObjectId(user_id), display_name="Jane Sky")
+        user_class.assert_called_once_with(
+            id=ObjectId(user_id),
+            display_name="Jane Sky",
+            roles=["admin"],
+        )
         credential = user.fido2_credentials[0]
         self.assertEqual(credential.attestation_aaguid, b"\x01" * 16)
         self.assertEqual(credential.extensions, {"credProps": {"rk": True}})

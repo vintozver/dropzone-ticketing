@@ -111,7 +111,7 @@ def dispatch(environ: dict, handlers):
         if auth_response is not None:
             return auth_response
         if method == "GET":
-            return handlers._create_user({})
+            return handlers._new_user()
         return handlers._create_user(handlers._read_form(environ))
 
     admin_user_match = _ADMIN_USER_VIEW_PATH_RE.match(path)

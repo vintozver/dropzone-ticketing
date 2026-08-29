@@ -26,6 +26,10 @@ def _render_new_user(render, status=HTTPStatus.OK, **context):
     )
 
 
+def new_user(*, render):
+    return _render_new_user(render)
+
+
 def create_user(form, *, user_class, google_credential_class, microsoft_credential_class, render):
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().casefold()
@@ -120,7 +124,11 @@ def view_user(user_id, *, user_class, render):
             "id": credential.id.hex(),
             "dt": credential.dt,
             "aaguid": credential.attestation_aaguid.hex() if credential.attestation_aaguid else "",
-            "extensions": json.dumps(credential.extensions, indent=2, sort_keys=True) if credential.extensions else "",
+            "extensions": (
+                json.dumps(credential.extensions, indent=2, sort_keys=True, default=str)
+                if credential.extensions
+                else ""
+            ),
         }
         for credential in user.fido2_credentials
     ]
