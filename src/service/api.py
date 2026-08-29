@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 
 from bson import ObjectId
@@ -12,6 +13,9 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from ..model.auth import User
 from ..model.partner import Partner
+from .. import Ticket
+from ..time_utils import as_utc
+from .config import local_timezone
 
 
 def _json_response(status: HTTPStatus, value: object):
@@ -96,6 +100,11 @@ def dispatch(environ: dict):
     path = environ.get("PATH_INFO", "")
     try:
         partner, claims = _verify(environ)
+        if path in {"/api/report/ticket-redeem/today", "/api/report/ticket-redeem/yesterday"}:
+            if method != "GET":
+                return _method_not_allowed(["GET"])
+            day = "today" if path.endswith("/today") else "yesterday"
+            return _json_response(HTTPStatus.OK, _ticket_redeem_report(partner, day=day))
         if path == "/api/user/list":
             if method != "GET":
                 return _method_not_allowed(["GET"])
@@ -144,3 +153,65 @@ def _method_not_allowed(methods: list[str]):
         [("Content-Type", "application/json; charset=utf-8"), ("Allow", ", ".join(methods))],
         json.dumps({"error": "Method not allowed."}).encode(),
     )
+
+
+def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
+    now = now or datetime.now(timezone.utc)
+    display_timezone = local_timezone()
+    local_now = as_utc(now).astimezone(display_timezone)
+    today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday = today - timedelta(days=1)
+    tomorrow = today + timedelta(days=1)
+    return as_utc(yesterday), as_utc(today), as_utc(tomorrow)
+
+
+def _ticket_redeem_report(partner: Partner, *, day: str):
+    yesterday, today, tomorrow = _day_boundaries()
+    if day == "today":
+        start, end = today, tomorrow
+    else:
+        start, end = yesterday, today
+
+    tickets = list(Ticket.objects(redeemed__dt__gte=start, redeemed__dt__lt=end).order_by("redeemed__dt", "code"))
+    user_ids = sorted({ticket.issued_to.id for ticket in tickets if ticket.issued_to and ticket.issued_to.id is not None}, key=str)
+    users_by_id = {}
+    if user_ids:
+        users_by_id = {
+            str(user.id): user
+            for user in User.objects(id__in=user_ids).only("id", "display_name", "partner_uid_map")
+        }
+
+    report = []
+    for ticket in tickets:
+        issued_to = ticket.issued_to
+        internal_id = str(issued_to.id) if issued_to and issued_to.id is not None else None
+        user = users_by_id.get(internal_id) if internal_id else None
+        external_id = None
+        if user is not None:
+            external_id = (user.partner_uid_map or {}).get(str(partner.id))
+
+        redeemed = ticket.redeemed
+        report.append(
+            {
+                "user": {
+                    "internal_id": internal_id,
+                    "external_id": external_id,
+                    "display_name": (issued_to.display_name if issued_to else None) or (user.display_name if user is not None else None),
+                },
+                "ticket": {
+                    "internal_id": str(ticket.id),
+                    "code": ticket.code,
+                    "payment": ticket.payment,
+                    "purpose": ticket.purpose,
+                },
+                "redeemed": {
+                    "at": redeemed.dt.isoformat() if redeemed and redeemed.dt else None,
+                    "by": {
+                        "internal_id": str(redeemed.by.id) if redeemed and redeemed.by and redeemed.by.id is not None else None,
+                        "display_name": redeemed.by.display_name if redeemed and redeemed.by else None,
+                    },
+                    "reason": redeemed.reason if redeemed else None,
+                },
+            }
+        )
+    return report
