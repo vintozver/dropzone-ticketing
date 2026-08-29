@@ -9,7 +9,7 @@ from http import HTTPStatus
 from time import time
 
 from . import auth
-from .http import error, read_form
+from .http import error, read_form, request_host
 from ..model.auth import Fido2Credential
 from fido2.server import Fido2Server
 from fido2.webauthn import (
@@ -25,12 +25,12 @@ from fido2.webauthn import (
 
 
 def rp_id(environ: dict) -> str:
-    return auth._request_host(environ).split(":", 1)[0]
+    return request_host(environ).split(":", 1)[0]
 
 
 def origin(environ: dict) -> str:
     scheme = environ.get("wsgi.url_scheme") or "http"
-    return f"{scheme}://{auth._request_host(environ)}"
+    return f"{scheme}://{request_host(environ)}"
 
 
 def server(environ: dict) -> Fido2Server:

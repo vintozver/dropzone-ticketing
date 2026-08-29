@@ -19,6 +19,10 @@ _templates = Environment(
 _request_context: ContextVar[dict[str, object]] = ContextVar("request_context", default={})
 
 
+def request_host(environ: dict) -> str:
+    return environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+
+
 @pass_context
 def _datetime_filter(context, value):
     return format_datetime(value, context["local_timezone"])

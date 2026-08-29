@@ -19,8 +19,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine.errors import OperationError, ValidationError
 from .config import authn_config, session_secret
-from .http import error, read_form, render
-from . import _fido2
+from .http import error, read_form, render, request_host
 from ..model.auth import Fido2Credential, User
 from ..model.auth import EmailAuthentication
 from .email import code as generate_email_code, send_code
@@ -92,10 +91,6 @@ def _cookie(
 
 def _clear_cookie(name: str, *, path: str = "/") -> tuple[str, str]:
     return ("Set-Cookie", f"{name}=; Max-Age=0; Path={path}; Secure; HttpOnly; SameSite=Strict")
-
-
-def _request_host(environ: dict) -> str:
-    return environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
 
 
 def _safe_return_uri(value: object) -> str | None:
@@ -309,6 +304,8 @@ def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
     challenge = secrets.token_bytes(32)
+    from . import _fido2
+
     fido2_server = _fido2.server(environ)
     credentials = [
         credential
