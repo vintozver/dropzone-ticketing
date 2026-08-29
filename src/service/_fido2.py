@@ -11,6 +11,12 @@ from time import time
 from . import auth
 from .http import error, read_form
 from ..model.auth import Fido2Credential
+from fido2.webauthn import (
+    AuthenticatorAttestationResponse,
+    AttestationObject,
+    CollectedClientData,
+    RegistrationResponse,
+)
 
 
 def complete_authn(environ: dict):
@@ -74,11 +80,11 @@ def add_credential(environ: dict):
         server = auth._server(environ)
         auth_data = server.register_complete(
             state,
-            response=auth.RegistrationResponse(
+            response=RegistrationResponse(
                 id=form.get("id", ""),
-                response=auth.AuthenticatorAttestationResponse(
-                    client_data=auth.CollectedClientData(auth._b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=auth.AttestationObject(auth._b64decode(form.get("attestationObject", ""))),
+                response=AuthenticatorAttestationResponse(
+                    client_data=CollectedClientData(auth._b64decode(form.get("clientDataJSON", ""))),
+                    attestation_object=AttestationObject(auth._b64decode(form.get("attestationObject", ""))),
                 ),
             ),
         )

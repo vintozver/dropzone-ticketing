@@ -20,13 +20,9 @@ from bson.errors import InvalidId
 from fido2.server import Fido2Server
 from mongoengine.errors import OperationError, ValidationError
 from fido2.webauthn import (
-    AuthenticatorAttestationResponse,
-    AttestationObject,
     AttestationConveyancePreference,
-    CollectedClientData,
     PublicKeyCredentialUserEntity,
     PublicKeyCredentialRpEntity,
-    RegistrationResponse,
 )
 
 from .config import authn_config, session_secret

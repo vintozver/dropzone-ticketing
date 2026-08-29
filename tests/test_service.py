@@ -1098,11 +1098,11 @@ class ServiceAuthnTest(unittest.TestCase):
             auth, "_session_user", return_value=user
         ), patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "_find_credential", return_value=None
-        ), patch.object(fido2_module.auth, "CollectedClientData", return_value="client data"), patch.object(
-            auth, "AttestationObject", return_value="attestation"
+        ), patch.object(fido2_module, "CollectedClientData", return_value="client data"), patch.object(
+            fido2_module, "AttestationObject", return_value="attestation"
         ), patch.object(
-            auth, "AuthenticatorAttestationResponse", return_value="attestation response"
-        ), patch.object(fido2_module.auth, "RegistrationResponse", return_value="registration response"):
+            fido2_module, "AuthenticatorAttestationResponse", return_value="attestation response"
+        ), patch.object(fido2_module, "RegistrationResponse", return_value="registration response"):
             response = fido2_module.add_credential(environ)
 
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
