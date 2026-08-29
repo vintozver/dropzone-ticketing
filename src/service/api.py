@@ -103,14 +103,14 @@ def dispatch(environ: dict):
                 return _method_not_allowed(["GET"])
             users = []
             users_query = User.objects.aggregate(
-                {
+                [{
                     "$project": {
                         "_id": 1,
                         "display_name": 1,
                         "email": 1,
                         "external_id": {"$ifNull": [f"$partner_uid_map.{partner.id}", None]},
                     }
-                }
+                }]
             )
             for user in users_query:
                 users.append({"external_id": user["external_id"], "internal_id": str(user["_id"]),
