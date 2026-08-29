@@ -104,6 +104,22 @@ def dispatch(environ: dict, handlers):
             return method_not_allowed(["GET"])
         return render("index.html", authenticated=handlers._is_authenticated(environ))
 
+    if path == "/admin":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_admin(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._admin_index()
+
+    if path == "/admin/user/list":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_admin(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._list_users()
+
     if path == "/admin/user/new":
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
@@ -116,12 +132,17 @@ def dispatch(environ: dict, handlers):
 
     admin_user_match = _ADMIN_USER_VIEW_PATH_RE.match(path)
     if admin_user_match:
-        if method != "GET":
-            return method_not_allowed(["GET"])
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
         auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
-        return handlers._view_user(admin_user_match.group(1))
+        if method == "GET":
+            return handlers._view_user(admin_user_match.group(1))
+        return handlers._update_user(
+            admin_user_match.group(1),
+            handlers._read_form(environ),
+        )
 
     if path == "/issue":
         if method not in {"GET", "POST"}:

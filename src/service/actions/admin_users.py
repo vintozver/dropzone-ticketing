@@ -21,6 +21,17 @@ def new_user(*, render):
     return _render_new_user(render)
 
 
+def admin_index(*, render):
+    return render("admin.html")
+
+
+def list_users(*, user_class, render):
+    return render(
+        "admin_user_list.html",
+        users=user_class.objects().order_by("display_name", "id"),
+    )
+
+
 def create_user(form, *, user_class, google_credential_class, microsoft_credential_class, render):
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().casefold()
@@ -111,7 +122,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""
 
 
-def view_user(user_id, *, user_class, render):
+def _find_user(user_id, *, user_class, render):
     try:
         object_id = ObjectId(user_id)
     except (InvalidId, TypeError):
@@ -119,6 +130,13 @@ def view_user(user_id, *, user_class, render):
     user = user_class.objects(id=object_id).first()
     if user is None:
         return render("error.html", HTTPStatus.NOT_FOUND, message="User not found.")
+    return user
+
+
+def view_user(user_id, *, user_class, render):
+    user = _find_user(user_id, user_class=user_class, render=render)
+    if isinstance(user, tuple):
+        return user
 
     fido2_credentials = [
         {
@@ -138,3 +156,56 @@ def view_user(user_id, *, user_class, render):
         user=user,
         fido2_credentials=fido2_credentials,
     )
+
+
+def update_user(user_id, form, *, user_class, render):
+    user = _find_user(user_id, user_class=user_class, render=render)
+    if isinstance(user, tuple):
+        return user
+
+    action = form.get("action", "update")
+    if action == "update":
+        name = form.get("name", "").strip()
+        email = form.get("email", "").strip().casefold()
+        role = form.get("role", "")
+        if not name or len(name) > 200:
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="A valid name is required.")
+        if email and ("@" not in email or len(email) > 320):
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="A valid email address is required.")
+        if role not in USER_ROLES:
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a role.")
+        user.display_name = name
+        user.email = email or None
+        user.roles = [role]
+    elif action == "remove_google":
+        email = form.get("credential", "").strip().casefold()
+        user.google_credentials = [
+            credential for credential in user.google_credentials if credential.email.casefold() != email
+        ]
+    elif action == "remove_microsoft":
+        email = form.get("credential", "").strip().casefold()
+        user.microsoft_credentials = [
+            credential for credential in user.microsoft_credentials if credential.email.casefold() != email
+        ]
+    elif action == "remove_fido2":
+        try:
+            credential_id = bytes.fromhex(form.get("credential", ""))
+        except ValueError:
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid credential.")
+        user.fido2_credentials = [
+            credential for credential in user.fido2_credentials if credential.id != credential_id
+        ]
+    else:
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid action.")
+
+    try:
+        user.save()
+    except NotUniqueError:
+        return render(
+            "error.html",
+            HTTPStatus.CONFLICT,
+            message="A user with this email address already exists.",
+        )
+    except ValidationError:
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="User details are invalid.")
+    return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""

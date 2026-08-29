@@ -29,7 +29,7 @@ from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import microsoft as microsoft_module
 from dropzone_ticketing.service import register as register_module
-from dropzone_ticketing.service.actions.admin_users import create_user, view_user
+from dropzone_ticketing.service.actions.admin_users import create_user, list_users, update_user, view_user
 from dropzone_ticketing.service.actions.search_users import search_users
 from dropzone_ticketing.service.actions.view_issued_tickets import view_issued_tickets
 from dropzone_ticketing.service.actions.view_redeemed_tickets import view_redeemed_tickets
@@ -156,6 +156,83 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"google@example.test", body)
         self.assertIn(b"microsoft@example.test", body)
         self.assertIn(b"admin", body)
+
+    def test_admin_user_list_shows_profiles_and_credentials(self) -> None:
+        user = SimpleNamespace(
+            id=ObjectId("507f1f77bcf86cd799439011"),
+            display_name="Jane",
+            email="jane@example.test",
+            roles=["admin"],
+            fido2_credentials=[SimpleNamespace(id=b"credential")],
+            google_credentials=[SimpleNamespace(email="google@example.test")],
+            microsoft_credentials=[SimpleNamespace(email="microsoft@example.test")],
+        )
+        users = MagicMock()
+        users.order_by.return_value = [user]
+        user_class = MagicMock()
+        user_class.objects.return_value = users
+
+        status, _headers, body = list_users(user_class=user_class, render=service._render)
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(b'href="/admin/user/view/507f1f77bcf86cd799439011"', body)
+        for expected in (b"Jane", b"admin", b"jane@example.test", b"google@example.test", b"microsoft@example.test"):
+            self.assertIn(expected, body)
+
+    def test_admin_updates_user_profile_without_email_validation_flow(self) -> None:
+        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
+        user_class = MagicMock()
+        user_class.objects.return_value.first.return_value = user
+
+        status, headers, _body = update_user(
+            str(user.id),
+            {
+                "action": "update",
+                "name": "Jane Updated",
+                "email": "NEW@EXAMPLE.TEST",
+                "role": "solo",
+            },
+            user_class=user_class,
+            render=MagicMock(),
+        )
+
+        self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
+        self.assertEqual(headers, [("Location", f"/admin/user/view/{user.id}")])
+        self.assertEqual(user.display_name, "Jane Updated")
+        self.assertEqual(user.email, "new@example.test")
+        self.assertEqual(user.roles, ["solo"])
+        user.save.assert_called_once_with()
+
+    def test_admin_removes_external_credentials(self) -> None:
+        for action, collection in (
+            ("remove_google", "google_credentials"),
+            ("remove_microsoft", "microsoft_credentials"),
+        ):
+            with self.subTest(action=action):
+                user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
+                setattr(
+                    user,
+                    collection,
+                    [
+                        SimpleNamespace(email="remove@example.test"),
+                        SimpleNamespace(email="keep@example.test"),
+                    ],
+                )
+                user_class = MagicMock()
+                user_class.objects.return_value.first.return_value = user
+
+                update_user(
+                    str(user.id),
+                    {"action": action, "credential": "remove@example.test"},
+                    user_class=user_class,
+                    render=MagicMock(),
+                )
+
+                self.assertEqual(
+                    [credential.email for credential in getattr(user, collection)],
+                    ["keep@example.test"],
+                )
+                user.save.assert_called_once_with()
 
     def test_pdf_filename_is_safe_for_response_headers(self) -> None:
         self.assertEqual(service._safe_filename("Jane\r\nJumper / ✈"), "tickets-Jane-Jumper.pdf")
@@ -774,8 +851,33 @@ class ServiceApplicationTest(unittest.TestCase):
             admin_response = self.request("/")
         user_response = self.request("/", roles=["solo"])
 
-        self.assertIn(b'href="/admin/user/new"', admin_response["body"])
-        self.assertNotIn(b'href="/admin/user/new"', user_response["body"])
+        self.assertIn(b'href="/admin">Admin</a>', admin_response["body"])
+        self.assertNotIn(b'href="/admin/user/new"', admin_response["body"])
+        self.assertNotIn(b'href="/admin">Admin</a>', user_response["body"])
+
+    def test_admin_page_lists_admin_functions(self) -> None:
+        response = self.request("/admin")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertIn(b'href="/admin/user/list">Users</a>', response["body"])
+        self.assertIn(b'href="/admin/user/new">Add user</a>', response["body"])
+
+    def test_admin_user_list_route_uses_handler(self) -> None:
+        with patch.object(service, "_list_users", return_value=(service.HTTPStatus.OK, [], b"users")) as handler:
+            response = self.request("/admin/user/list")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"], b"users")
+        handler.assert_called_once_with()
+
+    def test_admin_user_update_route_uses_handler(self) -> None:
+        user_id = "507f1f77bcf86cd799439011"
+        form = {"action": "update", "name": "Jane", "email": "", "role": "solo"}
+        with patch.object(service, "_update_user", return_value=(service.HTTPStatus.SEE_OTHER, [], b"")) as handler:
+            response = self.request(f"/admin/user/view/{user_id}", "POST", form)
+
+        self.assertEqual(response["status"], "303 See Other")
+        handler.assert_called_once_with(user_id, form)
 
     def test_admin_new_user_route_requires_admin_role(self) -> None:
         with patch.object(

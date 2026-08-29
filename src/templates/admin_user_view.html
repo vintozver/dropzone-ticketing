@@ -2,6 +2,18 @@
 {% block title %}User {{ user.display_name or user.id }}{% endblock %}
 {% block content %}
   <h1>User {{ user.display_name or user.id }}</h1>
+  <form method="post">
+    <input type="hidden" name="action" value="update">
+    <label>Name <input name="name" type="text" maxlength="200" required value="{{ user.display_name or '' }}"></label>
+    <label>Email <input name="email" type="email" maxlength="320" value="{{ user.email or '' }}"></label>
+    <label>Role
+      <select name="role" required>
+        <option value="solo" {% if 'solo' in user.roles %}selected{% endif %}>Solo</option>
+        <option value="admin" {% if 'admin' in user.roles %}selected{% endif %}>Administrator</option>
+      </select>
+    </label>
+    <button type="submit">Save</button>
+  </form>
   <dl>
     <dt>ID</dt><dd><code>{{ user.id }}</code></dd>
     <dt>Name</dt><dd>{{ user.display_name or '' }}</dd>
@@ -21,16 +33,33 @@
         <dt>AAGUID</dt><dd><code>{{ credential.aaguid }}</code></dd>
         <dt>Extensions</dt><dd><pre>{{ credential.extensions }}</pre></dd>
       </dl>
+      <form method="post">
+        <input type="hidden" name="action" value="remove_fido2">
+        <input type="hidden" name="credential" value="{{ credential.id }}">
+        <button type="submit">Remove</button>
+      </form>
     {% endfor %}
   {% else %}<p>None</p>{% endif %}
 
   <h2>Google credentials</h2>
   {% if user.google_credentials %}
-    <ul>{% for credential in user.google_credentials %}<li>{{ credential.email }}</li>{% endfor %}</ul>
+    <ul>{% for credential in user.google_credentials %}<li>{{ credential.email }}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="action" value="remove_google">
+        <input type="hidden" name="credential" value="{{ credential.email }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>{% endfor %}</ul>
   {% else %}<p>None</p>{% endif %}
 
   <h2>Microsoft credentials</h2>
   {% if user.microsoft_credentials %}
-    <ul>{% for credential in user.microsoft_credentials %}<li>{{ credential.email }}</li>{% endfor %}</ul>
+    <ul>{% for credential in user.microsoft_credentials %}<li>{{ credential.email }}
+      <form method="post" style="display:inline">
+        <input type="hidden" name="action" value="remove_microsoft">
+        <input type="hidden" name="credential" value="{{ credential.email }}">
+        <button type="submit">Remove</button>
+      </form>
+    </li>{% endfor %}</ul>
   {% else %}<p>None</p>{% endif %}
 {% endblock %}

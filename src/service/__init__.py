@@ -14,8 +14,11 @@ from ..model.auth import User
 from ..model.ticket import UserRef
 
 from . import auth as _auth_module
+from .actions.admin_users import admin_index as _admin_index_action
 from .actions.admin_users import create_user as _create_user_action
+from .actions.admin_users import list_users as _list_users_action
 from .actions.admin_users import new_user as _new_user_action
+from .actions.admin_users import update_user as _update_user_action
 from .actions.admin_users import view_user as _view_user_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
@@ -156,8 +159,20 @@ def _new_user():
     return _new_user_action(render=_render)
 
 
+def _admin_index():
+    return _admin_index_action(render=_render)
+
+
+def _list_users():
+    return _list_users_action(user_class=User, render=_render)
+
+
 def _view_user(user_id: str):
     return _view_user_action(user_id, user_class=User, render=_render)
+
+
+def _update_user(user_id: str, form: dict[str, str]):
+    return _update_user_action(user_id, form, user_class=User, render=_render)
 
 
 def _method_not_allowed(allowed):
