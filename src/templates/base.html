@@ -15,7 +15,9 @@
         {% if not authenticated %}
           <a href="/authn">Sign in</a>
         {% endif %}
-        <a href="/issue">Issue tickets</a>
+        {% if 'admin' in current_user_roles %}
+          <a href="/issue">Issue tickets</a>
+        {% endif %}
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>
         {% if 'admin' in current_user_roles %}

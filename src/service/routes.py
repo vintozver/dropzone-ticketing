@@ -126,7 +126,7 @@ def dispatch(environ: dict, handlers):
     if path == "/issue":
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
@@ -150,7 +150,7 @@ def dispatch(environ: dict, handlers):
         auth_response = handlers._require_auth(environ)
         if auth_response is not None:
             return auth_response
-        return handlers._view_ticket(ticket_match.group(1))
+        return handlers._view_ticket(ticket_match.group(1), handlers._current_user_ref(environ))
 
     if path == "/tickets":
         if method != "GET":
@@ -158,6 +158,9 @@ def dispatch(environ: dict, handlers):
         auth_response = handlers._require_auth(environ)
         if auth_response is not None:
             return auth_response
+        current_user = handlers._current_user_ref(environ)
+        if "admin" not in current_user.get("roles", []):
+            return handlers._view_owner_tickets(str(current_user["id"]), None)
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
         user_id = query.get("user_id", [None])[0]
         display_name = query.get("display_name", [None])[0]
@@ -168,7 +171,7 @@ def dispatch(environ: dict, handlers):
     if path == "/users/search":
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True).get("q", [""])[0]
@@ -179,7 +182,7 @@ def dispatch(environ: dict, handlers):
     if path == "/reports/redeemed":
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         return handlers._view_redeemed_tickets()
@@ -187,7 +190,7 @@ def dispatch(environ: dict, handlers):
     if path == "/reports/issued":
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         return handlers._view_issued_tickets()
@@ -195,7 +198,7 @@ def dispatch(environ: dict, handlers):
     if path == "/print":
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)

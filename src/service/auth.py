@@ -253,7 +253,11 @@ def current_user_ref(environ: dict) -> dict[str, object] | None:
     user = _session_user(environ)
     if user is None:
         return None
-    return {"id": user.id, "display_name": user.display_name or str(user.id)}
+    return {
+        "id": user.id,
+        "display_name": user.display_name or str(user.id),
+        "roles": list(user.roles),
+    }
 
 
 def current_user_roles(environ: dict) -> list[str]:

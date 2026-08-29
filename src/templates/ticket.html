@@ -13,5 +13,5 @@
     <dt>Redeemed by</dt><dd>{{ ticket.redeemed_by }}</dd>
     <dt>Redemption reason</dt><dd>{{ ticket.redeemed_reason }}</dd>
   </dl>
-  <p><a href="/print?id={{ ticket.id|urlencode }}">Print this ticket as PDF</a></p>
+  {% if can_print %}<p><a href="/print?id={{ ticket.id|urlencode }}">Print this ticket as PDF</a></p>{% endif %}
 {% endblock %}

@@ -118,7 +118,7 @@ class ServiceHelperTest(unittest.TestCase):
                         "name": "Jane",
                         "email": "jane@example.test",
                         "identity_type": identity_type,
-                        "role": "user",
+                        "role": "solo",
                     },
                     user_class=user_class,
                     google_credential_class=service._auth_module.GoogleCredential,
@@ -210,7 +210,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         status, _headers, body = service._redeem(
             {"codes": "active used missing", "reason": " jump "},
-            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1"},
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1", "roles": ["admin"]},
         )
 
         self.assertEqual(status, service.HTTPStatus.OK)
@@ -233,10 +233,31 @@ class ServiceHelperTest(unittest.TestCase):
 
         service._redeem(
             {"codes": "active", "reason": "  "},
-            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1"},
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1", "roles": ["admin"]},
         )
 
         self.assertIsNone(active.redeemed.reason)
+
+    @patch.object(service, "Ticket")
+    def test_solo_user_cannot_redeem_another_users_ticket(self, ticket_class) -> None:
+        active = MagicMock(
+            redeemed=None,
+            issued_to=user_ref("Other", object_id="507f1f77bcf86cd799439099"),
+        )
+        ticket_class.objects.return_value.first.return_value = active
+
+        status, _headers, body = service._redeem(
+            {"codes": "active"},
+            {
+                "id": ObjectId("507f1f77bcf86cd7994390aa"),
+                "display_name": "Solo",
+                "roles": ["solo"],
+            },
+        )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertIn(b"not permitted", body)
+        active.save.assert_not_called()
 
     @patch.object(service, "Ticket")
     def test_issue_confirms_the_just_issued_tickets(self, ticket_class) -> None:
@@ -446,7 +467,7 @@ class ServiceHelperTest(unittest.TestCase):
 
         service._redeem(
             {"codes": "active"},
-            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1"},
+            {"id": ObjectId("507f1f77bcf86cd7994390aa"), "display_name": "redeemer-1", "roles": ["admin"]},
         )
 
         self.assertEqual(active.redeemed.by.id, ObjectId("507f1f77bcf86cd7994390aa"))
@@ -612,7 +633,10 @@ class ServiceHelperTest(unittest.TestCase):
         ticket_class.objects.return_value.first.return_value = ticket
 
         with patch.object(config, "_file_config", return_value={"timezone": "America/Los_Angeles"}):
-            status, _headers, body = service._view_ticket("64e3b8000000000000000000")
+            status, _headers, body = service._view_ticket(
+                "64e3b8000000000000000000",
+                {"roles": ["admin"]},
+            )
 
         self.assertEqual(status, service.HTTPStatus.OK)
         ticket_class.objects.assert_called_once_with(id=ObjectId("64e3b8000000000000000000"))
@@ -639,16 +663,41 @@ class ServiceHelperTest(unittest.TestCase):
         )
         ticket_class.objects.return_value.first.return_value = ticket
 
-        status, _headers, body = service._view_ticket("64e3b8000000000000000000")
+        status, _headers, body = service._view_ticket(
+            "64e3b8000000000000000000",
+            {"roles": ["admin"]},
+        )
 
         self.assertEqual(status, service.HTTPStatus.OK)
         self.assertIn(b"<dt>Redeemed by</dt><dd></dd>", body)
         self.assertIn(b"<dt>Redemption reason</dt><dd></dd>", body)
         self.assertNotIn(b"unknown", body)
 
+    @patch.object(service, "Ticket")
+    def test_solo_user_cannot_view_another_users_ticket(self, ticket_class) -> None:
+        ticket_class.objects.return_value.first.return_value = SimpleNamespace(
+            issued_to=user_ref("Other", object_id="507f1f77bcf86cd799439099"),
+        )
+
+        status, _headers, body = service._view_ticket(
+            "64e3b8000000000000000000",
+            {"id": ObjectId("507f1f77bcf86cd799439011"), "roles": ["solo"]},
+        )
+
+        self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
+        self.assertIn(b"Permission denied.", body)
+
 
 class ServiceApplicationTest(unittest.TestCase):
-    def request(self, path: str, method: str = "GET", form: Optional[dict] = None, authenticated: bool = True):
+    def request(
+        self,
+        path: str,
+        method: str = "GET",
+        form: Optional[dict] = None,
+        authenticated: bool = True,
+        roles: Optional[list[str]] = None,
+    ):
+        roles = roles if roles is not None else ["admin"]
         body = urlencode(form or {}).encode()
         environ = {
             "PATH_INFO": path,
@@ -668,8 +717,24 @@ class ServiceApplicationTest(unittest.TestCase):
             service._auth_module, "_is_authenticated", return_value=authenticated
         ), patch.object(
             service._auth_module,
+            "_session_user",
+            return_value=SimpleNamespace(
+                id=ObjectId("507f1f77bcf86cd799439011"),
+                display_name="Jane",
+                roles=roles,
+            )
+            if authenticated
+            else None,
+        ), patch.object(
+            service._auth_module,
             "current_user_ref",
-            return_value={"id": ObjectId("507f1f77bcf86cd799439011"), "display_name": "Jane"} if authenticated else None,
+            return_value={
+                "id": ObjectId("507f1f77bcf86cd799439011"),
+                "display_name": "Jane",
+                "roles": roles,
+            }
+            if authenticated
+            else None,
         ):
             response["body"] = b"".join(service.application(environ, start_response))
         return response
@@ -707,7 +772,7 @@ class ServiceApplicationTest(unittest.TestCase):
     def test_admin_navigation_is_only_shown_to_administrators(self) -> None:
         with patch.object(service._auth_module, "current_user_roles", return_value=["admin"]):
             admin_response = self.request("/")
-        user_response = self.request("/")
+        user_response = self.request("/", roles=["solo"])
 
         self.assertIn(b'href="/admin/user/new"', admin_response["body"])
         self.assertNotIn(b'href="/admin/user/new"', user_response["body"])
@@ -828,14 +893,14 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"], b"ticket")
-        handler.assert_called_once_with("64e3b8000000000000000000")
+        handler.assert_called_once_with("64e3b8000000000000000000", ANY)
 
     def test_ticket_detail_route_accepts_a_trailing_slash(self) -> None:
         with patch.object(service, "_view_ticket", return_value=(service.HTTPStatus.OK, [], b"ticket")) as handler:
             response = self.request("/ticket/64e3b8000000000000000000/")
 
         self.assertEqual(response["status"], "200 OK")
-        handler.assert_called_once_with("64e3b8000000000000000000")
+        handler.assert_called_once_with("64e3b8000000000000000000", ANY)
 
     def test_ticket_detail_route_requires_an_object_id_path(self) -> None:
         with patch.object(service, "_view_ticket") as handler:
@@ -849,6 +914,21 @@ class ServiceApplicationTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "303 See Other")
         self.assertEqual(response["headers"]["Location"], "/authn?return_uri=%2Fissue")
+
+    def test_solo_user_only_lists_their_own_tickets(self) -> None:
+        with patch.object(service, "_view_owner_tickets", return_value=(service.HTTPStatus.OK, [], b"own")) as handler:
+            response = self.request(
+                "/tickets",
+                roles=["solo"],
+            )
+
+        self.assertEqual(response["status"], "200 OK")
+        handler.assert_called_once_with("507f1f77bcf86cd799439011", None)
+
+    def test_solo_user_cannot_issue_tickets(self) -> None:
+        response = self.request("/issue", roles=["solo"])
+
+        self.assertEqual(response["status"], "403 Forbidden")
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")

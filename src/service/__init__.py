@@ -102,8 +102,8 @@ def _view_owner_tickets(user_id: str | None, display_name: str | None):
     return _view_owner_tickets_action(user_id, display_name, ticket_class=Ticket, render=_render)
 
 
-def _view_ticket(ticket_id: str):
-    return _view_ticket_action(ticket_id, ticket_class=Ticket, render=_render)
+def _view_ticket(ticket_id: str, viewer):
+    return _view_ticket_action(ticket_id, viewer, ticket_class=Ticket, render=_render)
 
 
 def _view_redeemed_tickets():

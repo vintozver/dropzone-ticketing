@@ -9,7 +9,7 @@ from mongoengine.errors import NotUniqueError, ValidationError
 
 
 _IDENTITY_TYPES = {"email", "google", "microsoft"}
-_ROLES = {"user", "admin"}
+_ROLES = {"solo", "admin"}
 
 
 def _render_new_user(render, status=HTTPStatus.OK, **context):
@@ -21,7 +21,7 @@ def _render_new_user(render, status=HTTPStatus.OK, **context):
             ("google", "Google"),
             ("microsoft", "Microsoft"),
         ),
-        roles=(("user", "User"), ("admin", "Administrator")),
+        roles=(("solo", "Solo"), ("admin", "Administrator")),
         **context,
     )
 
