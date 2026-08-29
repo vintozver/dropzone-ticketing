@@ -180,17 +180,24 @@ def _ticket_redeem_report(partner: Partner, *, start: datetime, end: datetime):
             for user in User.objects(id__in=user_ids).only("id", "display_name", "partner_uid_map")
         }
 
-    report = []
+    groups = {}
     for ticket in tickets:
         redeemed = ticket.redeemed
         issued_to = ticket.issued_to
         internal_id = str(issued_to.id) if issued_to and issued_to.id is not None else None
         user = users_by_id.get(internal_id) if internal_id else None
-        if user is None:
-            continue
-        external_id = (user.partner_uid_map or {}).get(str(partner.id))
-        if external_id is None:
-            continue
+        external_id = (user.partner_uid_map or {}).get(str(partner.id)) if user is not None else None
+        display_name = (user.display_name if user is not None else None) or (issued_to.display_name if issued_to else None)
+        group_key = ("id", internal_id) if internal_id is not None else ("name", display_name or "")
+        group = groups.setdefault(
+            group_key,
+            {
+                "internal_id": internal_id,
+                "external_id": external_id,
+                "display_name": display_name,
+                "tickets": [],
+            },
+        )
 
         redeemed_by = None
         if redeemed.by:
@@ -198,18 +205,11 @@ def _ticket_redeem_report(partner: Partner, *, start: datetime, end: datetime):
                 "internal_id": str(redeemed.by.id) if redeemed.by.id is not None else None,
                 "display_name": redeemed.by.display_name,
             }
-        report.append(
+        group["tickets"].append(
             {
-                "user": {
-                    "internal_id": internal_id,
-                    "external_id": external_id,
-                    "display_name": user.display_name or (issued_to.display_name if issued_to else None),
-                },
-                "ticket": {
-                    "internal_id": str(ticket.id),
-                    "payment": ticket.payment,
-                    "purpose": ticket.purpose,
-                },
+                "internal_id": str(ticket.id),
+                "payment": ticket.payment,
+                "purpose": ticket.purpose,
                 "redeemed": {
                     "at": redeemed.dt.isoformat() if redeemed.dt else None,
                     "by": redeemed_by,
@@ -217,4 +217,4 @@ def _ticket_redeem_report(partner: Partner, *, start: datetime, end: datetime):
                 },
             }
         )
-    return report
+    return list(groups.values())
