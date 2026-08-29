@@ -8,7 +8,7 @@ from http import HTTPStatus
 from bson import ObjectId
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, padding
+from cryptography.hazmat.primitives.asymmetric import ec, padding
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from cryptography.exceptions import InvalidSignature
 
@@ -106,6 +106,11 @@ def _payload(environ: dict, claims: dict) -> dict:
             raise ValueError("Request body must be JSON.") from exc
         if not isinstance(value, dict):
             raise ValueError("Request body must be a JSON object.")
+        signed_fields = {name: claims.get(name) for name in ("internal_id", "external_id") if name in claims}
+        if signed_fields and any(value.get(name) != item for name, item in signed_fields.items()):
+            raise PermissionError("Signed request does not match the request body.")
+        if not signed_fields:
+            raise PermissionError("The request body must be included in the signed JWT.")
         return value
     return claims
 
