@@ -138,7 +138,14 @@ class ServiceHelperTest(unittest.TestCase):
             display_name="Jane",
             email="jane@example.test",
             roles=["admin"],
-            fido2_credentials=[],
+            fido2_credentials=[
+                SimpleNamespace(
+                    id=b"credential",
+                    dt=datetime(2026, 8, 29, tzinfo=timezone.utc),
+                    attestation_aaguid=None,
+                    extensions=None,
+                )
+            ],
             google_credentials=[SimpleNamespace(email="google@example.test")],
             microsoft_credentials=[SimpleNamespace(email="microsoft@example.test")],
         )
@@ -155,6 +162,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"jane@example.test", body)
         self.assertIn(b"google@example.test", body)
         self.assertIn(b"microsoft@example.test", body)
+        self.assertIn(b'value="63726564656e7469616c"', body)
         self.assertIn(b"admin", body)
 
     def test_admin_user_list_shows_profiles_and_credentials(self) -> None:

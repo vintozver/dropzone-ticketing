@@ -28,14 +28,14 @@
   {% if fido2_credentials %}
     {% for credential in fido2_credentials %}
       <dl>
-        <dt>ID</dt><dd><code>{{ credential.id }}</code></dd>
+        <dt>ID</dt><dd><code>{{ credential.encoded_id }}</code></dd>
         <dt>Registered at</dt><dd>{{ credential.dt|datetime }}</dd>
         <dt>AAGUID</dt><dd><code>{{ credential.aaguid }}</code></dd>
         <dt>Extensions</dt><dd><pre>{{ credential.extensions }}</pre></dd>
       </dl>
       <form method="post">
         <input type="hidden" name="action" value="remove_fido2">
-        <input type="hidden" name="credential" value="{{ credential.id }}">
+        <input type="hidden" name="credential" value="{{ credential.encoded_id }}">
         <button type="submit">Remove</button>
       </form>
     {% endfor %}

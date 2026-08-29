@@ -137,7 +137,7 @@ def view_user(user_id, *, user_class, render):
 
     fido2_credentials = [
         {
-            "id": credential.id.hex(),
+            "encoded_id": credential.id.hex(),
             "dt": credential.dt,
             "aaguid": credential.attestation_aaguid.hex() if credential.attestation_aaguid else "",
             "extensions": (
