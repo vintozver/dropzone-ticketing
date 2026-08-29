@@ -191,12 +191,19 @@ def _ticket_redeem_report(partner: Partner, *, day: str):
             external_id = (user.partner_uid_map or {}).get(str(partner.id))
 
         redeemed = ticket.redeemed
+        redeemed_by = None
+        if redeemed and redeemed.by:
+            redeemed_by = {
+                "internal_id": str(redeemed.by.id) if redeemed.by.id is not None else None,
+                "display_name": redeemed.by.display_name,
+            }
         report.append(
             {
                 "user": {
                     "internal_id": internal_id,
                     "external_id": external_id,
-                    "display_name": (issued_to.display_name if issued_to else None) or (user.display_name if user is not None else None),
+                    "display_name": (user.display_name if user is not None else None)
+                    or (issued_to.display_name if issued_to else None),
                 },
                 "ticket": {
                     "internal_id": str(ticket.id),
@@ -206,10 +213,7 @@ def _ticket_redeem_report(partner: Partner, *, day: str):
                 },
                 "redeemed": {
                     "at": redeemed.dt.isoformat() if redeemed and redeemed.dt else None,
-                    "by": {
-                        "internal_id": str(redeemed.by.id) if redeemed and redeemed.by and redeemed.by.id is not None else None,
-                        "display_name": redeemed.by.display_name if redeemed and redeemed.by else None,
-                    },
+                    "by": redeemed_by,
                     "reason": redeemed.reason if redeemed else None,
                 },
             }

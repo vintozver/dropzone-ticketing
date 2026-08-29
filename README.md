@@ -54,9 +54,11 @@ Partners call these endpoints with an Authorization header carrying a bearer JWT
   signed JWT claims.
 * `GET /api/report/ticket-redeem/today` returns tickets redeemed today.
 * `GET /api/report/ticket-redeem/yesterday` returns tickets redeemed yesterday.
-  Each item includes `user` (`internal_id`, `external_id`, `display_name`),
-  `ticket` (`internal_id`, `code`, `payment`, `purpose`), and `redeemed`
-  (`at`, `by`, `reason`) details.
+
+Both endpoints return arrays where each item includes `user`
+(`internal_id`, `external_id`, `display_name`), `ticket`
+(`internal_id`, `code`, `payment`, `purpose`), and `redeemed`
+(`at`, `by`, `reason`) details.
 
 The JWT must use a `partner` header containing the partner ObjectId and a `kid`
 header selecting a configured key. If present, the `exp` claim is validated.

@@ -904,7 +904,7 @@ class ServiceApiTest(unittest.TestCase):
                     "user": {
                         "internal_id": str(user_id),
                         "external_id": "ext-jane",
-                        "display_name": "Jane",
+                        "display_name": "Jane Admin",
                     },
                     "ticket": {
                         "internal_id": "64e3b8000000000000000000",
