@@ -97,11 +97,21 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
 
     try:
         user.save()
-    except (NotUniqueError, ValidationError):
+    except NotUniqueError:
         return _render_new_user(
             render,
             HTTPStatus.CONFLICT,
             error="A user with this email credential already exists.",
+            name=name,
+            email=email,
+            identity_type=identity_type,
+            role=role,
+        )
+    except ValidationError:
+        return _render_new_user(
+            render,
+            HTTPStatus.BAD_REQUEST,
+            error="User details are invalid.",
             name=name,
             email=email,
             identity_type=identity_type,
