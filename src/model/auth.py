@@ -59,7 +59,7 @@ class User(mongoengine.Document):
         "db_alias": mongoengine_alias,
         "indexes": [
             {"fields": ["display_name"]},
-            {"fields": ["fido2_credentials._id"], "unique": True},
+            {"fields": ["fido2_credentials._id"], "unique": True, "sparse": True},
             {"fields": ["google_credentials.email"], "unique": True, "sparse": True},
             {"fields": ["microsoft_credentials.email"], "unique": True, "sparse": True},
         ],
