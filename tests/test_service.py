@@ -25,6 +25,7 @@ from mongoengine.errors import NotUniqueError
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import config
+from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import microsoft as microsoft_module
 from dropzone_ticketing.service import register as register_module
@@ -720,7 +721,7 @@ class ServiceApplicationTest(unittest.TestCase):
         response = self.request("/issue", authenticated=False)
 
         self.assertEqual(response["status"], "303 See Other")
-        self.assertEqual(response["headers"]["Location"], "/authn")
+        self.assertEqual(response["headers"]["Location"], "/authn?return_uri=%2Fissue")
 
     def test_unknown_path_is_not_found(self) -> None:
         response = self.request("/missing")
@@ -797,9 +798,9 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "User", user_class
-        ), patch.object(auth, "_credential_data", return_value="credential data"):
+        ), patch.object(fido2_module, "credential_data", return_value="credential data"):
             _status, headers, body = auth.begin_authn(environ)
 
         server.authenticate_begin.assert_called_once_with(["credential data"], challenge=ANY)
@@ -811,6 +812,26 @@ class ServiceAuthnTest(unittest.TestCase):
         self.assertIn(b"registrationOptions = null", body)
         self.assertNotIn(b"Register credential", body)
 
+    def test_authn_begin_remembers_the_requested_return_uri(self) -> None:
+        auth = service._auth_module
+        server = MagicMock()
+        server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge")}
+        user_class = MagicMock()
+        user_class.objects.return_value.only.return_value = []
+        environ = {
+            "PATH_INFO": "/authn",
+            "QUERY_STRING": "return_uri=%2Ftickets%3Fuser_id%3D123",
+            "HTTP_HOST": "example.test",
+            "wsgi.url_scheme": "https",
+        }
+
+        with patch.object(fido2_module, "server", return_value=server), patch.object(auth, "User", user_class):
+            _status, headers, _body = auth.begin_authn(environ)
+
+        cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_challenge=" in value)
+        payload = auth._unsign(cookie.split(";", 1)[0].split("=", 1)[1])
+        self.assertEqual(payload["return_uri"], "/tickets?user_id=123")
+
     def test_fido2_server_requests_enterprise_attestation(self) -> None:
         auth = service._auth_module
         environ = {
@@ -818,7 +839,7 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        server = auth._server(environ)
+        server = fido2_module.server(environ)
 
         self.assertEqual(server.attestation, AttestationConveyancePreference.ENTERPRISE)
 
@@ -826,14 +847,14 @@ class ServiceAuthnTest(unittest.TestCase):
         auth = service._auth_module
         challenge = b"challenge"
         cookie = "authn_challenge=" + auth._signed(
-            {"challenge": b64(challenge), "issued": auth.time()}
+            {"challenge": b64(challenge), "issued": auth.time(), "return_uri": "/issue"}
         )
         server = MagicMock()
         credential = SimpleNamespace(id=b"credential")
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "_find_credential", return_value=credential
-        ), patch.object(auth, "_credential_data", return_value="credential data"):
+        ), patch.object(fido2_module, "credential_data", return_value="credential data"):
             response = self.request(
                 "/authn",
                 "POST",
@@ -848,7 +869,7 @@ class ServiceAuthnTest(unittest.TestCase):
             )
 
         self.assertEqual(response["status"], "303 See Other")
-        self.assertEqual(response["headers"]["Location"], "/")
+        self.assertEqual(response["headers"]["Location"], "/issue")
         self.assertIn("authn_session=", "\n".join(value for name, value in response["raw_headers"] if name == "Set-Cookie"))
         server.authenticate_complete.assert_called_once()
 
@@ -886,7 +907,7 @@ class ServiceAuthnTest(unittest.TestCase):
         }
 
         with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=True)), patch.object(
-            auth, "_server", return_value=server
+            fido2_module, "server", return_value=server
         ), patch.object(auth, "User", user_class):
             _status, headers, body = auth.begin_register(environ)
 
@@ -966,7 +987,7 @@ class ServiceAuthnTest(unittest.TestCase):
         environ["CONTENT_LENGTH"] = str(environ["wsgi.input"].getbuffer().nbytes)
 
         with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=True)), patch.object(
-            auth, "_server", return_value=server
+            fido2_module, "server", return_value=server
         ), patch.object(auth, "User", user_class), patch.object(
             auth, "_find_credential", return_value=None
         ), patch.object(auth, "CollectedClientData", return_value="client data"), patch.object(
@@ -997,6 +1018,10 @@ class ServiceAuthnTest(unittest.TestCase):
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
             display_name="Jane",
+            email=None,
+            email_authentication=None,
+            google_credentials=[],
+            microsoft_credentials=[],
             fido2_credentials=[
                 SimpleNamespace(
                     id=b"abcdefgh",
@@ -1012,10 +1037,10 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=user), patch.object(
-            auth, "_credential_data", return_value="credential data"
+            fido2_module, "credential_data", return_value="credential data"
         ):
             _status, headers, body = auth.begin_authn(environ)
 
@@ -1052,7 +1077,7 @@ class ServiceAuthnTest(unittest.TestCase):
         )
         user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), fido2_credentials=[])
         environ = {
-            "PATH_INFO": "/authn/register",
+            "PATH_INFO": "/authn/fido2/add",
             "REQUEST_METHOD": "POST",
             "CONTENT_LENGTH": "0",
             "wsgi.input": io.BytesIO(
@@ -1071,14 +1096,14 @@ class ServiceAuthnTest(unittest.TestCase):
 
         with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=False)), patch.object(
             auth, "_session_user", return_value=user
-        ), patch.object(auth, "_server", return_value=server), patch.object(
+        ), patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "_find_credential", return_value=None
-        ), patch.object(auth, "CollectedClientData", return_value="client data"), patch.object(
-            auth, "AttestationObject", return_value="attestation"
+        ), patch.object(fido2_module, "CollectedClientData", return_value="client data"), patch.object(
+            fido2_module, "AttestationObject", return_value="attestation"
         ), patch.object(
-            auth, "AuthenticatorAttestationResponse", return_value="attestation response"
-        ), patch.object(auth, "RegistrationResponse", return_value="registration response"):
-            response = auth.complete_authn_register(environ)
+            fido2_module, "AuthenticatorAttestationResponse", return_value="attestation response"
+        ), patch.object(fido2_module, "RegistrationResponse", return_value="registration response"):
+            response = fido2_module.add_credential(environ)
 
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
@@ -1100,7 +1125,7 @@ class ServiceAuthnTest(unittest.TestCase):
         }
 
         with patch.object(auth, "_session_user", return_value=user):
-            status, headers, _body = auth.remove_fido2_credential(environ)
+            status, headers, _body = fido2_module.remove_credential(environ)
 
         self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
         self.assertEqual(dict(headers)["Location"], "/authn")
@@ -1170,16 +1195,18 @@ class ServiceAuthnTest(unittest.TestCase):
         user = SimpleNamespace(
             id=ObjectId("507f1f77bcf86cd799439011"),
             display_name="Jane",
+            email=None,
+            email_authentication=None,
             fido2_credentials=[],
             google_credentials=[SimpleNamespace(email="jane@gmail.test")],
             microsoft_credentials=[SimpleNamespace(email="jane@outlook.test")],
         )
         environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=user), patch.object(
-            auth, "_credential_data", return_value="credential data"
+            fido2_module, "credential_data", return_value="credential data"
         ):
             _status, _headers, body = auth.begin_authn(environ)
 
@@ -1192,7 +1219,7 @@ class ServiceAuthnTest(unittest.TestCase):
         server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge"), "user_verification": None}
         environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module, "server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=None):
             _status, _headers, body = auth.begin_authn(environ)

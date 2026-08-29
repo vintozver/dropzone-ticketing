@@ -12,25 +12,15 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 from uuid import UUID
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fido2.server import Fido2Server
 from mongoengine.errors import OperationError, ValidationError
-from fido2.webauthn import (
-    AuthenticatorAttestationResponse,
-    AttestationObject,
-    AttestationConveyancePreference,
-    CollectedClientData,
-    PublicKeyCredentialUserEntity,
-    PublicKeyCredentialRpEntity,
-    RegistrationResponse,
-)
-
 from .config import authn_config, session_secret
-from .http import error, read_form, render
+from .http import error, read_form, render, request_host
+from . import _fido2
 from ..model.auth import Fido2Credential, User
 from ..model.auth import EmailAuthentication
 from .email import code as generate_email_code, send_code
@@ -40,6 +30,7 @@ AUTHN_SESSION_COOKIE = "authn_session"
 AUTHN_CSRF_COOKIE = "authn_csrf"
 _CHALLENGE_TTL_SECONDS = 300
 _COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60
+_RETURN_URI_PARAM = "return_uri"
 _EMAIL_CODE_TTL_SECONDS = 300
 _EMAIL_RESEND_DELAY_SECONDS = 60
 _logger = logging.getLogger(__name__)
@@ -103,17 +94,45 @@ def _clear_cookie(name: str, *, path: str = "/") -> tuple[str, str]:
     return ("Set-Cookie", f"{name}=; Max-Age=0; Path={path}; Secure; HttpOnly; SameSite=Strict")
 
 
-def _request_host(environ: dict) -> str:
-    return environ.get("HTTP_HOST") or environ.get("SERVER_NAME") or "localhost"
+def _safe_return_uri(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    if "\\" in value or any(ord(character) < 0x20 for character in value):
+        return None
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return None
+    if parsed.path == "/authn" or parsed.path.startswith("/authn/"):
+        return None
+    return value
 
 
-def _rp_id(environ: dict) -> str:
-    return _request_host(environ).split(":", 1)[0]
+def return_uri(environ: dict) -> str:
+    query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+    requested = _safe_return_uri(query.get(_RETURN_URI_PARAM, [None])[0])
+    if requested is not None:
+        return requested
+    saved = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
+    if saved is not None:
+        saved_return_uri = _safe_return_uri(saved.get(_RETURN_URI_PARAM))
+        if saved_return_uri is not None:
+            return saved_return_uri
+    path = environ.get("PATH_INFO", "/")
+    query_string = environ.get("QUERY_STRING", "")
+    current = f"{path}?{query_string}" if query_string else path
+    return _safe_return_uri(current) or "/"
 
 
-def _origin(environ: dict) -> str:
-    scheme = environ.get("wsgi.url_scheme") or "http"
-    return f"{scheme}://{_request_host(environ)}"
+def _authn_url(destination: str) -> str:
+    return f"/authn?{urlencode({_RETURN_URI_PARAM: destination})}"
+
+
+def authentication_error(environ: dict, message: str, trace: str = "", destination: str | None = None):
+    """Render an authentication failure with a link that retries the original destination."""
+    from .http import render
+
+    destination = destination or return_uri(environ)
+    return render("error.html", HTTPStatus.FORBIDDEN, message=message, trace=trace, retry_uri=_authn_url(destination))
 
 
 def _json_options(options: object) -> object:
@@ -137,7 +156,11 @@ def _authn_state_from_cookie(environ: dict) -> dict[str, object] | None:
     challenge = payload.get("challenge")
     if not isinstance(challenge, str):
         return None
-    return {"challenge": challenge, "user_verification": None}
+    state = {"challenge": challenge, "user_verification": None}
+    saved_return_uri = _safe_return_uri(payload.get("return_uri"))
+    if saved_return_uri is not None:
+        state["return_uri"] = saved_return_uri
+    return state
 
 
 def _register_state_from_cookie(environ: dict) -> tuple[dict[str, object], str] | None:
@@ -287,14 +310,14 @@ def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
     challenge = secrets.token_bytes(32)
-    server = _server(environ)
+    fido2_server = _fido2.server(environ)
     credentials = [
         credential
         for user in User.objects().only("fido2_credentials")
         for credential in user.fido2_credentials
     ]
-    _options, _state = server.authenticate_begin(
-        [_credential_data(credential) for credential in credentials],
+    _options, _state = fido2_server.authenticate_begin(
+        [_fido2.credential_data(credential) for credential in credentials],
         challenge=challenge,
     )
     allow_credentials = [
@@ -302,16 +325,17 @@ def begin_authn(environ: dict):
         for credential in credentials
     ]
     user = _session_user(environ)
+    destination = return_uri(environ)
     registration_options = None
     register_state = None
     if user is not None:
-        register_options, register_state = server.register_begin(
-            PublicKeyCredentialUserEntity(
+        register_options, register_state = fido2_server.register_begin(
+            _fido2.PublicKeyCredentialUserEntity(
                 id=str(user.id).encode("utf-8"),
                 name=str(user.id),
                 display_name=user.display_name or str(user.id),
             ),
-            [_credential_data(credential) for credential in user.fido2_credentials],
+            [_fido2.credential_data(credential) for credential in user.fido2_credentials],
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
@@ -351,7 +375,9 @@ def begin_authn(environ: dict):
     else:
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
         email = query.get("email", [""])[0].strip().casefold()
-        if email:
+        pending_user = User.objects(email=email).first() if email else None
+        pending = pending_user.email_authentication if pending_user is not None else None
+        if pending is not None and pending.purpose == "signin" and time() - pending.issued.timestamp() <= _EMAIL_CODE_TTL_SECONDS:
             email_pending = True
             email_pending_address = email
             email_pending_purpose = "signin"
@@ -364,11 +390,14 @@ def begin_authn(environ: dict):
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
-        rp_id=_rp_id(environ),
+        rp_id=_fido2.rp_id(environ),
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         authenticated=user is not None,
         authn_csrf=authn_csrf,
+        return_uri=destination,
+        retry_uri=_authn_url(destination),
+        return_uri_param=_RETURN_URI_PARAM,
         current_display_name=user.display_name if user is not None and user.display_name is not None else "",
         email=user.email if user is not None and user.email is not None else "",
         email_pending=email_pending,
@@ -376,7 +405,7 @@ def begin_authn(environ: dict):
         email_pending_purpose=email_pending_purpose or "",
         **render_extras,
     )
-    payload = {"state": _state, "issued": time()}
+    payload = {"state": _state, "issued": time(), "return_uri": destination}
     if register_state is not None and user is not None:
         payload["register_state"] = register_state
         payload["register_user"] = str(user.id)
@@ -430,7 +459,8 @@ def send_email_code(environ: dict):
             traceback.format_exc(),
         )
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication code sent.")
-    headers = [("Location", f"/authn?email={quote(requested, safe='')}")]
+    destination = _safe_return_uri(form.get(_RETURN_URI_PARAM)) or "/"
+    headers = [("Location", f"/authn?{urlencode({'email': requested, _RETURN_URI_PARAM: destination})}")]
     return status, headers, body
 
 
@@ -477,111 +507,12 @@ def verify_email_code(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "User email authn code mismatch.")
     user.email_authentication = None
     user.save()
+    destination = _safe_return_uri(form.get(_RETURN_URI_PARAM)) or "/"
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [
-        ("Location", "/authn"),
+        ("Location", destination),
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
     ]
-    return status, headers, body
-
-
-def complete_authn(environ: dict):
-    state = _authn_state_from_cookie(environ)
-    if state is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication challenge is missing or expired.")
-    form = read_form(environ)
-    try:
-        response = {
-            "id": form.get("id", ""),
-            "rawId": form.get("rawId", ""),
-            "response": {
-                "clientDataJSON": form.get("clientDataJSON", ""),
-                "authenticatorData": form.get("authenticatorData", ""),
-                "signature": form.get("signature", ""),
-                "userHandle": form.get("userHandle", None),
-            },
-            "type": "public-key",
-        }
-        credential = _find_credential(form.get("rawId", ""))
-        if credential is None:
-            raise ValueError("Unknown credential.")
-        server = _server(environ)
-        stored = _credential_data(credential)
-        server.authenticate_complete(
-            state,
-            [stored],
-            response=response,
-        )
-        serial = _b64encode(credential.id)
-    except (binascii.Error, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 authentication failed.", traceback.format_exc())
-    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
-    headers = [
-        ("Location", "/"),
-        _cookie(AUTHN_SESSION_COOKIE, _signed({"serial": serial, "issued": time()})),
-        _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn"),
-    ]
-    return status, headers, body
-
-
-def _server(environ: dict) -> Fido2Server:
-    rp = PublicKeyCredentialRpEntity("dropzone-ticketing", _rp_id(environ))
-    return Fido2Server(
-        rp,
-        attestation=AttestationConveyancePreference.ENTERPRISE,
-        verify_origin=lambda origin: origin == _origin(environ),
-    )
-
-
-def _credential_data(credential: Fido2Credential):
-    from fido2.webauthn import AttestedCredentialData
-
-    return AttestedCredentialData(credential.data)
-
-
-def complete_authn_register(environ: dict):
-    if authn_config().register:
-        return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
-    user = _session_user(environ)
-    if user is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
-    register_state = _register_state_from_cookie(environ)
-    if register_state is None:
-        return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
-    state, state_user_id = register_state
-    if not hmac.compare_digest(str(user.id), state_user_id):
-        return error(HTTPStatus.FORBIDDEN, "Registration user does not match the challenge.")
-    form = read_form(environ)
-    try:
-        server = _server(environ)
-        attestation_object = _b64decode(form.get("attestationObject", ""))
-        auth_data = server.register_complete(
-            state,
-            response=RegistrationResponse(
-                id=form.get("id", ""),
-                response=AuthenticatorAttestationResponse(
-                    client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=AttestationObject(attestation_object),
-                ),
-            ),
-        )
-        credential_data = bytes(auth_data.credential_data)
-        credential_id = auth_data.credential_data.credential_id
-        if _find_credential(_b64encode(credential_id)) is not None:
-            return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user.fido2_credentials.append(
-            Fido2Credential(
-                id=credential_id,
-                data=credential_data,
-                dt=datetime.now(timezone.utc),
-                **_registration_fields(auth_data),
-            )
-        )
-        user.save()
-    except (binascii.Error, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
-    status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
-    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn")]
     return status, headers, body
 
 
@@ -604,34 +535,13 @@ def update_display_name(environ: dict):
     return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
 
 
-def remove_fido2_credential(environ: dict):
-    user = _session_user(environ)
-    if user is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
-    form = read_form(environ)
-    token = form.get("csrf", "")
-    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "")
-    if not token or not expected or not secrets.compare_digest(token, expected):
-        return error(HTTPStatus.FORBIDDEN, "Invalid request.")
-    try:
-        credential_id = _b64decode(form.get("credential_id", ""))
-    except (ValueError, binascii.Error):
-        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
-    credentials = user.fido2_credentials
-    user.fido2_credentials = [credential for credential in credentials if credential.id != credential_id]
-    if len(user.fido2_credentials) == len(credentials):
-        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
-    user.save()
-    return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
-
-
 def require_auth(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Application is running in registration-only mode.")
     if _is_authenticated(environ):
         return None
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication required.")
-    headers = [("Location", "/authn")]
+    headers = [("Location", _authn_url(return_uri(environ)))]
     return status, headers, body
 
 import fido2.features
