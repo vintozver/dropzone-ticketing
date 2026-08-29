@@ -5,7 +5,7 @@ import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import auth, google, microsoft, register
+from . import auth, fido2, google, microsoft, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
@@ -28,7 +28,7 @@ def dispatch(environ: dict, handlers):
         if method == "GET":
             return auth.begin_authn(environ)
         if method == "POST":
-            return auth.complete_authn(environ)
+            return fido2.complete_authn(environ)
         return method_not_allowed(["GET", "POST"])
 
     if path == "/authn/register":

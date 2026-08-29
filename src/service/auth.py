@@ -535,51 +535,6 @@ def verify_email_code(environ: dict):
     return status, headers, body
 
 
-def complete_authn(environ: dict):
-    state = _authn_state_from_cookie(environ)
-    if state is None:
-        return authentication_error(environ, "Authentication challenge is missing or expired.")
-    form = read_form(environ)
-    try:
-        response = {
-            "id": form.get("id", ""),
-            "rawId": form.get("rawId", ""),
-            "response": {
-                "clientDataJSON": form.get("clientDataJSON", ""),
-                "authenticatorData": form.get("authenticatorData", ""),
-                "signature": form.get("signature", ""),
-                "userHandle": form.get("userHandle", None),
-            },
-            "type": "public-key",
-        }
-        credential = _find_credential(form.get("rawId", ""))
-        if credential is None:
-            raise ValueError("Unknown credential.")
-        server = _server(environ)
-        stored = _credential_data(credential)
-        server.authenticate_complete(
-            state,
-            [stored],
-            response=response,
-        )
-        serial = _b64encode(credential.id)
-    except (binascii.Error, ValueError):
-        return authentication_error(
-            environ,
-            "FIDO2 authentication failed.",
-            traceback.format_exc(),
-            _safe_return_uri(state.get("return_uri")),
-        )
-    destination = _safe_return_uri(state.get("return_uri")) or "/"
-    status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
-    headers = [
-        ("Location", destination),
-        _cookie(AUTHN_SESSION_COOKIE, _signed({"serial": serial, "issued": time()})),
-        _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn"),
-    ]
-    return status, headers, body
-
-
 def _server(environ: dict) -> Fido2Server:
     rp = PublicKeyCredentialRpEntity("dropzone-ticketing", _rp_id(environ))
     return Fido2Server(
@@ -593,6 +548,12 @@ def _credential_data(credential: Fido2Credential):
     from fido2.webauthn import AttestedCredentialData
 
     return AttestedCredentialData(credential.data)
+
+
+def complete_authn(environ: dict):
+    from .fido2 import complete_authn as complete_fido2_authn
+
+    return complete_fido2_authn(environ)
 
 
 def complete_authn_register(environ: dict):
