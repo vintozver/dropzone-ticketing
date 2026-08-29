@@ -6,6 +6,7 @@
     <dt>ID</dt><dd><code>{{ user.id }}</code></dd>
     <dt>Name</dt><dd>{{ user.display_name or '' }}</dd>
     <dt>Email</dt><dd>{{ user.email or '' }}</dd>
+    <dt>Roles</dt><dd>{{ user.roles|join(', ') }}</dd>
   </dl>
 
   <h2>Regular email authentication</h2>

@@ -256,6 +256,11 @@ def current_user_ref(environ: dict) -> dict[str, object] | None:
     return {"id": user.id, "display_name": user.display_name or str(user.id)}
 
 
+def current_user_roles(environ: dict) -> list[str]:
+    user = _session_user(environ)
+    return list(user.roles) if user is not None else []
+
+
 def _credential_display_id(credential: Fido2Credential) -> str:
     hex_value = credential.id.hex()
     if len(hex_value) <= 16:
@@ -543,6 +548,16 @@ def require_auth(environ: dict):
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authentication required.")
     headers = [("Location", _authn_url(return_uri(environ)))]
     return status, headers, body
+
+
+def require_role(environ: dict, role: str):
+    auth_response = require_auth(environ)
+    if auth_response is not None:
+        return auth_response
+    user = _session_user(environ)
+    if user is None or role not in user.roles:
+        return error(HTTPStatus.FORBIDDEN, "Permission denied.")
+    return None
 
 import fido2.features
 fido2.features.webauthn_json_mapping.enabled = True

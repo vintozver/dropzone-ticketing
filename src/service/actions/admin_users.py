@@ -9,6 +9,7 @@ from mongoengine.errors import NotUniqueError, ValidationError
 
 
 _IDENTITY_TYPES = {"email", "google", "microsoft"}
+_ROLES = {"user", "admin"}
 
 
 def _render_new_user(render, status=HTTPStatus.OK, **context):
@@ -20,6 +21,7 @@ def _render_new_user(render, status=HTTPStatus.OK, **context):
             ("google", "Google"),
             ("microsoft", "Microsoft"),
         ),
+        roles=(("user", "User"), ("admin", "Administrator")),
         **context,
     )
 
@@ -28,6 +30,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().casefold()
     identity_type = form.get("identity_type", "")
+    role = form.get("role", "")
 
     if not name:
         return _render_new_user(
@@ -37,6 +40,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             name=name,
             email=email,
             identity_type=identity_type,
+            role=role,
         )
     if len(name) > 200:
         return _render_new_user(
@@ -46,6 +50,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             name=name,
             email=email,
             identity_type=identity_type,
+            role=role,
         )
     if not email or "@" not in email or len(email) > 320:
         return _render_new_user(
@@ -55,6 +60,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             name=name,
             email=email,
             identity_type=identity_type,
+            role=role,
         )
     if identity_type not in _IDENTITY_TYPES:
         return _render_new_user(
@@ -64,9 +70,20 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             name=name,
             email=email,
             identity_type=identity_type,
+            role=role,
+        )
+    if role not in _ROLES:
+        return _render_new_user(
+            render,
+            HTTPStatus.BAD_REQUEST,
+            error="Choose a role.",
+            name=name,
+            email=email,
+            identity_type=identity_type,
+            role=role,
         )
 
-    user = user_class(display_name=name)
+    user = user_class(display_name=name, roles=[role])
     if identity_type == "email":
         user.email = email
     elif identity_type == "google":
@@ -84,6 +101,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             name=name,
             email=email,
             identity_type=identity_type,
+            role=role,
         )
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""
 

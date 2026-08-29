@@ -107,7 +107,7 @@ def dispatch(environ: dict, handlers):
     if path == "/admin/user/new":
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
@@ -118,7 +118,7 @@ def dispatch(environ: dict, handlers):
     if admin_user_match:
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_auth(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         return handlers._view_user(admin_user_match.group(1))

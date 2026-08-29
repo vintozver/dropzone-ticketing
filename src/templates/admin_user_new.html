@@ -14,6 +14,14 @@
         {% endfor %}
       </select>
     </label>
+    <label>Role
+      <select name="role" required>
+        <option value="">Choose one</option>
+        {% for value, label in roles %}
+          <option value="{{ value }}" {% if role == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <button type="submit">Add user</button>
   </form>
 {% endblock %}

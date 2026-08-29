@@ -6,6 +6,8 @@ import mongoengine
 
 from . import mongoengine_alias
 
+USER_ROLES = ("user", "admin")
+
 
 class Fido2Credential(mongoengine.EmbeddedDocument):
     """A WebAuthn credential registered for a ticketing user."""
@@ -44,6 +46,10 @@ class User(mongoengine.Document):
     id = mongoengine.ObjectIdField(primary_key=True)
     display_name = mongoengine.StringField(required=False)
     email = mongoengine.StringField(required=False, unique=True, sparse=True)
+    roles = mongoengine.ListField(
+        mongoengine.StringField(choices=USER_ROLES),
+        default=lambda: ["user"],
+    )
     email_authentication = mongoengine.EmbeddedDocumentField(EmailAuthentication, required=False)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
     google_credentials = mongoengine.EmbeddedDocumentListField(GoogleCredential, default=list)

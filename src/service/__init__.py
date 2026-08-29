@@ -121,6 +121,10 @@ def _require_auth(environ: dict):
     return _auth_module.require_auth(environ)
 
 
+def _require_admin(environ: dict):
+    return _auth_module.require_role(environ, "admin")
+
+
 def _current_user_id(environ: dict) -> str | None:
     return _auth_module.current_user_id(environ)
 
@@ -167,6 +171,7 @@ def application(environ: dict, start_response: Callable):
         authenticated=_auth_module._is_authenticated(environ),
         current_user_id=_auth_module.current_user_id(environ),
         current_user_display_name=_auth_module.current_user_display_name(environ),
+        current_user_roles=_auth_module.current_user_roles(environ),
         registration_mode=_auth_module.authn_config().register,
     ):
         try:

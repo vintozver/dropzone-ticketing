@@ -18,6 +18,9 @@
         <a href="/issue">Issue tickets</a>
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>
+        {% if 'admin' in current_user_roles %}
+          <a href="/admin/user/new">Add user</a>
+        {% endif %}
         {% if authenticated %}
           Signed in as <a href="/authn">{{ current_user_display_name or current_user_id }}</a>
         {% endif %}
