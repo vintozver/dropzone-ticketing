@@ -102,7 +102,7 @@ def dispatch(environ: dict):
             if method != "GET":
                 return _method_not_allowed(["GET"])
             users = []
-            users_query = User.objects()
+            users_query = User.objects().only("id", "display_name", "email", "partner_uid_map")
             for user in users_query:
                 external_id = (user.partner_uid_map or {}).get(str(partner.id))
                 users.append({"external_id": external_id, "internal_id": str(user.id),
