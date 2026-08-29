@@ -8,7 +8,7 @@ from ...model.ticket import Redemption, Ticket, UserRef
 from ._shared import _json_response, _payload
 
 
-def _redeem_ticket(environ: dict, claims: dict, partner):
+def redeem_ticket(environ: dict, claims: dict, partner):
     values = _payload(environ, claims, ("code", "external_id"))
     code, external_id = values.get("code"), values.get("external_id")
     if not isinstance(code, str) or not isinstance(external_id, str):
@@ -49,3 +49,6 @@ def _redeem_ticket(environ: dict, claims: dict, partner):
             },
         },
     )
+
+
+_redeem_ticket = redeem_ticket

@@ -8,7 +8,7 @@ from ...time_utils import as_utc
 from ..config import local_timezone
 
 
-def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
+def day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
     now = now or datetime.now(timezone.utc)
     display_timezone = local_timezone()
     local_now = as_utc(now).astimezone(display_timezone)
@@ -18,7 +18,7 @@ def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, da
     return as_utc(yesterday), as_utc(today), as_utc(tomorrow)
 
 
-def _ticket_redeem_report(partner, *, start: datetime, end: datetime):
+def ticket_redeem_report(partner, *, start: datetime, end: datetime):
     tickets = list(
         Ticket.objects(redeemed__dt__gte=start, redeemed__dt__lt=end)
         .only("id", "issued_to", "payment", "purpose", "redeemed")
@@ -75,3 +75,7 @@ def _ticket_redeem_report(partner, *, start: datetime, end: datetime):
             }
         )
     return list(groups.values())
+
+
+_day_boundaries = day_boundaries
+_ticket_redeem_report = ticket_redeem_report

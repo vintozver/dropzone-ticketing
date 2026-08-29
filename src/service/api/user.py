@@ -9,7 +9,7 @@ from ...model.auth import User
 from ._shared import _json_response, _payload
 
 
-def _list_users(partner):
+def list_users(partner):
     users = []
     users_query = User.objects.aggregate(
         [{
@@ -27,7 +27,7 @@ def _list_users(partner):
     return users
 
 
-def _update_user(environ: dict, claims: dict, partner):
+def update_user(environ: dict, claims: dict, partner):
     values = _payload(environ, claims, ("internal_id", "external_id"))
     internal_id, external_id = values.get("internal_id"), values.get("external_id")
     if not isinstance(internal_id, str) or not isinstance(external_id, str):
@@ -42,3 +42,7 @@ def _update_user(environ: dict, claims: dict, partner):
         **{"set__partner_uid_map__" + str(partner.id): external_id}
     )
     return _json_response(HTTPStatus.OK, {"internal_id": internal_id, "external_id": external_id})
+
+
+_list_users = list_users
+_update_user = update_user

@@ -858,7 +858,7 @@ class ServiceApiTest(unittest.TestCase):
             }
         )
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
@@ -949,7 +949,7 @@ class ServiceApiTest(unittest.TestCase):
             ],
         )
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_yesterday_report_uses_previous_day_window(self, verify, ticket_class, day_boundaries) -> None:
@@ -970,7 +970,7 @@ class ServiceApiTest(unittest.TestCase):
         )
         self.assertEqual(json.loads(body), [])
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
@@ -1037,7 +1037,7 @@ class ServiceApiTest(unittest.TestCase):
         self.assertIn(("Allow", "GET"), headers)
         self.assertEqual(json.loads(body), {"error": "Method not allowed."})
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
