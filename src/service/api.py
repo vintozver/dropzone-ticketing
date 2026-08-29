@@ -43,7 +43,9 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
         partner = Partner.objects(id=ObjectId(partner_id)).first()
     except InvalidId:
         partner = None
-    key = next((item for item in partner.keyset if item.id == key_id), None) if partner else None
+    if partner is None:
+        raise PermissionError("Partner does not exist.")
+    key = next((item for item in partner.keyset if item.id == key_id), None)
     if key is None:
         raise PermissionError("Unknown partner signing key.")
     key_data = key.pub or key.crt
