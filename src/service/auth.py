@@ -550,12 +550,6 @@ def _credential_data(credential: Fido2Credential):
     return AttestedCredentialData(credential.data)
 
 
-def complete_authn(environ: dict):
-    from .fido2 import complete_authn as complete_fido2_authn
-
-    return complete_fido2_authn(environ)
-
-
 def complete_authn_register(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
