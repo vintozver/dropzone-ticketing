@@ -8,10 +8,10 @@
     <dt>Issued by</dt><dd>{{ ticket.issued_by }}</dd>
     <dt>Purpose</dt><dd>{{ ticket.purpose }}</dd>
     <dt>Payment</dt><dd>{{ ticket.payment }}</dd>
-    <dt>Code</dt><dd><code>{{ ticket.code }}</code></dd>
+    {% if is_admin %}<dt>Code</dt><dd><code>{{ ticket.code }}</code></dd>{% endif %}
     <dt>Redeemed at</dt><dd>{{ ticket.redeemed_at|datetime }}</dd>
     <dt>Redeemed by</dt><dd>{{ ticket.redeemed_by }}</dd>
     <dt>Redemption reason</dt><dd>{{ ticket.redeemed_reason }}</dd>
   </dl>
-  {% if can_print %}<p><a href="/print?id={{ ticket.id|urlencode }}">Print this ticket as PDF</a></p>{% endif %}
+  {% if is_admin %}<p><a href="/print?id={{ ticket.id|urlencode }}">Print this ticket as PDF</a></p>{% endif %}
 {% endblock %}

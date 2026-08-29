@@ -500,7 +500,8 @@ class ServiceHelperTest(unittest.TestCase):
         ticket.issued_utc.return_value = datetime(2026, 8, 22, tzinfo=timezone.utc)
         ticket_class.objects.return_value = [ticket]
 
-        status, _headers, body = service._view_owner_tickets(None, "Jane")
+        with service.request_context(current_user_roles=["admin"]):
+            status, _headers, body = service._view_owner_tickets(None, "Jane")
 
         self.assertEqual(status, service.HTTPStatus.OK)
         ticket_class.objects.assert_called_once_with(issued_to__id=None, issued_to__display_name="Jane", redeemed=None)
@@ -512,6 +513,29 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertNotIn(b"secret-code", body)
         self.assertIn(b'href="/ticket/507f1f77bcf86cd799439011"', body)
         self.assertIn(b'href="/print?display_name=Jane"', body)
+        self.assertIn(b"Back to the owners list", body)
+
+    @patch.object(service, "Ticket")
+    def test_solo_owner_tickets_hide_admin_links(self, ticket_class) -> None:
+        ticket = MagicMock(
+            payment="cash",
+            purpose="jump",
+            issued_by=user_ref("issuer"),
+            issued_to=user_ref("Jane"),
+            id="507f1f77bcf86cd799439011",
+        )
+        ticket.issued_utc.return_value = datetime(2026, 8, 22, tzinfo=timezone.utc)
+        ticket_class.objects.return_value = [ticket]
+
+        with service.request_context(current_user_roles=["solo"]):
+            status, _headers, body = service._view_owner_tickets(
+                "507f1f77bcf86cd799439011",
+                None,
+            )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertNotIn(b'href="/print?', body)
+        self.assertNotIn(b"Back to the owners list", body)
 
     def test_user_search_limits_results_to_ten(self) -> None:
         prefix_users = [SimpleNamespace(id=ObjectId(), display_name=f"Jane {index}") for index in range(7)]
@@ -779,6 +803,30 @@ class ServiceHelperTest(unittest.TestCase):
         self.assertIn(b"<dt>Redeemed by</dt><dd></dd>", body)
         self.assertIn(b"<dt>Redemption reason</dt><dd></dd>", body)
         self.assertNotIn(b"unknown", body)
+
+    @patch.object(service, "Ticket")
+    def test_solo_ticket_view_hides_code_and_pdf_link(self, ticket_class) -> None:
+        user_id = ObjectId("507f1f77bcf86cd799439011")
+        ticket_class.objects.return_value.first.return_value = SimpleNamespace(
+            id=ObjectId("64e3b8000000000000000000"),
+            code="secret-code",
+            issued_to=user_ref("Jane", object_id=str(user_id)),
+            issued_by=user_ref("issuer"),
+            purpose="jump",
+            payment="cash",
+            redeemed=None,
+            issued_utc=lambda: datetime(2026, 8, 23, tzinfo=timezone.utc),
+        )
+
+        status, _headers, body = service._view_ticket(
+            "64e3b8000000000000000000",
+            {"id": user_id, "roles": ["solo"]},
+        )
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertNotIn(b"secret-code", body)
+        self.assertNotIn(b"<dt>Code</dt>", body)
+        self.assertNotIn(b'href="/print?', body)
 
     @patch.object(service, "Ticket")
     def test_solo_user_cannot_view_another_users_ticket(self, ticket_class) -> None:

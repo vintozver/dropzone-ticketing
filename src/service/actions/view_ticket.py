@@ -30,7 +30,7 @@ def view_ticket(ticket_id: str, viewer, *, ticket_class, render):
     redeemed = ticket.redeemed
     return render(
         "ticket.html",
-        can_print=is_admin,
+        is_admin=is_admin,
         ticket={
             "id": str(ticket.id),
             "code": ticket.code,
