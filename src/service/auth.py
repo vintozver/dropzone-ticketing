@@ -20,6 +20,7 @@ from bson.errors import InvalidId
 from mongoengine.errors import OperationError, ValidationError
 from .config import authn_config, session_secret
 from .http import error, read_form, render, request_host
+from . import _fido2
 from ..model.auth import Fido2Credential, User
 from ..model.auth import EmailAuthentication
 from .email import code as generate_email_code, send_code
@@ -304,8 +305,6 @@ def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
     challenge = secrets.token_bytes(32)
-    from . import _fido2
-
     fido2_server = _fido2.server(environ)
     credentials = [
         credential
