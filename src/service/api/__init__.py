@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from . import report, user
+from . import report, ticket, user
 from ._shared import _json_response, _verify
 
 __all__ = ["dispatch"]
@@ -14,6 +14,9 @@ def dispatch(environ: dict):
     try:
         partner, claims = _verify(environ)
         response = report.dispatch(method, path, partner)
+        if response is not None:
+            return response
+        response = ticket.dispatch(method, path, environ, claims, partner)
         if response is not None:
             return response
         response = user.dispatch(method, path, environ, claims, partner)
