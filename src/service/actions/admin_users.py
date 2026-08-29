@@ -14,17 +14,7 @@ _IDENTITY_TYPES = {"email", "google", "microsoft"}
 
 
 def _render_new_user(render, status=HTTPStatus.OK, **context):
-    return render(
-        "admin_user_new.html",
-        status,
-        identity_types=(
-            ("email", "Regular email with code validation"),
-            ("google", "Google"),
-            ("microsoft", "Microsoft"),
-        ),
-        roles=(("solo", "Solo"), ("admin", "Administrator")),
-        **context,
-    )
+    return render("admin_user_new.html", status, **context)
 
 
 def new_user(*, render):
