@@ -61,7 +61,10 @@ def update(environ: dict, partner_id: str):
         return render("error.html", HTTPStatus.NOT_FOUND, message="Partner not found.")
     form = read_form(environ)
     if "display_name" in form:
-        partner.display_name = form["display_name"].strip()
+        display_name = form["display_name"].strip()
+        if not display_name:
+            raise ValueError("Display name is required.")
+        partner.display_name = display_name
     key_id = form.get("key_id", "").strip()
     if key_id:
         if any(item.id == key_id for item in partner.keyset):

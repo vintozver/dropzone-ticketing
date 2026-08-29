@@ -89,7 +89,9 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
     except (ValueError, TypeError, InvalidSignature) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
     expiry = payload.get("exp")
-    if not isinstance(expiry, (int, float)) or expiry < datetime.now(timezone.utc).timestamp():
+    if not isinstance(expiry, (int, float)):
+        raise PermissionError("JWT exp claim is missing or invalid.")
+    if expiry < datetime.now(timezone.utc).timestamp():
         raise PermissionError("JWT has expired.")
     return partner, payload
 
@@ -140,10 +142,9 @@ def dispatch(environ: dict):
                 user = None
             if user is None:
                 return _json_response(HTTPStatus.NOT_FOUND, {"error": "User not found."})
-            mapping = dict(user.partner_uid_map or {})
-            mapping[str(partner.id)] = external_id
-            user.partner_uid_map = mapping
-            user.save()
+            User.objects(id=user.id).update_one(
+                **{"set__partner_uid_map__" + str(partner.id): external_id}
+            )
             return _json_response(HTTPStatus.OK, {"internal_id": internal_id, "external_id": external_id})
         return _json_response(HTTPStatus.NOT_FOUND, {"error": "Not found."})
     except PermissionError as exc:
