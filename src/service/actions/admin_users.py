@@ -7,9 +7,10 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError, ValidationError
 
+from ...model.auth import USER_ROLES
+
 
 _IDENTITY_TYPES = {"email", "google", "microsoft"}
-_ROLES = {"solo", "admin"}
 
 
 def _render_new_user(render, status=HTTPStatus.OK, **context):
@@ -76,7 +77,7 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             identity_type=identity_type,
             role=role,
         )
-    if role not in _ROLES:
+    if role not in USER_ROLES:
         return _render_new_user(
             render,
             HTTPStatus.BAD_REQUEST,
