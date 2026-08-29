@@ -5,12 +5,13 @@ import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import _fido2, auth, google, microsoft, register
+from . import _fido2, api, auth, google, microsoft, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
 _TICKET_PATH_RE = re.compile(r"^/ticket/([0-9a-fA-F]{24})/?$")
 _ADMIN_USER_VIEW_PATH_RE = re.compile(r"^/admin/user/view/([0-9a-fA-F]{24})/?$")
+_PARTNER_VIEW_PATH_RE = re.compile(r"^/admin/partner/view/([0-9a-fA-F]{24})/?$")
 
 
 def dispatch(environ: dict, handlers):
@@ -24,6 +25,30 @@ def dispatch(environ: dict, handlers):
             HTTPStatus.FORBIDDEN,
             message="Application is running in registration-only mode.",
         )
+
+    if path.startswith("/api/"):
+        return api.dispatch(environ)
+
+    if path == "/admin/partner/list":
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_admin(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "POST":
+            return handlers._create_partner(environ)
+        return handlers._view_partners()
+
+    partner_match = _PARTNER_VIEW_PATH_RE.match(path)
+    if partner_match:
+        if method not in {"GET", "POST", "PATCH"}:
+            return method_not_allowed(["GET", "POST", "PATCH"])
+        auth_response = handlers._require_admin(environ)
+        if auth_response is not None:
+            return auth_response
+        if method in {"POST", "PATCH"}:
+            return handlers._update_partner(environ, partner_match.group(1))
+        return handlers._view_partner(partner_match.group(1))
 
     if path == "/authn":
         if method == "GET":

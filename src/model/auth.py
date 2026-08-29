@@ -53,6 +53,7 @@ class User(mongoengine.Document):
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)
     google_credentials = mongoengine.EmbeddedDocumentListField(GoogleCredential, default=list)
     microsoft_credentials = mongoengine.EmbeddedDocumentListField(MicrosoftCredential, default=list)
+    partner_uid_map = mongoengine.DictField(default=dict)
 
     meta = {
         "db_alias": mongoengine_alias,

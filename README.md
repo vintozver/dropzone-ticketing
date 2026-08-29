@@ -40,7 +40,24 @@ email:
 ```
 
 The configured SMTP server is expected to be on a trusted local network; delivery
-does not use STARTTLS.
+uses STARTTLS.
+
+### Partner API
+
+Partners call these endpoints with an Authorization header carrying a bearer JWT:
+
+* `GET /api/user/list` returns every user as an array of objects containing
+  `external_id` (or `null` when the partner has no mapping), `internal_id`,
+  `display_name`, and `email`.
+* `PATCH /api/user` updates one mapping. Send a JSON object containing
+  `internal_id` and `external_id`; the same values must be present in the
+  signed JWT claims.
+
+The JWT must use a `partner` header containing the partner ObjectId and a `kid`
+header selecting a configured key. If present, the `exp` claim is validated.
+Supported signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by
+authenticated administrators at `/admin/partner/list`; PEM public keys and
+certificates are converted to DER before storage.
 
 All settings come from this file only; `CONFIG_FILE` merely names it.
 If `timezone` is omitted, displayed times default to UTC.
