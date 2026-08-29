@@ -1,24 +1,17 @@
 from __future__ import annotations
 
-import base64
 import json
-from datetime import datetime, timezone
 from http import HTTPStatus
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, padding
-from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
-from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+import jwt
+from jwt.exceptions import InvalidTokenError
 
 from ..model.auth import User
 from ..model.partner import Partner
-
-
-def _b64decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
 def _json_response(status: HTTPStatus, value: object):
@@ -38,14 +31,9 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
     if not authorization.startswith("Bearer "):
         raise PermissionError("A bearer JWT is required.")
     token = authorization[7:].strip()
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise PermissionError("Invalid JWT.")
     try:
-        header = json.loads(_b64decode(parts[0]))
-        payload = json.loads(_b64decode(parts[1]))
-        signature = _b64decode(parts[2])
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        header = jwt.get_unverified_header(token)
+    except InvalidTokenError as exc:
         raise PermissionError("Invalid JWT.") from exc
     partner_id = header.get("partner")
     key_id = header.get("kid")
@@ -68,32 +56,13 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
             else serialization.load_der_public_key(bytes(key_data))
         )
         algorithm = header.get("alg")
-        signing_input = f"{parts[0]}.{parts[1]}".encode("ascii")
-        if algorithm == "RS256":
-            public_key.verify(signature, signing_input, padding.PKCS1v15(), hashes.SHA256())
-        elif algorithm == "PS256":
-            public_key.verify(
-                signature, signing_input, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32),
-                hashes.SHA256(),
-            )
-        elif algorithm == "ES256":
-            if len(signature) != 64:
-                raise InvalidSignature
-            public_key.verify(
-                encode_dss_signature(int.from_bytes(signature[:32], "big"), int.from_bytes(signature[32:], "big")),
-                signing_input, ec.ECDSA(hashes.SHA256()),
-            )
-        elif algorithm == "EdDSA":
-            public_key.verify(signature, signing_input)
-        else:
+        if algorithm not in {"RS256", "PS256", "ES256", "EdDSA"}:
             raise PermissionError("Unsupported JWT signing algorithm.")
-    except (ValueError, TypeError, InvalidSignature) as exc:
+        payload = jwt.decode(token, public_key, algorithms=[algorithm], options={"require": ["exp"]})
+    except PermissionError:
+        raise
+    except (ValueError, TypeError, InvalidTokenError) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
-    expiry = payload.get("exp")
-    if not isinstance(expiry, (int, float)):
-        raise PermissionError("JWT exp claim is missing or invalid.")
-    if expiry < datetime.now(timezone.utc).timestamp():
-        raise PermissionError("JWT has expired.")
     return partner, payload
 
 
