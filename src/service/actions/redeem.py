@@ -13,10 +13,17 @@ def redeem(form: dict[str, str], *, ticket_class, render, split_codes, user_ref_
         return render("redeem.html", HTTPStatus.BAD_REQUEST, error="Enter at least one ticket code.")
 
     results = []
+    is_admin = by is not None and "admin" in by.get("roles", [])
     for code in codes:
         ticket = ticket_class.objects(code=code).first()
         if ticket is None:
             results.append({"code": code, "result": "not found"})
+        elif not is_admin and (
+            by is None
+            or ticket.issued_to is None
+            or ticket.issued_to.id != by.get("id")
+        ):
+            results.append({"code": code, "result": "not permitted"})
         elif ticket.redeemed is not None:
             results.append({"code": code, "result": "already redeemed", "redeemed": ticket.redeemed})
         else:

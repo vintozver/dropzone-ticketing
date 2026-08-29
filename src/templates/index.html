@@ -3,10 +3,14 @@
 {% block content %}
   <h1>Dropzone ticketing</h1>
   <ul>
-    <li><a href="/issue">Issue tickets</a></li>
+    {% if 'admin' in current_user_roles %}
+      <li><a href="/issue">Issue tickets</a></li>
+    {% endif %}
     <li><a href="/redeem">Redeem tickets</a></li>
     <li><a href="/tickets">View tickets</a></li>
-    <li><a href="/reports/redeemed">Redeemed tickets</a></li>
-    <li><a href="/reports/issued">Last 500 issued tickets</a></li>
+    {% if 'admin' in current_user_roles %}
+      <li><a href="/reports/redeemed">Redeemed tickets</a></li>
+      <li><a href="/reports/issued">Last 500 issued tickets</a></li>
+    {% endif %}
   </ul>
 {% endblock %}
