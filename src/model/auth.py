@@ -43,7 +43,6 @@ class EmailAuthentication(mongoengine.EmbeddedDocument):
 class User(mongoengine.Document):
     """A user and their registered authentication credentials."""
 
-    id = mongoengine.ObjectIdField(primary_key=True)
     display_name = mongoengine.StringField(required=False)
     email = mongoengine.StringField(required=False, unique=True, sparse=True)
     roles = mongoengine.ListField(

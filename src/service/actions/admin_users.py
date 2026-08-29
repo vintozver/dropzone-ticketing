@@ -5,7 +5,7 @@ from http import HTTPStatus
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from mongoengine.errors import NotUniqueError, ValidationError
+from mongoengine.errors import NotUniqueError
 
 from ...model.auth import USER_ROLES
 
@@ -121,16 +121,6 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
             identity_type=identity_type,
             role=role,
         )
-    except ValidationError:
-        return _render_new_user(
-            render,
-            HTTPStatus.BAD_REQUEST,
-            error="User details are invalid.",
-            name=name,
-            email=email,
-            identity_type=identity_type,
-            role=role,
-        )
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""
 
 
@@ -215,6 +205,4 @@ def update_user(user_id, form, *, user_class, render):
             HTTPStatus.CONFLICT,
             message="A user with this email address already exists.",
         )
-    except ValidationError:
-        return render("error.html", HTTPStatus.BAD_REQUEST, message="User details are invalid.")
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/user/view/{user.id}")], b""
