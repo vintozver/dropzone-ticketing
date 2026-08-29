@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from http import HTTPStatus
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, padding
@@ -52,7 +53,7 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
         raise PermissionError("JWT partner and kid headers are required.")
     try:
         partner = Partner.objects(id=ObjectId(partner_id)).first()
-    except Exception:
+    except InvalidId:
         partner = None
     key = next((item for item in partner.keyset if item.id == key_id), None) if partner else None
     if key is None:
@@ -122,7 +123,9 @@ def dispatch(environ: dict):
     path = environ.get("PATH_INFO", "")
     try:
         partner, claims = _verify(environ)
-        if path == "/api/user/list" and method == "GET":
+        if path == "/api/user/list":
+            if method != "GET":
+                return _method_not_allowed(["GET"])
             users = []
             users_query = User.objects(__raw__={"partner_uid_map." + str(partner.id): {"$exists": True}})
             for user in users_query:
@@ -131,14 +134,16 @@ def dispatch(environ: dict):
                     users.append({"external_id": external_id, "internal_id": str(user.id),
                                   "display_name": user.display_name, "email": user.email})
             return _json_response(HTTPStatus.OK, users)
-        if path == "/api/user" and method == "PATCH":
+        if path == "/api/user":
+            if method != "PATCH":
+                return _method_not_allowed(["PATCH"])
             values = _payload(environ, claims)
             internal_id, external_id = values.get("internal_id"), values.get("external_id")
             if not isinstance(internal_id, str) or not isinstance(external_id, str):
                 raise ValueError("internal_id and external_id are required.")
             try:
                 user = User.objects(id=ObjectId(internal_id)).first()
-            except Exception:
+            except InvalidId:
                 user = None
             if user is None:
                 return _json_response(HTTPStatus.NOT_FOUND, {"error": "User not found."})
@@ -151,3 +156,11 @@ def dispatch(environ: dict):
         return _json_response(HTTPStatus.UNAUTHORIZED, {"error": str(exc)})
     except ValueError as exc:
         return _json_response(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+
+def _method_not_allowed(methods: list[str]):
+    return (
+        HTTPStatus.METHOD_NOT_ALLOWED,
+        [("Content-Type", "application/json; charset=utf-8"), ("Allow", ", ".join(methods))],
+        json.dumps({"error": "Method not allowed."}).encode(),
+    )
