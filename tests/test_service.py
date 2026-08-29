@@ -25,6 +25,7 @@ from mongoengine.errors import NotUniqueError
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import api as api_module
+from dropzone_ticketing.service.api import report as api_report_module
 from dropzone_ticketing.service import config
 from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
@@ -856,9 +857,9 @@ class ServiceApiTest(unittest.TestCase):
             }
         )
 
-    @patch.object(api_module, "_day_boundaries")
-    @patch.object(api_module, "User")
-    @patch.object(api_module, "Ticket")
+    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "User")
+    @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_today_report_groups_tickets_by_user(
         self, verify, ticket_class, user_class, day_boundaries
@@ -947,8 +948,8 @@ class ServiceApiTest(unittest.TestCase):
             ],
         )
 
-    @patch.object(api_module, "_day_boundaries")
-    @patch.object(api_module, "Ticket")
+    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_yesterday_report_uses_previous_day_window(self, verify, ticket_class, day_boundaries) -> None:
         day_boundaries.return_value = (
@@ -968,9 +969,9 @@ class ServiceApiTest(unittest.TestCase):
         )
         self.assertEqual(json.loads(body), [])
 
-    @patch.object(api_module, "_day_boundaries")
-    @patch.object(api_module, "User")
-    @patch.object(api_module, "Ticket")
+    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "User")
+    @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_report_includes_anonymous_ticket_owner_without_user_id(
         self, verify, ticket_class, user_class, day_boundaries
@@ -1035,9 +1036,9 @@ class ServiceApiTest(unittest.TestCase):
         self.assertIn(("Allow", "GET"), headers)
         self.assertEqual(json.loads(body), {"error": "Method not allowed."})
 
-    @patch.object(api_module, "_day_boundaries")
-    @patch.object(api_module, "User")
-    @patch.object(api_module, "Ticket")
+    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "User")
+    @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_report_does_not_merge_anonymous_tickets_without_name(
         self, verify, ticket_class, user_class, day_boundaries
