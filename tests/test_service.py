@@ -242,6 +242,28 @@ class ServiceHelperTest(unittest.TestCase):
                 )
                 user.save.assert_called_once_with()
 
+    def test_admin_removes_fido2_credential(self) -> None:
+        user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"))
+        user.fido2_credentials = [
+            SimpleNamespace(id=b"remove"),
+            SimpleNamespace(id=b"keep"),
+        ]
+        user_class = MagicMock()
+        user_class.objects.return_value.first.return_value = user
+
+        update_user(
+            str(user.id),
+            {"action": "remove_fido2", "credential": b"remove".hex()},
+            user_class=user_class,
+            render=MagicMock(),
+        )
+
+        self.assertEqual(
+            [credential.id for credential in user.fido2_credentials],
+            [b"keep"],
+        )
+        user.save.assert_called_once_with()
+
     def test_pdf_filename_is_safe_for_response_headers(self) -> None:
         self.assertEqual(service._safe_filename("Jane\r\nJumper / ✈"), "tickets-Jane-Jumper.pdf")
 

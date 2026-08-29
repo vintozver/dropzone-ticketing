@@ -14,11 +14,13 @@
           <td>{{ user.roles|join(', ') }}</td>
           <td>{{ user.email or '' }}</td>
           <td>
+            {% if user.google_credentials or user.microsoft_credentials or user.fido2_credentials %}
             <ul>
               {% for credential in user.google_credentials %}<li>Google: {{ credential }}</li>{% endfor %}
               {% for credential in user.microsoft_credentials %}<li>Microsoft: {{ credential }}</li>{% endfor %}
               {% for credential in user.fido2_credentials %}<li>FIDO2: <code>{{ credential }}</code></li>{% endfor %}
             </ul>
+            {% else %}None{% endif %}
           </td>
         </tr>
       {% else %}
