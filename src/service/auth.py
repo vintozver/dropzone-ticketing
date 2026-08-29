@@ -21,7 +21,7 @@ from mongoengine.errors import OperationError, ValidationError
 from .config import authn_config, session_secret
 from .http import error, read_form, render, request_host
 from . import _fido2
-from ..model.auth import Fido2Credential, User
+from ..model.auth import Fido2Credential, GoogleCredential, MicrosoftCredential, User
 from ..model.auth import EmailAuthentication
 from .email import code as generate_email_code, send_code
 

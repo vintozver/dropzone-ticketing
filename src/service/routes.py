@@ -10,6 +10,7 @@ from .config import authn_config
 from .http import method_not_allowed, render
 
 _TICKET_PATH_RE = re.compile(r"^/ticket/([0-9a-fA-F]{24})/?$")
+_ADMIN_USER_VIEW_PATH_RE = re.compile(r"^/admin/user/view/([0-9a-fA-F]{24})/?$")
 
 
 def dispatch(environ: dict, handlers):
@@ -102,6 +103,25 @@ def dispatch(environ: dict, handlers):
         if method != "GET":
             return method_not_allowed(["GET"])
         return render("index.html", authenticated=handlers._is_authenticated(environ))
+
+    if path == "/admin/user/new":
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return handlers._create_user({})
+        return handlers._create_user(handlers._read_form(environ))
+
+    admin_user_match = _ADMIN_USER_VIEW_PATH_RE.match(path)
+    if admin_user_match:
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._view_user(admin_user_match.group(1))
 
     if path == "/issue":
         if method not in {"GET", "POST"}:

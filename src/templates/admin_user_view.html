@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}User {{ user.display_name or user.id }}{% endblock %}
+{% block content %}
+  <h1>User {{ user.display_name or user.id }}</h1>
+  <dl>
+    <dt>ID</dt><dd><code>{{ user.id }}</code></dd>
+    <dt>Name</dt><dd>{{ user.display_name or '' }}</dd>
+    <dt>Email</dt><dd>{{ user.email or '' }}</dd>
+  </dl>
+
+  <h2>Regular email authentication</h2>
+  <p>{% if user.email %}{{ user.email }}{% else %}Not configured{% endif %}</p>
+
+  <h2>FIDO2 credentials</h2>
+  {% if fido2_credentials %}
+    {% for credential in fido2_credentials %}
+      <dl>
+        <dt>ID</dt><dd><code>{{ credential.id }}</code></dd>
+        <dt>Registered at</dt><dd>{{ credential.dt|datetime }}</dd>
+        <dt>AAGUID</dt><dd><code>{{ credential.aaguid }}</code></dd>
+        <dt>Extensions</dt><dd><pre>{{ credential.extensions }}</pre></dd>
+      </dl>
+    {% endfor %}
+  {% else %}<p>None</p>{% endif %}
+
+  <h2>Google credentials</h2>
+  {% if user.google_credentials %}
+    <ul>{% for credential in user.google_credentials %}<li>{{ credential.email }}</li>{% endfor %}</ul>
+  {% else %}<p>None</p>{% endif %}
+
+  <h2>Microsoft credentials</h2>
+  {% if user.microsoft_credentials %}
+    <ul>{% for credential in user.microsoft_credentials %}<li>{{ credential.email }}</li>{% endfor %}</ul>
+  {% else %}<p>None</p>{% endif %}
+{% endblock %}

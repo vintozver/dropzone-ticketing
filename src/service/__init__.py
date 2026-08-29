@@ -14,6 +14,8 @@ from ..model.auth import User
 from ..model.ticket import UserRef
 
 from . import auth as _auth_module
+from .actions.admin_users import create_user as _create_user_action
+from .actions.admin_users import view_user as _view_user_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
@@ -133,6 +135,20 @@ def _current_user_ref(environ: dict) -> dict[str, object] | None:
 
 def _search_users(query: str):
     return _search_users_action(query, user_class=User)
+
+
+def _create_user(form: dict[str, str]):
+    return _create_user_action(
+        form,
+        user_class=User,
+        google_credential_class=_auth_module.GoogleCredential,
+        microsoft_credential_class=_auth_module.MicrosoftCredential,
+        render=_render,
+    )
+
+
+def _view_user(user_id: str):
+    return _view_user_action(user_id, user_class=User, render=_render)
 
 
 def _method_not_allowed(allowed):
