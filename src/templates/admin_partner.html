@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Partner{% endblock %}
+{% block content %}
+<h1>{{ partner.display_name }}</h1>
+<form method="post" action="/admin/partners/{{ partner.id }}">
+  <label>Display name <input name="display_name" value="{{ partner.display_name }}" required></label>
+  <button type="submit">Update name</button>
+</form>
+<h2>Signing keys</h2>
+<ul>{% for key in partner.keyset %}
+  <li>{{ key.id }} <form method="post" action="/admin/partners/{{ partner.id }}" style="display:inline"><input type="hidden" name="delete_key" value="{{ key.id }}"><button type="submit">Delete</button></form></li>
+{% else %}<li>No signing keys.</li>{% endfor %}</ul>
+<form method="post" action="/admin/partners/{{ partner.id }}">
+  <label>Key id <input name="key_id" required></label><br>
+  <label>Public key (PEM)<br><textarea name="public_key"></textarea></label><br>
+  <label>Certificate (PEM)<br><textarea name="certificate"></textarea></label><br>
+  <button type="submit">Add signing key</button>
+</form>
+{% endblock %}

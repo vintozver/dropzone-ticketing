@@ -25,6 +25,10 @@ from .actions.view_owners import view_owners as _view_owners_action
 from .actions.view_redeemed_tickets import view_redeemed_tickets as _view_redeemed_tickets_action
 from .actions.view_ticket import view_ticket as _view_ticket_action
 from .actions.search_users import search_users as _search_users_action
+from .partners import create as _create_partner
+from .partners import update as _update_partner
+from .partners import view as _view_partners
+from .partners import view as _view_partner
 from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
 from .http import (
     exception_response,

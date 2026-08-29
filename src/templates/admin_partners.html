@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Partners{% endblock %}
+{% block content %}
+<h1>Partners</h1>
+<ul>{% for partner in partners %}<li><a href="/admin/partners/{{ partner.id }}">{{ partner.display_name }}</a></li>{% else %}<li>No partners.</li>{% endfor %}</ul>
+<form method="post" action="/admin/partners">
+  <label>Display name <input name="display_name" required></label>
+  <button type="submit">Add partner</button>
+</form>
+{% endblock %}
