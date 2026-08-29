@@ -78,6 +78,7 @@
   </ul>
   {% else %}<p>No Google credentials registered.</p>{% endif %}
   <form method="get" action="/authn/google">
+    <input type="hidden" name="{{ return_uri_param }}" value="{{ return_uri }}">
     <button type="submit">Add another</button>
   </form>
 </section>
@@ -96,7 +97,10 @@
     {% endfor %}
   </ul>
   {% else %}<p>No Microsoft credentials registered.</p>{% endif %}
-  <form method="get" action="/authn/microsoft"><button type="submit">Add another</button></form>
+  <form method="get" action="/authn/microsoft">
+    <input type="hidden" name="{{ return_uri_param }}" value="{{ return_uri }}">
+    <button type="submit">Add another</button>
+  </form>
 </section>
 <section>
   <h2>Logout</h2>

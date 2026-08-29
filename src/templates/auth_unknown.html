@@ -31,12 +31,16 @@
 <section>
   <h2>Google</h2>
   <p>Use your Google account to sign in.</p>
-  <form method="get" action="{{ google_auth_uri }}">
+  <form method="get" action="/authn/google">
+    <input type="hidden" name="{{ return_uri_param }}" value="{{ return_uri }}">
     <button type="submit">Proceed</button>
   </form>
 </section>
 <section>
   <h2>Microsoft</h2>
   <p>Use your Microsoft account to sign in.</p>
-  <form method="get" action="{{ microsoft_auth_uri }}"><button type="submit">Proceed</button></form>
+  <form method="get" action="/authn/microsoft">
+    <input type="hidden" name="{{ return_uri_param }}" value="{{ return_uri }}">
+    <button type="submit">Proceed</button>
+  </form>
 </section>
