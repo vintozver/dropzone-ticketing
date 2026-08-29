@@ -6,23 +6,10 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from ...model.auth import User
-from ._shared import _json_response, _method_not_allowed, _payload
+from ._shared import _json_response, _payload
 
 
-def dispatch(method: str, path: str, environ: dict, claims: dict, partner):
-    """Handle `/api/user*` endpoints. Returns None if `path` is not handled here."""
-    if path == "/api/user/list":
-        if method != "GET":
-            return _method_not_allowed(["GET"])
-        return _json_response(HTTPStatus.OK, _list_users(partner))
-    if path == "/api/user":
-        if method != "PATCH":
-            return _method_not_allowed(["PATCH"])
-        return _update_user(environ, claims, partner)
-    return None
-
-
-def _list_users(partner):
+def list_users(partner):
     users = []
     users_query = User.objects.aggregate(
         [{
@@ -40,7 +27,7 @@ def _list_users(partner):
     return users
 
 
-def _update_user(environ: dict, claims: dict, partner):
+def update_user(environ: dict, claims: dict, partner):
     values = _payload(environ, claims, ("internal_id", "external_id"))
     internal_id, external_id = values.get("internal_id"), values.get("external_id")
     if not isinstance(internal_id, str) or not isinstance(external_id, str):

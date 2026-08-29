@@ -52,6 +52,12 @@ Partners call these endpoints with an Authorization header carrying a bearer JWT
 * `PATCH /api/user` updates one mapping. Send a JSON object containing
   `internal_id` and `external_id`; the same values must be present in the
   signed JWT claims.
+* `POST /api/ticket/redeem` redeems one ticket by code. Send a JSON object
+  containing required `code` and `external_id`, plus optional `display_name`
+  and `reason`; required fields must also be present in signed JWT claims.
+  Returns `201` with redeemed ticket details (`code`, `internal_id`, and
+  `redeemed` with `at`/`by`/`reason`), `404` when the ticket code is unknown,
+  and `409` when the ticket is already redeemed.
 * `GET /api/report/ticket-redeem/today` returns tickets redeemed today.
 * `GET /api/report/ticket-redeem/yesterday` returns tickets redeemed yesterday.
 

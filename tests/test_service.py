@@ -26,6 +26,7 @@ from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import api as api_module
 from dropzone_ticketing.service.api import report as api_report_module
+from dropzone_ticketing.service.api import ticket as api_ticket_module
 from dropzone_ticketing.service import config
 from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
@@ -846,18 +847,18 @@ class ServiceHelperTest(unittest.TestCase):
 
 
 class ServiceApiTest(unittest.TestCase):
-    def request(self, path: str, method: str = "GET"):
+    def request(self, path: str, method: str = "GET", body: bytes = b""):
         return api_module.dispatch(
             {
                 "REQUEST_METHOD": method,
                 "PATH_INFO": path,
-                "CONTENT_LENGTH": "0",
-                "wsgi.input": io.BytesIO(b""),
+                "CONTENT_LENGTH": str(len(body)),
+                "wsgi.input": io.BytesIO(body),
                 "HTTP_AUTHORIZATION": "******",
             }
         )
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
@@ -948,7 +949,7 @@ class ServiceApiTest(unittest.TestCase):
             ],
         )
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
     def test_ticket_redeem_yesterday_report_uses_previous_day_window(self, verify, ticket_class, day_boundaries) -> None:
@@ -969,7 +970,7 @@ class ServiceApiTest(unittest.TestCase):
         )
         self.assertEqual(json.loads(body), [])
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
@@ -1036,7 +1037,7 @@ class ServiceApiTest(unittest.TestCase):
         self.assertIn(("Allow", "GET"), headers)
         self.assertEqual(json.loads(body), {"error": "Method not allowed."})
 
-    @patch.object(api_report_module, "_day_boundaries")
+    @patch.object(api_report_module, "day_boundaries")
     @patch.object(api_report_module, "User")
     @patch.object(api_report_module, "Ticket")
     @patch.object(api_module, "_verify")
@@ -1082,6 +1083,111 @@ class ServiceApiTest(unittest.TestCase):
         self.assertEqual(len(payload), 2)
         self.assertEqual(payload[0]["tickets"][0]["internal_id"], "64e3b8000000000000000000")
         self.assertEqual(payload[1]["tickets"][0]["internal_id"], "64e3b8000000000000000001")
+
+    @patch.object(api_ticket_module, "User")
+    @patch.object(api_ticket_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_api_redeems_ticket_with_display_name_override(self, verify, ticket_class, user_class) -> None:
+        partner_id = ObjectId("507f1f77bcf86cd799439031")
+        user_id = ObjectId("507f1f77bcf86cd799439011")
+        ticket_id = ObjectId("64e3b8000000000000000000")
+        verify.return_value = (SimpleNamespace(id=partner_id), {"code": "secret-code", "external_id": "ext-jane"})
+        existing = SimpleNamespace(id=ticket_id, code="secret-code")
+        updated = SimpleNamespace(
+            id=ticket_id,
+            code="secret-code",
+            redeemed=Redemption(
+                dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                by=user_ref("Name from request", object_id=str(user_id)),
+                reason="jump",
+            ),
+        )
+        find_query = SimpleNamespace(first=MagicMock(return_value=existing))
+        redeem_query = SimpleNamespace(modify=MagicMock(return_value=updated))
+        ticket_class.objects.side_effect = [find_query, redeem_query]
+        user_class.objects.return_value.first.return_value = SimpleNamespace(id=user_id, display_name="Name from user")
+
+        status, _headers, body = self.request(
+            "/api/ticket/redeem",
+            method="POST",
+            body=json.dumps(
+                {
+                    "code": "secret-code",
+                    "external_id": "ext-jane",
+                    "display_name": "Name from request",
+                    "reason": "jump",
+                }
+            ).encode(),
+        )
+
+        self.assertEqual(status, service.HTTPStatus.CREATED)
+        ticket_class.objects.assert_has_calls([call(code="secret-code"), call(id=ticket_id, redeemed=None)])
+        user_class.objects.assert_called_once_with(**{f"partner_uid_map__{partner_id}": "ext-jane"})
+        redeemed_value = redeem_query.modify.call_args.kwargs["set__redeemed"]
+        self.assertEqual(redeemed_value.by.id, user_id)
+        self.assertEqual(redeemed_value.by.display_name, "Name from request")
+        self.assertEqual(redeemed_value.reason, "jump")
+        self.assertEqual(json.loads(body), {
+            "code": "secret-code",
+            "internal_id": "64e3b8000000000000000000",
+            "redeemed": {
+                "at": "2026-08-24T09:01:00+00:00",
+                "by": {
+                    "internal_id": "507f1f77bcf86cd799439011",
+                    "display_name": "Name from request",
+                },
+                "reason": "jump",
+            },
+        })
+
+    @patch.object(api_ticket_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_api_returns_not_found(self, verify, ticket_class) -> None:
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {"code": "missing", "external_id": "ext"})
+        ticket_class.objects.return_value.first.return_value = None
+
+        status, _headers, body = self.request("/api/ticket/redeem", method="POST")
+
+        self.assertEqual(status, service.HTTPStatus.NOT_FOUND)
+        ticket_class.objects.assert_called_once_with(code="missing")
+        self.assertEqual(json.loads(body), {"error": "Ticket not found."})
+
+    @patch.object(api_ticket_module, "User")
+    @patch.object(api_ticket_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_api_returns_conflict_when_already_redeemed(self, verify, ticket_class, user_class) -> None:
+        partner_id = ObjectId("507f1f77bcf86cd799439031")
+        verify.return_value = (SimpleNamespace(id=partner_id), {"code": "used", "external_id": "ext"})
+        existing = SimpleNamespace(id=ObjectId("64e3b8000000000000000000"))
+        find_query = SimpleNamespace(first=MagicMock(return_value=existing))
+        redeem_query = SimpleNamespace(modify=MagicMock(return_value=None))
+        ticket_class.objects.side_effect = [find_query, redeem_query]
+        user_class.objects.return_value.first.return_value = None
+
+        status, _headers, body = self.request("/api/ticket/redeem", method="POST")
+
+        self.assertEqual(status, service.HTTPStatus.CONFLICT)
+        ticket_class.objects.assert_has_calls([call(code="used"), call(id=existing.id, redeemed=None)])
+        self.assertEqual(json.loads(body), {"error": "Ticket already redeemed."})
+
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_api_allows_only_post(self, verify) -> None:
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+
+        status, headers, body = self.request("/api/ticket/redeem", method="GET")
+
+        self.assertEqual(status, service.HTTPStatus.METHOD_NOT_ALLOWED)
+        self.assertIn(("Allow", "POST"), headers)
+        self.assertEqual(json.loads(body), {"error": "Method not allowed."})
+
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_api_validates_required_fields(self, verify) -> None:
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {"code": "secret-code"})
+
+        status, _headers, body = self.request("/api/ticket/redeem", method="POST")
+
+        self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
+        self.assertEqual(json.loads(body), {"error": "code and external_id are required."})
 
 
 class ServiceApplicationTest(unittest.TestCase):

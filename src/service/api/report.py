@@ -1,27 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from http import HTTPStatus
 
 from ...model.auth import User
 from ... import Ticket
 from ...time_utils import as_utc
 from ..config import local_timezone
-from ._shared import _json_response, _method_not_allowed
 
 
-def dispatch(method: str, path: str, partner):
-    """Handle `/api/report/*` endpoints. Returns None if `path` is not handled here."""
-    if path in {"/api/report/ticket-redeem/today", "/api/report/ticket-redeem/yesterday"}:
-        if method != "GET":
-            return _method_not_allowed(["GET"])
-        yesterday, today, tomorrow = _day_boundaries()
-        start, end = (today, tomorrow) if path.endswith("/today") else (yesterday, today)
-        return _json_response(HTTPStatus.OK, _ticket_redeem_report(partner, start=start, end=end))
-    return None
-
-
-def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
+def day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
     now = now or datetime.now(timezone.utc)
     display_timezone = local_timezone()
     local_now = as_utc(now).astimezone(display_timezone)
@@ -31,7 +18,7 @@ def _day_boundaries(now: datetime | None = None) -> tuple[datetime, datetime, da
     return as_utc(yesterday), as_utc(today), as_utc(tomorrow)
 
 
-def _ticket_redeem_report(partner, *, start: datetime, end: datetime):
+def ticket_redeem_report(partner, *, start: datetime, end: datetime):
     tickets = list(
         Ticket.objects(redeemed__dt__gte=start, redeemed__dt__lt=end)
         .only("id", "issued_to", "payment", "purpose", "redeemed")
