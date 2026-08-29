@@ -188,7 +188,12 @@ def _ticket_redeem_report(partner: Partner, *, start: datetime, end: datetime):
         user = users_by_id.get(internal_id) if internal_id else None
         external_id = (user.partner_uid_map or {}).get(str(partner.id)) if user is not None else None
         display_name = (user.display_name if user is not None else None) or (issued_to.display_name if issued_to else None)
-        group_key = ("id", internal_id) if internal_id is not None else ("name", display_name or "")
+        if internal_id is not None:
+            group_key = ("id", internal_id)
+        elif display_name:
+            group_key = ("name", display_name)
+        else:
+            group_key = ("ticket", str(ticket.id))
         group = groups.setdefault(
             group_key,
             {

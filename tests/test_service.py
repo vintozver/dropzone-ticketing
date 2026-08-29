@@ -1035,6 +1035,53 @@ class ServiceApiTest(unittest.TestCase):
         self.assertIn(("Allow", "GET"), headers)
         self.assertEqual(json.loads(body), {"error": "Method not allowed."})
 
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "User")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_report_does_not_merge_anonymous_tickets_without_name(
+        self, verify, ticket_class, user_class, day_boundaries
+    ) -> None:
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000000"),
+                issued_to=SimpleNamespace(id=None, display_name=None),
+                payment="cash",
+                purpose="jump",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-1", object_id="507f1f77bcf86cd7994390aa"),
+                    reason="hop",
+                ),
+            ),
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000001"),
+                issued_to=SimpleNamespace(id=None, display_name=None),
+                payment="card",
+                purpose="tandem",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 10, 2, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-2", object_id="507f1f77bcf86cd7994390ab"),
+                    reason="done",
+                ),
+            ),
+        ]
+        user_class.objects.return_value.only.return_value = []
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/today")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        payload = json.loads(body)
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["tickets"][0]["internal_id"], "64e3b8000000000000000000")
+        self.assertEqual(payload[1]["tickets"][0]["internal_id"], "64e3b8000000000000000001")
+
 
 class ServiceApplicationTest(unittest.TestCase):
     def request(
