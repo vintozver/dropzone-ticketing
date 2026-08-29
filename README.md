@@ -52,6 +52,13 @@ Partners call these endpoints with an Authorization header carrying a bearer JWT
 * `PATCH /api/user` updates one mapping. Send a JSON object containing
   `internal_id` and `external_id`; the same values must be present in the
   signed JWT claims.
+* `GET /api/report/ticket-redeem/today` returns tickets redeemed today.
+* `GET /api/report/ticket-redeem/yesterday` returns tickets redeemed yesterday.
+
+Both endpoints return arrays grouped by user. Each item includes
+`internal_id`, `external_id`, `display_name`, and `tickets`.
+Each entry in `tickets` includes `internal_id`, `payment`, `purpose`,
+and `redeemed` (`at`, `by`, `reason`) details.
 
 The JWT must use a `partner` header containing the partner ObjectId and a `kid`
 header selecting a configured key. If present, the `exp` claim is validated.

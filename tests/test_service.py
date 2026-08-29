@@ -24,6 +24,7 @@ from mongoengine.errors import NotUniqueError
 
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
+from dropzone_ticketing.service import api as api_module
 from dropzone_ticketing.service import config
 from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
@@ -841,6 +842,245 @@ class ServiceHelperTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.FORBIDDEN)
         self.assertIn(b"Permission denied.", body)
+
+
+class ServiceApiTest(unittest.TestCase):
+    def request(self, path: str, method: str = "GET"):
+        return api_module.dispatch(
+            {
+                "REQUEST_METHOD": method,
+                "PATH_INFO": path,
+                "CONTENT_LENGTH": "0",
+                "wsgi.input": io.BytesIO(b""),
+                "HTTP_AUTHORIZATION": "******",
+            }
+        )
+
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "User")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_today_report_groups_tickets_by_user(
+        self, verify, ticket_class, user_class, day_boundaries
+    ) -> None:
+        partner_id = ObjectId("507f1f77bcf86cd799439031")
+        user_id = ObjectId("507f1f77bcf86cd799439011")
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=partner_id), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000000"),
+                issued_to=user_ref("Jane", object_id=str(user_id)),
+                payment="cash",
+                purpose="jump",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-1", object_id="507f1f77bcf86cd7994390aa"),
+                    reason="hop",
+                ),
+            ),
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000001"),
+                issued_to=user_ref("Jane", object_id=str(user_id)),
+                payment="card",
+                purpose="tandem",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 10, 2, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-2", object_id="507f1f77bcf86cd7994390ab"),
+                    reason="done",
+                ),
+            ),
+        ]
+        user_class.objects.return_value.only.return_value = [
+            SimpleNamespace(id=user_id, display_name="Jane Admin", partner_uid_map={str(partner_id): "ext-jane"})
+        ]
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/today")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        ticket_class.objects.assert_called_once_with(
+            redeemed__dt__gte=datetime(2026, 8, 24, tzinfo=timezone.utc),
+            redeemed__dt__lt=datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        user_class.objects.assert_called_once_with(id__in={user_id})
+        payload = json.loads(body)
+        self.assertEqual(
+            payload,
+            [
+                {
+                    "internal_id": str(user_id),
+                    "external_id": "ext-jane",
+                    "display_name": "Jane Admin",
+                    "tickets": [
+                        {
+                            "internal_id": "64e3b8000000000000000000",
+                            "payment": "cash",
+                            "purpose": "jump",
+                            "redeemed": {
+                                "at": "2026-08-24T09:01:00+00:00",
+                                "by": {
+                                    "internal_id": "507f1f77bcf86cd7994390aa",
+                                    "display_name": "redeemer-1",
+                                },
+                                "reason": "hop",
+                            },
+                        },
+                        {
+                            "internal_id": "64e3b8000000000000000001",
+                            "payment": "card",
+                            "purpose": "tandem",
+                            "redeemed": {
+                                "at": "2026-08-24T10:02:00+00:00",
+                                "by": {
+                                    "internal_id": "507f1f77bcf86cd7994390ab",
+                                    "display_name": "redeemer-2",
+                                },
+                                "reason": "done",
+                            },
+                        },
+                    ],
+                }
+            ],
+        )
+
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_yesterday_report_uses_previous_day_window(self, verify, ticket_class, day_boundaries) -> None:
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = []
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/yesterday")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        ticket_class.objects.assert_called_once_with(
+            redeemed__dt__gte=datetime(2026, 8, 23, tzinfo=timezone.utc),
+            redeemed__dt__lt=datetime(2026, 8, 24, tzinfo=timezone.utc),
+        )
+        self.assertEqual(json.loads(body), [])
+
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "User")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_report_includes_anonymous_ticket_owner_without_user_id(
+        self, verify, ticket_class, user_class, day_boundaries
+    ) -> None:
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000000"),
+                issued_to=user_ref("Walk-in passenger"),
+                payment="cash",
+                purpose="jump",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-1", object_id="507f1f77bcf86cd7994390aa"),
+                    reason="hop",
+                ),
+            )
+        ]
+        user_class.objects.return_value.only.return_value = []
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/today")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        self.assertEqual(
+            json.loads(body),
+            [
+                {
+                    "internal_id": None,
+                    "external_id": None,
+                    "display_name": "Walk-in passenger",
+                    "tickets": [
+                        {
+                            "internal_id": "64e3b8000000000000000000",
+                            "payment": "cash",
+                            "purpose": "jump",
+                            "redeemed": {
+                                "at": "2026-08-24T09:01:00+00:00",
+                                "by": {
+                                    "internal_id": "507f1f77bcf86cd7994390aa",
+                                    "display_name": "redeemer-1",
+                                },
+                                "reason": "hop",
+                            },
+                        }
+                    ],
+                }
+            ],
+        )
+
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_report_allows_only_get(self, verify) -> None:
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+
+        status, headers, body = self.request("/api/report/ticket-redeem/today", method="POST")
+
+        self.assertEqual(status, service.HTTPStatus.METHOD_NOT_ALLOWED)
+        self.assertIn(("Allow", "GET"), headers)
+        self.assertEqual(json.loads(body), {"error": "Method not allowed."})
+
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "User")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_report_does_not_merge_anonymous_tickets_without_name(
+        self, verify, ticket_class, user_class, day_boundaries
+    ) -> None:
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000000"),
+                issued_to=SimpleNamespace(id=None, display_name=None),
+                payment="cash",
+                purpose="jump",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-1", object_id="507f1f77bcf86cd7994390aa"),
+                    reason="hop",
+                ),
+            ),
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000001"),
+                issued_to=SimpleNamespace(id=None, display_name=None),
+                payment="card",
+                purpose="tandem",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 10, 2, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-2", object_id="507f1f77bcf86cd7994390ab"),
+                    reason="done",
+                ),
+            ),
+        ]
+        user_class.objects.return_value.only.return_value = []
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/today")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
+        payload = json.loads(body)
+        self.assertEqual(len(payload), 2)
+        self.assertEqual(payload[0]["tickets"][0]["internal_id"], "64e3b8000000000000000000")
+        self.assertEqual(payload[1]["tickets"][0]["internal_id"], "64e3b8000000000000000001")
 
 
 class ServiceApplicationTest(unittest.TestCase):
