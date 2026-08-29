@@ -883,7 +883,7 @@ class ServiceApiTest(unittest.TestCase):
                 reason="hop",
             ),
         )
-        ticket_class.objects.return_value.order_by.return_value = [ticket]
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [ticket]
         user_class.objects.return_value.only.return_value = [
             SimpleNamespace(id=user_id, display_name="Jane Admin", partner_uid_map={str(partner_id): "ext-jane"})
         ]
@@ -895,7 +895,7 @@ class ServiceApiTest(unittest.TestCase):
             redeemed__dt__gte=datetime(2026, 8, 24, tzinfo=timezone.utc),
             redeemed__dt__lt=datetime(2026, 8, 25, tzinfo=timezone.utc),
         )
-        user_class.objects.assert_called_once_with(id__in=[user_id])
+        user_class.objects.assert_called_once_with(id__in={user_id})
         payload = json.loads(body)
         self.assertEqual(
             payload,
@@ -908,7 +908,6 @@ class ServiceApiTest(unittest.TestCase):
                     },
                     "ticket": {
                         "internal_id": "64e3b8000000000000000000",
-                        "code": "secret-code",
                         "payment": "cash",
                         "purpose": "jump",
                     },
@@ -934,7 +933,7 @@ class ServiceApiTest(unittest.TestCase):
             datetime(2026, 8, 25, tzinfo=timezone.utc),
         )
         verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
-        ticket_class.objects.return_value.order_by.return_value = []
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = []
 
         status, _headers, body = self.request("/api/report/ticket-redeem/yesterday")
 
@@ -943,6 +942,40 @@ class ServiceApiTest(unittest.TestCase):
             redeemed__dt__gte=datetime(2026, 8, 23, tzinfo=timezone.utc),
             redeemed__dt__lt=datetime(2026, 8, 24, tzinfo=timezone.utc),
         )
+        self.assertEqual(json.loads(body), [])
+
+    @patch.object(api_module, "_day_boundaries")
+    @patch.object(api_module, "User")
+    @patch.object(api_module, "Ticket")
+    @patch.object(api_module, "_verify")
+    def test_ticket_redeem_report_skips_users_without_partner_mapping(
+        self, verify, ticket_class, user_class, day_boundaries
+    ) -> None:
+        user_id = ObjectId("507f1f77bcf86cd799439011")
+        day_boundaries.return_value = (
+            datetime(2026, 8, 23, tzinfo=timezone.utc),
+            datetime(2026, 8, 24, tzinfo=timezone.utc),
+            datetime(2026, 8, 25, tzinfo=timezone.utc),
+        )
+        verify.return_value = (SimpleNamespace(id=ObjectId("507f1f77bcf86cd799439031")), {})
+        ticket_class.objects.return_value.only.return_value.order_by.return_value = [
+            SimpleNamespace(
+                id=ObjectId("64e3b8000000000000000000"),
+                issued_to=user_ref("Jane", object_id=str(user_id)),
+                payment="cash",
+                purpose="jump",
+                redeemed=Redemption(
+                    dt=datetime(2026, 8, 24, 9, 1, tzinfo=timezone.utc),
+                    by=user_ref("redeemer-1", object_id="507f1f77bcf86cd7994390aa"),
+                    reason="hop",
+                ),
+            )
+        ]
+        user_class.objects.return_value.only.return_value = [SimpleNamespace(id=user_id, display_name="Jane", partner_uid_map={})]
+
+        status, _headers, body = self.request("/api/report/ticket-redeem/today")
+
+        self.assertEqual(status, service.HTTPStatus.OK)
         self.assertEqual(json.loads(body), [])
 
     @patch.object(api_module, "_verify")

@@ -57,7 +57,7 @@ Partners call these endpoints with an Authorization header carrying a bearer JWT
 
 Both endpoints return arrays where each item includes `user`
 (`internal_id`, `external_id`, `display_name`), `ticket`
-(`internal_id`, `code`, `payment`, `purpose`), and `redeemed`
+(`internal_id`, `payment`, `purpose`), and `redeemed`
 (`at`, `by`, `reason`) details.
 
 The JWT must use a `partner` header containing the partner ObjectId and a `kid`
