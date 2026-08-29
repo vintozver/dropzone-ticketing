@@ -82,9 +82,9 @@ def complete_authn(environ: dict):
             environ,
             "FIDO2 authentication failed.",
             traceback.format_exc(),
-            auth._safe_return_uri(state.get("return_uri")),
+            auth.return_uri(environ),
         )
-    destination = auth._safe_return_uri(state.get("return_uri")) or "/"
+    destination = auth.return_uri(environ)
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Authenticated.")
     headers = [
         ("Location", destination),

@@ -112,6 +112,11 @@ def return_uri(environ: dict) -> str:
     requested = _safe_return_uri(query.get(_RETURN_URI_PARAM, [None])[0])
     if requested is not None:
         return requested
+    saved = _unsign(_cookies(environ).get(AUTHN_CHALLENGE_COOKIE, ""))
+    if saved is not None:
+        saved_return_uri = _safe_return_uri(saved.get(_RETURN_URI_PARAM))
+        if saved_return_uri is not None:
+            return saved_return_uri
     path = environ.get("PATH_INFO", "/")
     query_string = environ.get("QUERY_STRING", "")
     current = f"{path}?{query_string}" if query_string else path
