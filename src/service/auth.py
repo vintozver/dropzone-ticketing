@@ -17,14 +17,7 @@ from uuid import UUID
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fido2.server import Fido2Server
 from mongoengine.errors import OperationError, ValidationError
-from fido2.webauthn import (
-    AttestationConveyancePreference,
-    PublicKeyCredentialUserEntity,
-    PublicKeyCredentialRpEntity,
-)
-
 from .config import authn_config, session_secret
 from .http import error, read_form, render
 from ..model.auth import Fido2Credential, User
@@ -138,15 +131,6 @@ def authentication_error(environ: dict, message: str, trace: str = "", destinati
 
     destination = destination or return_uri(environ)
     return render("error.html", HTTPStatus.FORBIDDEN, message=message, trace=trace, retry_uri=_authn_url(destination))
-
-
-def _rp_id(environ: dict) -> str:
-    return _request_host(environ).split(":", 1)[0]
-
-
-def _origin(environ: dict) -> str:
-    scheme = environ.get("wsgi.url_scheme") or "http"
-    return f"{scheme}://{_request_host(environ)}"
 
 
 def _json_options(options: object) -> object:
@@ -324,14 +308,16 @@ def begin_authn(environ: dict):
     if authn_config().register:
         return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
     challenge = secrets.token_bytes(32)
-    server = _server(environ)
+    from ._fido2 import PublicKeyCredentialUserEntity, credential_data, rp_id, server
+
+    fido2_server = server(environ)
     credentials = [
         credential
         for user in User.objects().only("fido2_credentials")
         for credential in user.fido2_credentials
     ]
-    _options, _state = server.authenticate_begin(
-        [_credential_data(credential) for credential in credentials],
+    _options, _state = fido2_server.authenticate_begin(
+        [credential_data(credential) for credential in credentials],
         challenge=challenge,
     )
     allow_credentials = [
@@ -343,13 +329,13 @@ def begin_authn(environ: dict):
     registration_options = None
     register_state = None
     if user is not None:
-        register_options, register_state = server.register_begin(
+        register_options, register_state = fido2_server.register_begin(
             PublicKeyCredentialUserEntity(
                 id=str(user.id).encode("utf-8"),
                 name=str(user.id),
                 display_name=user.display_name or str(user.id),
             ),
-            [_credential_data(credential) for credential in user.fido2_credentials],
+            [credential_data(credential) for credential in user.fido2_credentials],
             user_verification="discouraged",
         )
         registration_options = _json_options(dict(register_options))
@@ -404,7 +390,7 @@ def begin_authn(environ: dict):
     status, headers, body = render(
         "auth.html",
         challenge=_b64encode(challenge),
-        rp_id=_rp_id(environ),
+        rp_id=rp_id(environ),
         allow_credentials=allow_credentials,
         registration_options=registration_options,
         authenticated=user is not None,
@@ -529,21 +515,6 @@ def verify_email_code(environ: dict):
         _cookie(AUTHN_SESSION_COOKIE, _signed({"user_id": str(user.id), "issued": time()})),
     ]
     return status, headers, body
-
-
-def _server(environ: dict) -> Fido2Server:
-    rp = PublicKeyCredentialRpEntity("dropzone-ticketing", _rp_id(environ))
-    return Fido2Server(
-        rp,
-        attestation=AttestationConveyancePreference.ENTERPRISE,
-        verify_origin=lambda origin: origin == _origin(environ),
-    )
-
-
-def _credential_data(credential: Fido2Credential):
-    from fido2.webauthn import AttestedCredentialData
-
-    return AttestedCredentialData(credential.data)
 
 
 def logout():

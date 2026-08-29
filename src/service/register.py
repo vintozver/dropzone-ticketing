@@ -26,14 +26,12 @@ from .auth import (
     _clear_cookie,
     _cookie,
     _cookies,
-    _credential_data,
     _find_credential,
     _registration_fields,
-    _rp_id,
-    _server,
     _signed,
     _unsign,
 )
+from . import _fido2
 from .config import authn_config
 from .http import error, read_form, render
 from ..model.auth import Fido2Credential, User
@@ -77,10 +75,10 @@ def begin_register(environ: dict):
             user_object_id = ObjectId(raw_user_id)
         except (InvalidId, TypeError):
             return error(HTTPStatus.BAD_REQUEST, "User id is invalid.")
-        server = _server(environ)
+        server = _fido2.server(environ)
         existing_user = User.objects(id=user_object_id).only("id", "fido2_credentials").first()
         credentials = (
-            [_credential_data(credential) for credential in existing_user.fido2_credentials]
+            [_fido2.credential_data(credential) for credential in existing_user.fido2_credentials]
             if existing_user is not None
             else []
         )
@@ -96,7 +94,7 @@ def begin_register(environ: dict):
         registration_options = _json_options(dict(options))
     status, headers, body = render(
         "register.html",
-        rp_id=_rp_id(environ),
+        rp_id=_fido2.rp_id(environ),
         user_id=user_id,
         display_name=display_name,
         email=email,
@@ -130,7 +128,7 @@ def complete_register(environ: dict):
     except (InvalidId, TypeError):
         return error(HTTPStatus.BAD_REQUEST, "User ID is invalid.")
     try:
-        server = _server(environ)
+        server = _fido2.server(environ)
         attestation_object = _b64decode(form.get("attestationObject", ""))
         auth_data = server.register_complete(
             state,

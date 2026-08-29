@@ -11,12 +11,39 @@ from time import time
 from . import auth
 from .http import error, read_form
 from ..model.auth import Fido2Credential
+from fido2.server import Fido2Server
 from fido2.webauthn import (
     AuthenticatorAttestationResponse,
     AttestationObject,
     CollectedClientData,
     RegistrationResponse,
+    AttestationConveyancePreference,
+    AttestedCredentialData,
+    PublicKeyCredentialRpEntity,
+    PublicKeyCredentialUserEntity,
 )
+
+
+def rp_id(environ: dict) -> str:
+    return auth._request_host(environ).split(":", 1)[0]
+
+
+def origin(environ: dict) -> str:
+    scheme = environ.get("wsgi.url_scheme") or "http"
+    return f"{scheme}://{auth._request_host(environ)}"
+
+
+def server(environ: dict) -> Fido2Server:
+    rp = PublicKeyCredentialRpEntity("dropzone-ticketing", rp_id(environ))
+    return Fido2Server(
+        rp,
+        attestation=AttestationConveyancePreference.ENTERPRISE,
+        verify_origin=lambda value: value == origin(environ),
+    )
+
+
+def credential_data(credential: Fido2Credential):
+    return AttestedCredentialData(credential.data)
 
 
 def complete_authn(environ: dict):
@@ -39,10 +66,10 @@ def complete_authn(environ: dict):
         credential = auth._find_credential(form.get("rawId", ""))
         if credential is None:
             raise ValueError("Unknown credential.")
-        server = auth._server(environ)
-        server.authenticate_complete(
+        fido2_server = server(environ)
+        fido2_server.authenticate_complete(
             state,
-            [auth._credential_data(credential)],
+            [credential_data(credential)],
             response=response,
         )
         serial = auth._b64encode(credential.id)
@@ -77,8 +104,8 @@ def add_credential(environ: dict):
         return error(HTTPStatus.FORBIDDEN, "Registration user does not match the challenge.")
     form = read_form(environ)
     try:
-        server = auth._server(environ)
-        auth_data = server.register_complete(
+        fido2_server = server(environ)
+        auth_data = fido2_server.register_complete(
             state,
             response=RegistrationResponse(
                 id=form.get("id", ""),
