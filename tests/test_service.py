@@ -25,6 +25,7 @@ from mongoengine.errors import NotUniqueError
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import config
+from dropzone_ticketing.service import _fido2 as fido2_module
 from dropzone_ticketing.service import google as google_module
 from dropzone_ticketing.service import microsoft as microsoft_module
 from dropzone_ticketing.service import register as register_module
@@ -797,9 +798,9 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "User", user_class
-        ), patch.object(auth, "_credential_data", return_value="credential data"):
+        ), patch.object(fido2_module.auth, "_credential_data", return_value="credential data"):
             _status, headers, body = auth.begin_authn(environ)
 
         server.authenticate_begin.assert_called_once_with(["credential data"], challenge=ANY)
@@ -824,7 +825,7 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(auth, "_server", return_value=server), patch.object(auth, "User", user_class):
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(fido2_module.auth, "User", user_class):
             _status, headers, _body = auth.begin_authn(environ)
 
         cookie = next(value for name, value in headers if name == "Set-Cookie" and "authn_challenge=" in value)
@@ -851,9 +852,9 @@ class ServiceAuthnTest(unittest.TestCase):
         server = MagicMock()
         credential = SimpleNamespace(id=b"credential")
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "_find_credential", return_value=credential
-        ), patch.object(auth, "_credential_data", return_value="credential data"):
+        ), patch.object(fido2_module.auth, "_credential_data", return_value="credential data"):
             response = self.request(
                 "/authn",
                 "POST",
@@ -1036,7 +1037,7 @@ class ServiceAuthnTest(unittest.TestCase):
             "wsgi.url_scheme": "https",
         }
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=user), patch.object(
             auth, "_credential_data", return_value="credential data"
@@ -1076,7 +1077,7 @@ class ServiceAuthnTest(unittest.TestCase):
         )
         user = MagicMock(id=ObjectId("507f1f77bcf86cd799439011"), fido2_credentials=[])
         environ = {
-            "PATH_INFO": "/authn/register",
+            "PATH_INFO": "/authn/fido2/add",
             "REQUEST_METHOD": "POST",
             "CONTENT_LENGTH": "0",
             "wsgi.input": io.BytesIO(
@@ -1095,14 +1096,14 @@ class ServiceAuthnTest(unittest.TestCase):
 
         with patch.object(auth, "authn_config", return_value=SimpleNamespace(register=False)), patch.object(
             auth, "_session_user", return_value=user
-        ), patch.object(auth, "_server", return_value=server), patch.object(
+        ), patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "_find_credential", return_value=None
-        ), patch.object(auth, "CollectedClientData", return_value="client data"), patch.object(
+        ), patch.object(fido2_module.auth, "CollectedClientData", return_value="client data"), patch.object(
             auth, "AttestationObject", return_value="attestation"
         ), patch.object(
             auth, "AuthenticatorAttestationResponse", return_value="attestation response"
-        ), patch.object(auth, "RegistrationResponse", return_value="registration response"):
-            response = auth.complete_authn_register(environ)
+        ), patch.object(fido2_module.auth, "RegistrationResponse", return_value="registration response"):
+            response = fido2_module.add_credential(environ)
 
         self.assertEqual(response[0], service.HTTPStatus.SEE_OTHER)
         self.assertEqual(user.fido2_credentials[0].id, b"credential")
@@ -1124,7 +1125,7 @@ class ServiceAuthnTest(unittest.TestCase):
         }
 
         with patch.object(auth, "_session_user", return_value=user):
-            status, headers, _body = auth.remove_fido2_credential(environ)
+            status, headers, _body = fido2_module.remove_credential(environ)
 
         self.assertEqual(status, service.HTTPStatus.SEE_OTHER)
         self.assertEqual(dict(headers)["Location"], "/authn")
@@ -1202,7 +1203,7 @@ class ServiceAuthnTest(unittest.TestCase):
         )
         environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=user), patch.object(
             auth, "_credential_data", return_value="credential data"
@@ -1218,7 +1219,7 @@ class ServiceAuthnTest(unittest.TestCase):
         server.authenticate_begin.return_value = {}, {"challenge": b64(b"challenge"), "user_verification": None}
         environ = {"PATH_INFO": "/authn", "HTTP_HOST": "example.test", "wsgi.url_scheme": "https"}
 
-        with patch.object(auth, "_server", return_value=server), patch.object(
+        with patch.object(fido2_module.auth, "_server", return_value=server), patch.object(
             auth, "User", MagicMock(objects=MagicMock(return_value=MagicMock(only=MagicMock(return_value=[]))))
         ), patch.object(auth, "_session_user", return_value=None):
             _status, _headers, body = auth.begin_authn(environ)

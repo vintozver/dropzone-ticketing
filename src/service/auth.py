@@ -550,52 +550,6 @@ def _credential_data(credential: Fido2Credential):
     return AttestedCredentialData(credential.data)
 
 
-def complete_authn_register(environ: dict):
-    if authn_config().register:
-        return error(HTTPStatus.FORBIDDEN, "Authentication is disabled in registration-only mode.")
-    user = _session_user(environ)
-    if user is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
-    register_state = _register_state_from_cookie(environ)
-    if register_state is None:
-        return error(HTTPStatus.FORBIDDEN, "Registration challenge is missing or expired.")
-    state, state_user_id = register_state
-    if not hmac.compare_digest(str(user.id), state_user_id):
-        return error(HTTPStatus.FORBIDDEN, "Registration user does not match the challenge.")
-    form = read_form(environ)
-    try:
-        server = _server(environ)
-        attestation_object = _b64decode(form.get("attestationObject", ""))
-        auth_data = server.register_complete(
-            state,
-            response=RegistrationResponse(
-                id=form.get("id", ""),
-                response=AuthenticatorAttestationResponse(
-                    client_data=CollectedClientData(_b64decode(form.get("clientDataJSON", ""))),
-                    attestation_object=AttestationObject(attestation_object),
-                ),
-            ),
-        )
-        credential_data = bytes(auth_data.credential_data)
-        credential_id = auth_data.credential_data.credential_id
-        if _find_credential(_b64encode(credential_id)) is not None:
-            return error(HTTPStatus.CONFLICT, "FIDO2 credential is already registered.")
-        user.fido2_credentials.append(
-            Fido2Credential(
-                id=credential_id,
-                data=credential_data,
-                dt=datetime.now(timezone.utc),
-                **_registration_fields(auth_data),
-            )
-        )
-        user.save()
-    except (binascii.Error, ValueError):
-        return error(HTTPStatus.FORBIDDEN, "FIDO2 registration failed.", traceback.format_exc())
-    status, headers, body = error(HTTPStatus.SEE_OTHER, "Credential registered.")
-    headers = [("Location", "/authn"), _clear_cookie(AUTHN_CHALLENGE_COOKIE, path="/authn")]
-    return status, headers, body
-
-
 def logout():
     status, headers, body = error(HTTPStatus.SEE_OTHER, "Signed out.")
     headers = [("Location", "/authn"), _clear_cookie(AUTHN_SESSION_COOKIE)]
@@ -611,27 +565,6 @@ def update_display_name(environ: dict):
     if len(display_name) > 200:
         return error(HTTPStatus.BAD_REQUEST, "Display name is too long.")
     user.display_name = display_name or None
-    user.save()
-    return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
-
-
-def remove_fido2_credential(environ: dict):
-    user = _session_user(environ)
-    if user is None:
-        return error(HTTPStatus.FORBIDDEN, "Authentication required.")
-    form = read_form(environ)
-    token = form.get("csrf", "")
-    expected = _cookies(environ).get(AUTHN_CSRF_COOKIE, "")
-    if not token or not expected or not secrets.compare_digest(token, expected):
-        return error(HTTPStatus.FORBIDDEN, "Invalid request.")
-    try:
-        credential_id = _b64decode(form.get("credential_id", ""))
-    except (ValueError, binascii.Error):
-        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
-    credentials = user.fido2_credentials
-    user.fido2_credentials = [credential for credential in credentials if credential.id != credential_id]
-    if len(user.fido2_credentials) == len(credentials):
-        return error(HTTPStatus.NOT_FOUND, "FIDO2 credential not found.")
     user.save()
     return HTTPStatus.SEE_OTHER, [("Location", "/authn")], b""
 

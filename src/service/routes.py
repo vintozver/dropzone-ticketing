@@ -5,7 +5,7 @@ import re
 from http import HTTPStatus
 from urllib.parse import parse_qs
 
-from . import auth, fido2, google, microsoft, register
+from . import _fido2, auth, google, microsoft, register
 from .config import authn_config
 from .http import method_not_allowed, render
 
@@ -28,12 +28,12 @@ def dispatch(environ: dict, handlers):
         if method == "GET":
             return auth.begin_authn(environ)
         if method == "POST":
-            return fido2.complete_authn(environ)
+            return _fido2.complete_authn(environ)
         return method_not_allowed(["GET", "POST"])
 
-    if path == "/authn/register":
+    if path == "/authn/fido2/add":
         if method == "POST":
-            return auth.complete_authn_register(environ)
+            return _fido2.add_credential(environ)
         return method_not_allowed(["POST"])
 
     if path == "/authn/display-name":
@@ -53,7 +53,7 @@ def dispatch(environ: dict, handlers):
 
     if path == "/authn/fido2/remove":
         if method == "POST":
-            return auth.remove_fido2_credential(environ)
+            return _fido2.remove_credential(environ)
         return method_not_allowed(["POST"])
 
     if path == "/authn/google":

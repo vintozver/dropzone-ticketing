@@ -52,7 +52,7 @@
   </table>
   {% else %}<p>No FIDO2 credentials registered.</p>{% endif %}
   {% if registration_options %}
-  <form id="register-form" method="post" action="/authn/register">
+  <form id="register-form" method="post" action="/authn/fido2/add">
     <input type="hidden" name="id" id="register-id">
     <input type="hidden" name="rawId" id="register-rawId">
     <input type="hidden" name="attestationObject" id="register-attestationObject">
