@@ -42,7 +42,3 @@ def update_user(environ: dict, claims: dict, partner):
         **{"set__partner_uid_map__" + str(partner.id): external_id}
     )
     return _json_response(HTTPStatus.OK, {"internal_id": internal_id, "external_id": external_id})
-
-
-_list_users = list_users
-_update_user = update_user

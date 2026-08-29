@@ -75,7 +75,3 @@ def ticket_redeem_report(partner, *, start: datetime, end: datetime):
             }
         )
     return list(groups.values())
-
-
-_day_boundaries = day_boundaries
-_ticket_redeem_report = ticket_redeem_report

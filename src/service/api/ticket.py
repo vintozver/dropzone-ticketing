@@ -49,6 +49,3 @@ def redeem_ticket(environ: dict, claims: dict, partner):
             },
         },
     )
-
-
-_redeem_ticket = redeem_ticket
