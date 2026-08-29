@@ -44,8 +44,8 @@ does not use STARTTLS.
 
 ### Partner API
 
-Partners call `GET /api/user/list` and `PATCH /api/user` with an
-`Authorization: ****** header. The JWT must use a `partner` header
+Partners call `GET /api/user/list` and `PATCH /api/user` with an Authorization
+header containing a bearer JWT. The JWT must use a `partner` header
 containing the partner ObjectId and a `kid` header selecting a configured key.
 The signed claims for a user update are `internal_id` and `external_id`.
 Supported signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by

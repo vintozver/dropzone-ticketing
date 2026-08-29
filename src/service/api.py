@@ -89,7 +89,7 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
     except (ValueError, TypeError, InvalidSignature) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
     expiry = payload.get("exp")
-    if expiry is not None and (not isinstance(expiry, (int, float)) or expiry < datetime.now(timezone.utc).timestamp()):
+    if not isinstance(expiry, (int, float)) or expiry < datetime.now(timezone.utc).timestamp():
         raise PermissionError("JWT has expired.")
     return partner, payload
 
@@ -122,7 +122,8 @@ def dispatch(environ: dict):
         partner, claims = _verify(environ)
         if path == "/api/user/list" and method == "GET":
             users = []
-            for user in User.objects:
+            users_query = User.objects(__raw__={"partner_uid_map." + str(partner.id): {"$exists": True}})
+            for user in users_query:
                 external_id = (user.partner_uid_map or {}).get(str(partner.id))
                 if external_id is not None:
                     users.append({"external_id": external_id, "internal_id": str(user.id),

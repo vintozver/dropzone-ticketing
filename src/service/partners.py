@@ -35,6 +35,14 @@ def view(environ: dict, partner_id: str | None = None):
     return render("admin_partner.html", partner=partner)
 
 
+def view_partners(environ: dict):
+    return view(environ)
+
+
+def view_partner(environ: dict, partner_id: str):
+    return view(environ, partner_id)
+
+
 def create(environ: dict):
     form = read_form(environ)
     name = form.get("display_name", "").strip()

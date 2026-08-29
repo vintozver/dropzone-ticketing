@@ -27,8 +27,8 @@ from .actions.view_ticket import view_ticket as _view_ticket_action
 from .actions.search_users import search_users as _search_users_action
 from .partners import create as _create_partner
 from .partners import update as _update_partner
-from .partners import view as _view_partners
-from .partners import view as _view_partner
+from .partners import view_partner as _view_partner
+from .partners import view_partners as _view_partners
 from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
 from .http import (
     exception_response,
