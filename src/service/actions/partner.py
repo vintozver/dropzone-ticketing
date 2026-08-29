@@ -23,7 +23,7 @@ def _der(value: str, kind: str) -> bytes:
         raise ValueError(f"Invalid PEM {kind}.") from exc
 
 
-def view(environ: dict, partner_id: str | None = None):
+def view(partner_id: str | None = None):
     if partner_id is None:
         return render("admin_partners.html", partners=Partner.objects)
     try:
@@ -35,12 +35,12 @@ def view(environ: dict, partner_id: str | None = None):
     return render("admin_partner.html", partner=partner)
 
 
-def view_partners(environ: dict):
-    return view(environ)
+def view_partners():
+    return view()
 
 
-def view_partner(environ: dict, partner_id: str):
-    return view(environ, partner_id)
+def view_partner(partner_id: str):
+    return view(partner_id)
 
 
 def create(environ: dict):

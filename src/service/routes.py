@@ -37,7 +37,7 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method == "POST":
             return handlers._create_partner(environ)
-        return handlers._view_partners(environ)
+        return handlers._view_partners()
 
     partner_match = _PARTNER_VIEW_PATH_RE.match(path)
     if partner_match:
@@ -48,7 +48,7 @@ def dispatch(environ: dict, handlers):
             return auth_response
         if method in {"POST", "PATCH"}:
             return handlers._update_partner(environ, partner_match.group(1))
-        return handlers._view_partner(environ, partner_match.group(1))
+        return handlers._view_partner(partner_match.group(1))
 
     if path == "/authn":
         if method == "GET":
