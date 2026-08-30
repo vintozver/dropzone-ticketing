@@ -1211,6 +1211,9 @@ class ApiTimestampTest(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "outside"):
             api_shared._validate_dt("20260830T184601Z", now=self.now)
 
+    def test_dt_claim_accepts_exact_one_minute_boundary(self) -> None:
+        api_shared._validate_dt("20260830T184600Z", now=self.now)
+
 
 class ServiceApplicationTest(unittest.TestCase):
     def request(

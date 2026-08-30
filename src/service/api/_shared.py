@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from http import HTTPStatus
 
@@ -14,15 +15,16 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from ...model.partner import Partner
 
 _DT_FORMAT = "%Y%m%dT%H%M%SZ"
+_DT_PATTERN = re.compile(r"\d{8}T\d{6}Z")
 
 
 def _validate_dt(dt: object, *, now: datetime | None = None) -> None:
     if not isinstance(dt, str):
         raise PermissionError("JWT dt claim is required.")
+    if not _DT_PATTERN.fullmatch(dt):
+        raise PermissionError("JWT dt claim is invalid.")
     try:
         stamped = datetime.strptime(dt, _DT_FORMAT).replace(tzinfo=timezone.utc)
-        if len(dt) != 16 or stamped.strftime(_DT_FORMAT) != dt:
-            raise ValueError
     except ValueError as exc:
         raise PermissionError("JWT dt claim is invalid.") from exc
     if abs(((now or datetime.now(timezone.utc)) - stamped).total_seconds()) > 60:
