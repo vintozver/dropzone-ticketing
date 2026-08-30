@@ -25,6 +25,7 @@ from mongoengine.errors import NotUniqueError
 from dropzone_ticketing import service
 from dropzone_ticketing.model.ticket import Redemption, UserRef
 from dropzone_ticketing.service import api as api_module
+from dropzone_ticketing.service.api import _shared as api_shared
 from dropzone_ticketing.service.api import report as api_report_module
 from dropzone_ticketing.service.api import ticket as api_ticket_module
 from dropzone_ticketing.service import config
@@ -1192,6 +1193,26 @@ class ServiceApiTest(unittest.TestCase):
 
         self.assertEqual(status, service.HTTPStatus.BAD_REQUEST)
         self.assertEqual(json.loads(body), {"error": "code and external_id are required."})
+
+
+class ApiTimestampTest(unittest.TestCase):
+    now = datetime(2026, 8, 30, 18, 45, 0, tzinfo=timezone.utc)
+
+    def test_dt_claim_accepts_timestamp_within_one_minute(self) -> None:
+        api_shared._validate_dt("20260830T184559Z", now=self.now)
+
+    def test_dt_claim_rejects_missing_or_malformed_timestamp(self) -> None:
+        for value in (None, "2026-08-30T18:45:00Z", "20260830T1845Z"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(PermissionError, "required|invalid"):
+                    api_shared._validate_dt(value, now=self.now)
+
+    def test_dt_claim_rejects_timestamp_outside_one_minute(self) -> None:
+        with self.assertRaisesRegex(PermissionError, "outside"):
+            api_shared._validate_dt("20260830T184601Z", now=self.now)
+
+    def test_dt_claim_accepts_exact_one_minute_boundary(self) -> None:
+        api_shared._validate_dt("20260830T184600Z", now=self.now)
 
 
 class ServiceApplicationTest(unittest.TestCase):

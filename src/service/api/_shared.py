@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime, timezone
 from http import HTTPStatus
 
 from bson import ObjectId
@@ -11,6 +13,22 @@ import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from ...model.partner import Partner
+
+_DT_FORMAT = "%Y%m%dT%H%M%SZ"
+_DT_PATTERN = re.compile(r"\d{8}T\d{6}Z")
+
+
+def _validate_dt(dt: object, *, now: datetime | None = None) -> None:
+    if not isinstance(dt, str):
+        raise PermissionError("JWT dt claim is required.")
+    if not _DT_PATTERN.fullmatch(dt):
+        raise PermissionError("JWT dt claim is invalid.")
+    try:
+        stamped = datetime.strptime(dt, _DT_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError as exc:
+        raise PermissionError("JWT dt claim is invalid.") from exc
+    if abs(((now or datetime.now(timezone.utc)) - stamped).total_seconds()) > 60:
+        raise PermissionError("JWT dt claim is outside the allowed time window.")
 
 
 def _json_response(status: HTTPStatus, value: object):
@@ -66,6 +84,7 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
         raise PermissionError("JWT has expired.") from exc
     except (ValueError, TypeError, InvalidTokenError) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
+    _validate_dt(payload.get("dt"))
     return partner, payload
 
 

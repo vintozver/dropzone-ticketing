@@ -67,7 +67,9 @@ Each entry in `tickets` includes `internal_id`, `payment`, `purpose`,
 and `redeemed` (`at`, `by`, `reason`) details.
 
 The JWT must use a `partner` header containing the partner ObjectId and a `kid`
-header selecting a configured key. If present, the `exp` claim is validated.
+header selecting a configured key. Every request must include a `dt` claim
+formatted as UTC `YYYYMMDDTHHMMSSZ`; it must be within one minute of the
+server's current time.
 Supported signatures are RS256, PS256, ES256, and EdDSA. Keys are managed by
 authenticated administrators at `/admin/partner/list`; PEM public keys and
 certificates are converted to DER before storage.

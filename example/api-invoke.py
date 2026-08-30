@@ -6,6 +6,7 @@
 
 import requests
 import jwt
+from datetime import datetime, timezone
 from urllib.parse import urlunparse
 
 PRIVATE_KEY_FILE = "ecdsa-private.pem"
@@ -18,6 +19,7 @@ with open(PRIVATE_KEY_FILE, "r") as f:
 def do_patch():
     token = jwt.encode(
         payload={
+            'dt': datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"),
             'internal_id': '000000000000000000000000',
             'external_id': '~XXX~',
         },
@@ -43,7 +45,7 @@ def do_patch():
 
 def do_list():
     token = jwt.encode(
-        payload={},
+        payload={'dt': datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")},
         headers={
             'partner': '000000000000000000000000',
             'kid': 'main',
