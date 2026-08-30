@@ -16,6 +16,19 @@ from ...model.partner import Partner
 _DT_FORMAT = "%Y%m%dT%H%M%SZ"
 
 
+def _validate_dt(dt: object, *, now: datetime | None = None) -> None:
+    if not isinstance(dt, str):
+        raise PermissionError("JWT dt claim is required.")
+    try:
+        stamped = datetime.strptime(dt, _DT_FORMAT).replace(tzinfo=timezone.utc)
+        if len(dt) != 16 or stamped.strftime(_DT_FORMAT) != dt:
+            raise ValueError
+    except ValueError as exc:
+        raise PermissionError("JWT dt claim is invalid.") from exc
+    if abs(((now or datetime.now(timezone.utc)) - stamped).total_seconds()) > 60:
+        raise PermissionError("JWT dt claim is outside the allowed time window.")
+
+
 def _json_response(status: HTTPStatus, value: object):
     return status, [("Content-Type", "application/json; charset=utf-8")], json.dumps(value).encode()
 
@@ -69,17 +82,7 @@ def _verify(environ: dict) -> tuple[Partner, dict]:
         raise PermissionError("JWT has expired.") from exc
     except (ValueError, TypeError, InvalidTokenError) as exc:
         raise PermissionError("Invalid JWT signature.") from exc
-    dt = payload.get("dt")
-    if not isinstance(dt, str):
-        raise PermissionError("JWT dt claim is required.")
-    try:
-        stamped = datetime.strptime(dt, _DT_FORMAT).replace(tzinfo=timezone.utc)
-        if len(dt) != 16 or stamped.strftime(_DT_FORMAT) != dt:
-            raise ValueError
-    except ValueError as exc:
-        raise PermissionError("JWT dt claim is invalid.") from exc
-    if abs((datetime.now(timezone.utc) - stamped).total_seconds()) > 60:
-        raise PermissionError("JWT dt claim is outside the allowed time window.")
+    _validate_dt(payload.get("dt"))
     return partner, payload
 
 
