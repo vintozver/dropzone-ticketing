@@ -19,6 +19,9 @@
         {% if 'admin' in current_user_roles %}
           <a href="/issue">Issue tickets</a>
         {% endif %}
+        {% if 'admin' in current_user_roles or 'event_management' in current_user_permissions %}
+          <a href="/admin/event/list">Manage events</a>
+        {% endif %}
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>
         {% if 'admin' in current_user_roles %}

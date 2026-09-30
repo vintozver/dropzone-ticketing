@@ -47,16 +47,17 @@ def availability(
         events = list(
             event_class.objects(
                 event_type=selected_type,
-                starts_at__gte=start,
-                starts_at__lt=end,
-            ).order_by("starts_at")
+                dt__gte=start,
+                dt__lt=end,
+                active=True,
+            ).order_by("dt")
         )
 
     grouped = []
     for offset in range(14):
         day = local_today + timedelta(days=offset)
         day_events = [
-            event for event in events if event.starts_at.astimezone(local_timezone).date() == day
+            event for event in events if event.dt.astimezone(local_timezone).date() == day
         ]
         available = [
             event
@@ -98,8 +99,9 @@ def hold(
         event_class.objects(
             Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
             id=event_id,
-            starts_at__gte=start,
-            starts_at__lt=end,
+            dt__gte=start,
+            dt__lt=end,
+            active=True,
             customer=None,
         )
         .modify(
@@ -138,6 +140,7 @@ def contact(
         reservation_token=_token_hash(token) if token else "",
         reservation_expires_at__gt=now,
         customer=None,
+        active=True,
     ).first()
     if event is None:
         return render(
@@ -168,8 +171,8 @@ def contact(
 
     customer = Customer(name=name, email=email, phone=phone)
     intent = payment_provider.create_payment_intent(
-        amount=event.event_type.price,
-        currency=event.event_type.currency,
+        amount=event.price,
+        currency=event.currency,
         email=email,
         event_id=str(event.id),
         reservation_token=_token_hash(token),
@@ -179,6 +182,7 @@ def contact(
         reservation_token=_token_hash(token),
         reservation_expires_at__gt=now,
         customer=None,
+        active=True,
     ).modify(
         set__checkout_customer=customer,
         set__payment_intent=intent["id"],
@@ -220,6 +224,7 @@ def complete(
         reservation_expires_at__gt=now,
         payment_intent=intent_id,
         customer=None,
+        active=True,
     ).first()
     if event is None:
         return render(
@@ -231,8 +236,8 @@ def complete(
     intent = payment_provider.retrieve_payment_intent(intent_id)
     expected = (
         intent.get("status") == "requires_capture"
-        and intent.get("amount") == event.event_type.price
-        and str(intent.get("currency", "")).lower() == event.event_type.currency.lower()
+        and intent.get("amount") == event.price
+        and str(intent.get("currency", "")).lower() == event.currency.lower()
         and intent.get("metadata", {}).get("event_id") == str(event.id)
         and intent.get("metadata", {}).get("reservation_token") == _token_hash(token)
     )
@@ -249,6 +254,7 @@ def complete(
         reservation_expires_at__gt=now,
         payment_intent=intent_id,
         customer=None,
+        active=True,
     ).modify(
         set__customer=event.checkout_customer,
         new=True,
@@ -266,7 +272,7 @@ def complete(
             unset__customer=1,
         )
         raise
-    if captured.get("status") != "succeeded" or captured.get("amount_received") != event.event_type.price:
+    if captured.get("status") != "succeeded" or captured.get("amount_received") != event.price:
         event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
             unset__customer=1,
         )

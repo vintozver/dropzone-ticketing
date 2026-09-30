@@ -22,6 +22,15 @@ from .actions.admin_users import list_users as _list_users_action
 from .actions.admin_users import new_user as _new_user_action
 from .actions.admin_users import update_user as _update_user_action
 from .actions.admin_users import view_user as _view_user_action
+from .actions.admin_events import create_event as _create_event_action
+from .actions.admin_events import create_event_type as _create_event_type_action
+from .actions.admin_events import list_events as _list_events_action
+from .actions.admin_events import list_event_types as _list_event_types_action
+from .actions.admin_events import new_event as _new_event_action
+from .actions.admin_events import update_event as _update_event_action
+from .actions.admin_events import update_event_type as _update_event_type_action
+from .actions.admin_events import view_event as _view_event_action
+from .actions.admin_events import view_event_type as _view_event_type_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
@@ -146,6 +155,10 @@ def _require_admin(environ: dict):
     return _auth_module.require_role(environ, "admin")
 
 
+def _require_event_management(environ: dict):
+    return _auth_module.require_permission(environ, "event_management")
+
+
 def _current_user_id(environ: dict) -> str | None:
     return _auth_module.current_user_id(environ)
 
@@ -190,6 +203,71 @@ def _view_user(user_id: str):
 
 def _update_user(user_id: str, form: dict[str, str]):
     return _update_user_action(user_id, form, user_class=User, render=_render)
+
+
+def _list_events():
+    return _list_events_action(event_class=Event, render=_render)
+
+
+def _new_event():
+    return _new_event_action(event_type_class=EventType, render=_render)
+
+
+def _create_event(form: dict[str, str], user):
+    return _create_event_action(
+        form,
+        user,
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _view_event(event_id: str):
+    return _view_event_action(
+        event_id,
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+    )
+
+
+def _update_event(event_id: str, form: dict[str, str], user):
+    return _update_event_action(
+        event_id,
+        form,
+        user,
+        event_class=Event,
+        event_type_class=EventType,
+        payment_provider=_payment_provider,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _list_event_types():
+    return _list_event_types_action(event_type_class=EventType, render=_render)
+
+
+def _create_event_type(form: dict[str, str]):
+    return _create_event_type_action(form, event_type_class=EventType, render=_render)
+
+
+def _view_event_type(event_type_id: str):
+    return _view_event_type_action(event_type_id, event_type_class=EventType, render=_render)
+
+
+def _update_event_type(event_type_id: str, form: dict[str, str]):
+    return _update_event_type_action(
+        event_type_id,
+        form,
+        event_type_class=EventType,
+        render=_render,
+    )
 
 
 def _booking_availability(event_type_id: str | None):
@@ -251,6 +329,7 @@ def application(environ: dict, start_response: Callable):
         current_user_id=_auth_module.current_user_id(environ),
         current_user_display_name=_auth_module.current_user_display_name(environ),
         current_user_roles=_auth_module.current_user_roles(environ),
+        current_user_permissions=_auth_module.current_user_permissions(environ),
         registration_mode=_auth_module.authn_config().register,
     ):
         try:

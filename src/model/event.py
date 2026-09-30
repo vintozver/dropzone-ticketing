@@ -5,6 +5,7 @@ from datetime import datetime
 import mongoengine
 
 from . import mongoengine_alias
+from .ticket import UserRef
 
 
 class Customer(mongoengine.EmbeddedDocument):
@@ -19,6 +20,13 @@ class Payment(mongoengine.EmbeddedDocument):
     amount = mongoengine.IntField(required=True, min_value=0)
     currency = mongoengine.StringField(required=True)
     paid_at = mongoengine.DateTimeField(required=True)
+
+
+class EventHistory(mongoengine.EmbeddedDocument):
+    dt = mongoengine.DateTimeField(required=True)
+    by = mongoengine.EmbeddedDocumentField(UserRef, required=True)
+    action = mongoengine.StringField(required=True)
+    comment = mongoengine.StringField(required=False)
 
 
 class EventType(mongoengine.Document):
@@ -36,25 +44,29 @@ class EventType(mongoengine.Document):
 
 
 class Event(mongoengine.Document):
-    starts_at = mongoengine.DateTimeField(required=True)
+    dt = mongoengine.DateTimeField(required=True)
     duration_minutes = mongoengine.IntField(required=True, min_value=1)
     event_type = mongoengine.ReferenceField(EventType, required=True)
+    price = mongoengine.IntField(required=True, min_value=0)
+    currency = mongoengine.StringField(required=True, min_length=3, max_length=3)
+    active = mongoengine.BooleanField(required=True, default=True)
     customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
     payment = mongoengine.EmbeddedDocumentField(Payment, required=False)
     checkout_customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
     payment_intent = mongoengine.StringField(required=False)
     reservation_token = mongoengine.StringField(required=False)
     reservation_expires_at = mongoengine.DateTimeField(required=False)
+    history = mongoengine.EmbeddedDocumentListField(EventHistory, default=list)
 
     meta = {
         "db_alias": mongoengine_alias,
         "collection": "event",
         "indexes": [
-            "starts_at",
+            "dt",
             "event_type",
             "customer",
             "reservation_expires_at",
-            {"fields": ["event_type", "starts_at"]},
+            {"fields": ["event_type", "dt"]},
         ],
     }
 

@@ -11,6 +11,8 @@ from .http import method_not_allowed, render
 _TICKET_PATH_RE = re.compile(r"^/ticket/([0-9a-fA-F]{24})/?$")
 _ADMIN_USER_VIEW_PATH_RE = re.compile(r"^/admin/user/view/([0-9a-fA-F]{24})/?$")
 _PARTNER_VIEW_PATH_RE = re.compile(r"^/admin/partner/view/([0-9a-fA-F]{24})/?$")
+_EVENT_VIEW_PATH_RE = re.compile(r"^/admin/event/view/([0-9a-fA-F]{24})/?$")
+_EVENT_TYPE_VIEW_PATH_RE = re.compile(r"^/admin/event-type/view/([0-9a-fA-F]{24})/?$")
 
 
 def dispatch(environ: dict, handlers):
@@ -60,6 +62,66 @@ def dispatch(environ: dict, handlers):
         if method == "POST":
             return handlers._create_partner(environ)
         return handlers._view_partners()
+
+    if path == "/admin/event/list":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_event_management(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._list_events()
+
+    if path == "/admin/event/new":
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_event_management(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return handlers._new_event()
+        return handlers._create_event(
+            handlers._read_form(environ),
+            handlers._current_user_ref(environ),
+        )
+
+    event_match = _EVENT_VIEW_PATH_RE.match(path)
+    if event_match:
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_event_management(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return handlers._view_event(event_match.group(1))
+        return handlers._update_event(
+            event_match.group(1),
+            handlers._read_form(environ),
+            handlers._current_user_ref(environ),
+        )
+
+    if path == "/admin/event-type/list":
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_event_management(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return handlers._list_event_types()
+        return handlers._create_event_type(handlers._read_form(environ))
+
+    event_type_match = _EVENT_TYPE_VIEW_PATH_RE.match(path)
+    if event_type_match:
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_event_management(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return handlers._view_event_type(event_type_match.group(1))
+        return handlers._update_event_type(
+            event_type_match.group(1),
+            handlers._read_form(environ),
+        )
 
     partner_match = _PARTNER_VIEW_PATH_RE.match(path)
     if partner_match:

@@ -6,7 +6,7 @@
 {% block content %}
   <h1>Checkout</h1>
   <p>
-    {{ event.event_type.name }} at {{ event.starts_at|datetime }}
+    {{ event.event_type.name }} at {{ event.dt|datetime }}
     ({{ event.duration_minutes }} minutes)
   </p>
   <p id="reservation-time">
@@ -24,7 +24,7 @@
       <button type="submit">Continue to payment</button>
     </form>
   {% else %}
-    <p>Total: {{ event.event_type.currency|upper }} {{ "%.2f"|format(event.event_type.price / 100) }}</p>
+    <p>Total: {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</p>
     <form id="payment-form">
       <div id="payment-element"></div>
       <p id="payment-error" role="alert"></p>

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Event type {{ event_type.name }}{% endblock %}
+{% block content %}
+  <h1>Event type {{ event_type.name }}</h1>
+  <form method="post">
+    <input type="hidden" name="action" value="update">
+    <label>Name <input name="name" required value="{{ event_type.name }}"></label>
+    <label>Description <textarea name="description">{{ event_type.description or '' }}</textarea></label>
+    <label>Default price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event_type.price / 100) }}"></label>
+    <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event_type.currency }}"></label>
+    <button type="submit">Save</button>
+  </form>
+  <form method="post">
+    {% if event_type.active %}
+      <input type="hidden" name="action" value="deactivate">
+      <button type="submit">Deactivate</button>
+    {% else %}
+      <input type="hidden" name="action" value="activate">
+      <button type="submit">Activate</button>
+    {% endif %}
+  </form>
+{% endblock %}

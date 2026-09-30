@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.id }}{% endblock %}
+{% block content %}
+  <h1>Event {{ event.id }}</h1>
+  <form method="post">
+    <input type="hidden" name="action" value="update">
+    <label>Date/time <input name="dt" type="datetime-local" required value="{{ input_dt }}"></label>
+    <label>Duration (minutes) <input name="duration_minutes" type="number" min="1" required value="{{ event.duration_minutes }}"></label>
+    <label>Event type
+      <select name="event_type" required>
+        {% for event_type in event_types %}
+          <option value="{{ event_type.id }}" {% if event.event_type.id == event_type.id %}selected{% endif %}>{{ event_type.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label>
+    <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label>
+    <label>Change comment <textarea name="comment"></textarea></label>
+    <button type="submit">Save</button>
+  </form>
+
+  <h2>Booking</h2>
+  {% if event.customer %}
+    <dl>
+      <dt>Name</dt><dd>{{ event.customer.name }}</dd>
+      <dt>Email</dt><dd>{{ event.customer.email }}</dd>
+      <dt>Phone</dt><dd>{{ event.customer.phone }}</dd>
+      <dt>Payment</dt><dd>{{ event.payment.currency }} {{ "%.2f"|format(event.payment.amount / 100) }} ({{ event.payment.reference }})</dd>
+    </dl>
+    <form method="post">
+      <input type="hidden" name="action" value="cancel_booking">
+      <label>Cancellation comment <textarea name="comment" required></textarea></label>
+      <button type="submit">Refund and cancel booking</button>
+    </form>
+  {% else %}<p>Not booked.</p>{% endif %}
+
+  <h2>History</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="comment">
+    <label>Comment <textarea name="comment" required></textarea></label>
+    <button type="submit">Add comment</button>
+  </form>
+  <ol>
+    {% for item in event.history|reverse %}
+      <li>
+        {{ item.dt|datetime }} — {{ item.action }} by {{ item.by.display_name or item.by.id }}
+        {% if item.comment %}<p>{{ item.comment }}</p>{% endif %}
+      </li>
+    {% else %}<li>No history.</li>{% endfor %}
+  </ol>
+
+  <form method="post">
+    {% if event.active %}
+      <input type="hidden" name="action" value="remove">
+      <button type="submit">Remove event</button>
+    {% else %}
+      <input type="hidden" name="action" value="restore">
+      <button type="submit">Restore event</button>
+    {% endif %}
+  </form>
+{% endblock %}

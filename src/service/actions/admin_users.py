@@ -7,7 +7,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError
 
-from ...model.auth import USER_ROLES
+from ...model.auth import USER_PERMISSIONS, USER_ROLES
 
 
 _IDENTITY_TYPES = {"email", "google", "microsoft"}
@@ -31,6 +31,7 @@ def list_users(*, user_class, render):
             "id": user.id,
             "display_name": user.display_name,
             "roles": user.roles,
+            "permissions": list(getattr(user, "permissions", [])),
             "email": user.email,
             "google_credentials": [credential.email for credential in user.google_credentials],
             "microsoft_credentials": [credential.email for credential in user.microsoft_credentials],
@@ -49,6 +50,9 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
     email = form.get("email", "").strip().casefold()
     identity_type = form.get("identity_type", "")
     role = form.get("role", "")
+    permissions = [
+        permission for permission in USER_PERMISSIONS if form.get(permission) == "on"
+    ]
 
     if not name:
         return _render_new_user(
@@ -102,6 +106,8 @@ def create_user(form, *, user_class, google_credential_class, microsoft_credenti
         )
 
     user = user_class(display_name=name, roles=[role])
+    if permissions:
+        user.permissions = permissions
     if identity_type == "email":
         user.email = email
     elif identity_type == "google":
@@ -167,6 +173,9 @@ def update_user(user_id, form, *, user_class, render):
         name = form.get("name", "").strip()
         email = form.get("email", "").strip().casefold()
         role = form.get("role", "")
+        permissions = [
+            permission for permission in USER_PERMISSIONS if form.get(permission) == "on"
+        ]
         if not name or len(name) > 200:
             return render("error.html", HTTPStatus.BAD_REQUEST, message="A valid name is required.")
         if email and ("@" not in email or len(email) > 320):
@@ -176,6 +185,7 @@ def update_user(user_id, form, *, user_class, render):
         user.display_name = name
         user.email = email or None
         user.roles = [role]
+        user.permissions = permissions
     elif action == "remove_google":
         email = form.get("credential", "").strip().casefold()
         user.google_credentials = [

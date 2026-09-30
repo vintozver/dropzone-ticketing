@@ -52,12 +52,17 @@ payments are authorized before the event is atomically booked, then captured.
 The checkout reservation lasts 15 minutes.
 
 Administrators create event types in the `event_type` collection with `name`,
-optional `description`, `price` (the integer minor-unit amount), three-letter
-`currency`, and `active`. Events in the `event` collection contain `starts_at`
-(UTC date/time), `duration_minutes`, and an `event_type` DBRef. The service
-adds reservation, customer, and payment fields during checkout. Availability
+optional `description`, default `price` (the integer minor-unit amount),
+three-letter `currency`, and `active`. Events in the `event` collection contain
+`dt` (UTC date/time), `duration_minutes`, an `event_type` DBRef, and their own
+`price` and `currency`. The service adds reservation, customer, payment, and
+user-attributed history fields during checkout and management. Availability
 is shown in the configured local `timezone` for the current day and following
 13 days.
+
+Users with the `event_management` permission (and administrators) can manage
+event types and individual events, prices, comments, removal/restoration, and
+booking cancellation from `/admin/event/list`.
 
 ### Partner API
 

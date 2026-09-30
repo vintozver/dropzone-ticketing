@@ -7,6 +7,7 @@ import mongoengine
 from . import mongoengine_alias
 
 USER_ROLES = ("solo", "admin")
+USER_PERMISSIONS = ("event_management",)
 
 
 class Fido2Credential(mongoengine.EmbeddedDocument):
@@ -48,6 +49,10 @@ class User(mongoengine.Document):
     roles = mongoengine.ListField(
         mongoengine.StringField(choices=USER_ROLES),
         default=lambda: ["solo"],
+    )
+    permissions = mongoengine.ListField(
+        mongoengine.StringField(choices=USER_PERMISSIONS),
+        default=list,
     )
     email_authentication = mongoengine.EmbeddedDocumentField(EmailAuthentication, required=False)
     fido2_credentials = mongoengine.EmbeddedDocumentListField(Fido2Credential, default=list)

@@ -116,6 +116,11 @@ class StorageTicketDocumentTest(unittest.TestCase):
         self.assertFalse(fields["id"].primary_key)
         self.assertIsInstance(fields["display_name"], mongoengine.StringField)
         self.assertFalse(fields["display_name"].required)
+        self.assertIsInstance(fields["permissions"], mongoengine.ListField)
+        self.assertEqual(
+            fields["permissions"].field.choices,
+            ("event_management",),
+        )
 
     def test_google_credential_embedded_document_fields(self) -> None:
         fields = GoogleCredential._fields

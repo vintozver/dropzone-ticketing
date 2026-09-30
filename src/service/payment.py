@@ -1,49 +1,24 @@
 from __future__ import annotations
 
-import base64
-import json
-from urllib.error import HTTPError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+import stripe
 
 from .config import stripe_secret_key
 
-_STRIPE_API = "https://api.stripe.com/v1"
 
-
-def _request(
-    method: str,
-    path: str,
-    values: dict[str, object] | None = None,
-    *,
-    idempotency_key: str | None = None,
-):
+def _client():
     key = stripe_secret_key()
     if not key:
         raise ValueError("Online payment is not configured.")
-    body = urlencode(values or {}).encode("ascii") if values is not None else None
-    authorization = base64.b64encode(f"{key}:".encode("utf-8")).decode("ascii")
-    headers = {
-        "Authorization": f"Basic {authorization}",
-        "Content-Type": "application/x-www-form-urlencoded",
-    }
-    if idempotency_key:
-        headers["Idempotency-Key"] = idempotency_key
-    request = Request(
-        f"{_STRIPE_API}{path}",
-        data=body,
-        method=method,
-        headers=headers,
-    )
+    return stripe.StripeClient(key)
+
+
+def _call(method, *args, **kwargs):
     try:
-        with urlopen(request, timeout=15) as response:
-            return json.load(response)
-    except HTTPError as error:
-        try:
-            message = json.load(error).get("error", {}).get("message")
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            message = None
-        raise ValueError(message or "The payment provider rejected the request.") from error
+        result = method(*args, **kwargs)
+    except stripe.StripeError as error:
+        raise ValueError(error.user_message or "The payment provider rejected the request.") from error
+    converter = getattr(result, "to_dict_recursive", None)
+    return converter() if callable(converter) else result
 
 
 def create_payment_intent(
@@ -54,25 +29,35 @@ def create_payment_intent(
     event_id: str,
     reservation_token: str,
 ):
-    return _request(
-        "POST",
-        "/payment_intents",
+    client = _client()
+    return _call(
+        client.v1.payment_intents.create,
         {
             "amount": amount,
             "currency": currency.lower(),
             "receipt_email": email,
-            "payment_method_types[]": "card",
+            "payment_method_types": ["card"],
             "capture_method": "manual",
-            "metadata[event_id]": event_id,
-            "metadata[reservation_token]": reservation_token,
+            "metadata": {
+                "event_id": event_id,
+                "reservation_token": reservation_token,
+            },
         },
-        idempotency_key=reservation_token,
+        {"idempotency_key": reservation_token},
     )
 
 
 def retrieve_payment_intent(intent_id: str):
-    return _request("GET", f"/payment_intents/{intent_id}")
+    return _call(_client().v1.payment_intents.retrieve, intent_id)
 
 
 def capture_payment_intent(intent_id: str):
-    return _request("POST", f"/payment_intents/{intent_id}/capture", {})
+    return _call(_client().v1.payment_intents.capture, intent_id)
+
+
+def refund_payment(payment_intent_id: str):
+    return _call(
+        _client().v1.refunds.create,
+        {"payment_intent": payment_intent_id},
+        {"idempotency_key": f"event-cancellation-{payment_intent_id}"},
+    )

@@ -257,12 +257,18 @@ def current_user_ref(environ: dict) -> dict[str, object] | None:
         "id": user.id,
         "display_name": user.display_name or str(user.id),
         "roles": list(user.roles),
+        "permissions": list(getattr(user, "permissions", [])),
     }
 
 
 def current_user_roles(environ: dict) -> list[str]:
     user = _session_user(environ)
     return list(user.roles) if user is not None else []
+
+
+def current_user_permissions(environ: dict) -> list[str]:
+    user = _session_user(environ)
+    return list(getattr(user, "permissions", [])) if user is not None else []
 
 
 def _credential_display_id(credential: Fido2Credential) -> str:
@@ -560,6 +566,19 @@ def require_role(environ: dict, role: str):
         return auth_response
     user = _session_user(environ)
     if user is None or role not in user.roles:
+        return error(HTTPStatus.FORBIDDEN, "Permission denied.")
+    return None
+
+
+def require_permission(environ: dict, permission: str):
+    auth_response = require_auth(environ)
+    if auth_response is not None:
+        return auth_response
+    user = _session_user(environ)
+    if user is None or (
+        "admin" not in user.roles
+        and permission not in getattr(user, "permissions", [])
+    ):
         return error(HTTPStatus.FORBIDDEN, "Permission denied.")
     return None
 

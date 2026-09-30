@@ -5,7 +5,7 @@
   <p>Thank you, {{ event.customer.name }}. Your payment and booking are confirmed.</p>
   <dl>
     <dt>Event</dt><dd>{{ event.event_type.name }}</dd>
-    <dt>Starts</dt><dd>{{ event.starts_at|datetime }}</dd>
+    <dt>Starts</dt><dd>{{ event.dt|datetime }}</dd>
     <dt>Duration</dt><dd>{{ event.duration_minutes }} minutes</dd>
     <dt>Payment</dt><dd>{{ event.payment.currency }} {{ "%.2f"|format(event.payment.amount / 100) }}</dd>
   </dl>

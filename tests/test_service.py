@@ -1223,8 +1223,10 @@ class ServiceApplicationTest(unittest.TestCase):
         form: Optional[dict] = None,
         authenticated: bool = True,
         roles: Optional[list[str]] = None,
+        permissions: Optional[list[str]] = None,
     ):
         roles = roles if roles is not None else ["admin"]
+        permissions = permissions or []
         body = urlencode(form or {}).encode()
         environ = {
             "PATH_INFO": path,
@@ -1249,6 +1251,7 @@ class ServiceApplicationTest(unittest.TestCase):
                 id=ObjectId("507f1f77bcf86cd799439011"),
                 display_name="Jane",
                 roles=roles,
+                permissions=permissions,
             )
             if authenticated
             else None,
@@ -1259,6 +1262,7 @@ class ServiceApplicationTest(unittest.TestCase):
                 "id": ObjectId("507f1f77bcf86cd799439011"),
                 "display_name": "Jane",
                 "roles": roles,
+                "permissions": permissions,
             }
             if authenticated
             else None,
@@ -1311,6 +1315,8 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'href="/admin/user/list">Users</a>', response["body"])
         self.assertIn(b'href="/admin/partner/list">Partners</a>', response["body"])
+        self.assertIn(b'href="/admin/event/list">Events</a>', response["body"])
+        self.assertIn(b'href="/admin/event-type/list">Event types</a>', response["body"])
         self.assertNotIn(b'href="/admin/user/new">Add user</a>', response["body"])
 
     def test_admin_user_list_route_uses_handler(self) -> None:
@@ -1348,6 +1354,47 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'name="identity_type"', response["body"])
         self.assertIn(b'name="role"', response["body"])
+        self.assertIn(b'name="event_management"', response["body"])
+
+    def test_event_manager_can_use_event_routes_without_admin_role(self) -> None:
+        with patch.object(service, "_list_events", return_value=(service.HTTPStatus.OK, [], b"events")):
+            response = self.request(
+                "/admin/event/list",
+                roles=["solo"],
+                permissions=["event_management"],
+            )
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"], b"events")
+
+    def test_user_without_event_management_permission_is_forbidden(self) -> None:
+        response = self.request("/admin/event/list", roles=["solo"])
+        self.assertEqual(response["status"], "403 Forbidden")
+
+    def test_event_creation_route_passes_form_and_current_user(self) -> None:
+        form = {
+            "dt": "2026-10-01T10:00",
+            "duration_minutes": "60",
+            "event_type": "507f1f77bcf86cd799439012",
+            "price": "100.00",
+            "currency": "EUR",
+        }
+        with patch.object(
+            service,
+            "_create_event",
+            return_value=(service.HTTPStatus.SEE_OTHER, [], b""),
+        ) as handler:
+            response = self.request(
+                "/admin/event/new",
+                "POST",
+                form,
+                roles=["solo"],
+                permissions=["event_management"],
+            )
+
+        self.assertEqual(response["status"], "303 See Other")
+        self.assertEqual(handler.call_args.args[0], form)
+        self.assertEqual(handler.call_args.args[1]["display_name"], "Jane")
 
     def test_issue_rejects_out_of_range_count(self) -> None:
         response = self.request(
