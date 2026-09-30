@@ -8,9 +8,10 @@ from typing import Callable
 import mongoengine
 from bson import ObjectId
 
-from .. import PDF, Ticket
+from .. import Event, PDF, Ticket
 from ..model import mongoengine_alias
 from ..model.auth import User
+from ..model.event import EventBooking
 from ..model.ticket import UserRef
 
 from . import auth as _auth_module
@@ -21,6 +22,12 @@ from .actions.admin_users import new_user as _new_user_action
 from .actions.admin_users import update_user as _update_user_action
 from .actions.admin_users import view_user as _view_user_action
 from .actions.issue import issue as _issue_action
+from .actions.events import (
+    create_event as _create_event_action,
+    list_events as _list_events_action,
+    update_booking as _update_booking_action,
+    view_event as _view_event_action,
+)
 from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
 from .actions.print_tickets import safe_filename as _safe_filename
@@ -35,7 +42,7 @@ from .actions.partner import create as _create_partner
 from .actions.partner import update as _update_partner
 from .actions.partner import view_partner as _view_partner
 from .actions.partner import view_partners as _view_partners
-from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
+from .config import CODE_ALPHABET, CODE_LENGTH, local_timezone, mongodb_uri
 from .http import (
     exception_response,
     read_form as _read_form,
@@ -119,6 +126,37 @@ def _view_redeemed_tickets():
 
 def _view_issued_tickets():
     return _view_issued_tickets_action(ticket_class=Ticket, render=_render)
+
+
+def _create_event(form: dict[str, str], created_by: dict[str, object] | None):
+    return _create_event_action(
+        form,
+        created_by,
+        event_class=Event,
+        user_ref_class=UserRef,
+        render=_render,
+        local_timezone=local_timezone(),
+    )
+
+
+def _list_events(viewer: dict[str, object]):
+    return _list_events_action(viewer, event_class=Event, render=_render)
+
+
+def _view_event(event_id: str, viewer: dict[str, object]):
+    return _view_event_action(event_id, viewer, event_class=Event, render=_render)
+
+
+def _update_booking(event_id: str, action: str, viewer: dict[str, object]):
+    return _update_booking_action(
+        event_id,
+        action,
+        viewer,
+        event_class=Event,
+        booking_class=EventBooking,
+        user_ref_class=UserRef,
+        render=_render,
+    )
 
 
 def _is_authenticated(environ: dict) -> bool:

@@ -9,6 +9,7 @@ from .config import authn_config
 from .http import method_not_allowed, render
 
 _TICKET_PATH_RE = re.compile(r"^/ticket/([0-9a-fA-F]{24})/?$")
+_EVENT_PATH_RE = re.compile(r"^/event/([0-9a-fA-F]{24})/?$")
 _ADMIN_USER_VIEW_PATH_RE = re.compile(r"^/admin/user/view/([0-9a-fA-F]{24})/?$")
 _PARTNER_VIEW_PATH_RE = re.compile(r"^/admin/partner/view/([0-9a-fA-F]{24})/?$")
 
@@ -179,6 +180,43 @@ def dispatch(environ: dict, handlers):
         if method == "GET":
             return render("issue.html")
         return handlers._issue(handlers._read_form(environ), handlers._current_user_ref(environ))
+
+    if path == "/events":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        return handlers._list_events(handlers._current_user_ref(environ))
+
+    if path == "/admin/event/new":
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_admin(environ)
+        if auth_response is not None:
+            return auth_response
+        if method == "GET":
+            return render("event_create.html")
+        return handlers._create_event(
+            handlers._read_form(environ),
+            handlers._current_user_ref(environ),
+        )
+
+    event_match = _EVENT_PATH_RE.match(path)
+    if event_match:
+        if method not in {"GET", "POST"}:
+            return method_not_allowed(["GET", "POST"])
+        auth_response = handlers._require_auth(environ)
+        if auth_response is not None:
+            return auth_response
+        viewer = handlers._current_user_ref(environ)
+        if method == "GET":
+            return handlers._view_event(event_match.group(1), viewer)
+        return handlers._update_booking(
+            event_match.group(1),
+            handlers._read_form(environ).get("action", ""),
+            viewer,
+        )
 
     if path == "/redeem":
         if method not in {"GET", "POST"}:

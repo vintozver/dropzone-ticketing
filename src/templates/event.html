@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }}{% endblock %}
+{% block content %}
+  <h1>{{ event.name }}</h1>
+  {% if error %}<p>{{ error }}</p>{% endif %}
+  <p>Starts: {{ event.starts|datetime }}</p>
+  {% if event.description %}<p>{{ event.description }}</p>{% endif %}
+  <p>{{ event.available }} of {{ event.capacity }} places available.</p>
+  <form method="post">
+    {% if event.is_booked %}
+      <button name="action" value="cancel" type="submit">Cancel booking</button>
+    {% elif event.available %}
+      <button name="action" value="book" type="submit">Book event</button>
+    {% else %}
+      <p>This event is fully booked.</p>
+    {% endif %}
+  </form>
+  {% if is_admin %}
+    <h2>Bookings</h2>
+    {% if event.bookings %}
+      <ul>
+        {% for booking in event.bookings %}
+          <li>{{ booking.user.display_name or booking.user.id }} — {{ booking.dt|datetime }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No bookings.</p>
+    {% endif %}
+  {% endif %}
+  <p><a href="/events">Back to events</a></p>
+{% endblock %}

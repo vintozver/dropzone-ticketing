@@ -1,6 +1,10 @@
 # dropzone-ticketing
 Ticketing software for the drop zone (skydiving)
 
+Authenticated users can browse upcoming events at `/events`, book an available
+place, and cancel their own booking. Administrators create events at
+`/admin/event/new` and can view each event's attendee list.
+
 ## Web service
 
 ### Configuration

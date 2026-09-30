@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+  <h1>Upcoming events</h1>
+  {% if 'admin' in current_user_roles %}<p><a href="/admin/event/new">Create event</a></p>{% endif %}
+  {% if events %}
+    <table>
+      <thead><tr><th>Event</th><th>Starts</th><th>Places</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td><a href="/event/{{ event.id }}">{{ event.name }}</a></td>
+            <td>{{ event.starts|datetime }}</td>
+            <td>{{ event.available }} of {{ event.capacity }} available</td>
+            <td>{% if event.is_booked %}Booked{% elif not event.available %}Full{% else %}Available{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No upcoming events.</p>
+  {% endif %}
+{% endblock %}
