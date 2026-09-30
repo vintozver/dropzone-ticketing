@@ -62,6 +62,7 @@ def create_payment_intent(
             "currency": currency.lower(),
             "receipt_email": email,
             "payment_method_types[]": "card",
+            "capture_method": "manual",
             "metadata[event_id]": event_id,
             "metadata[reservation_token]": reservation_token,
         },
@@ -71,3 +72,7 @@ def create_payment_intent(
 
 def retrieve_payment_intent(intent_id: str):
     return _request("GET", f"/payment_intents/{intent_id}")
+
+
+def capture_payment_intent(intent_id: str):
+    return _request("POST", f"/payment_intents/{intent_id}/capture", {})

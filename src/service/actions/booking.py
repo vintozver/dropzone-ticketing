@@ -230,8 +230,8 @@ def complete(
 
     intent = payment_provider.retrieve_payment_intent(intent_id)
     expected = (
-        intent.get("status") == "succeeded"
-        and intent.get("amount_received") == event.event_type.price
+        intent.get("status") == "requires_capture"
+        and intent.get("amount") == event.event_type.price
         and str(intent.get("currency", "")).lower() == event.event_type.currency.lower()
         and intent.get("metadata", {}).get("event_id") == str(event.id)
         and intent.get("metadata", {}).get("reservation_token") == _token_hash(token)
@@ -243,7 +243,7 @@ def complete(
             message="Payment has not been completed.",
         )
 
-    booked = event_class.objects(
+    authorized = event_class.objects(
         id=event.id,
         reservation_token=_token_hash(token),
         reservation_expires_at__gt=now,
@@ -251,11 +251,40 @@ def complete(
         customer=None,
     ).modify(
         set__customer=event.checkout_customer,
+        new=True,
+    )
+    if authorized is None:
+        return render(
+            "error.html",
+            HTTPStatus.CONFLICT,
+            message="The event could not be booked.",
+        )
+    try:
+        captured = payment_provider.capture_payment_intent(intent_id)
+    except Exception:
+        event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
+            unset__customer=1,
+        )
+        raise
+    if captured.get("status") != "succeeded" or captured.get("amount_received") != event.event_type.price:
+        event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
+            unset__customer=1,
+        )
+        return render(
+            "error.html",
+            HTTPStatus.PAYMENT_REQUIRED,
+            message="Payment could not be captured.",
+        )
+    booked = event_class.objects(
+        id=event.id,
+        payment_intent=intent_id,
+        payment=None,
+    ).modify(
         set__payment=Payment(
             provider="stripe",
             reference=intent_id,
-            amount=intent["amount_received"],
-            currency=intent["currency"].upper(),
+            amount=captured["amount_received"],
+            currency=captured["currency"].upper(),
             paid_at=now,
         ),
         unset__checkout_customer=1,
@@ -267,6 +296,6 @@ def complete(
         return render(
             "error.html",
             HTTPStatus.CONFLICT,
-            message="The event could not be booked.",
+            message="Payment succeeded but the booking confirmation could not be recorded.",
         )
     return render("booking_confirmation.html", event=booked)
