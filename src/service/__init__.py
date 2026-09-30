@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import threading
+from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Callable
 
@@ -12,6 +13,7 @@ from .. import PDF, Ticket
 from ..model import mongoengine_alias
 from ..model.auth import User
 from ..model.ticket import UserRef
+from ..model.event import Event, EventType
 
 from . import auth as _auth_module
 from .actions.admin_users import admin_index as _admin_index_action
@@ -35,7 +37,18 @@ from .actions.partner import create as _create_partner
 from .actions.partner import update as _update_partner
 from .actions.partner import view_partner as _view_partner
 from .actions.partner import view_partners as _view_partners
-from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
+from .actions.booking import availability as _booking_availability_action
+from .actions.booking import complete as _booking_complete_action
+from .actions.booking import contact as _booking_contact_action
+from .actions.booking import hold as _booking_hold_action
+from .config import (
+    CODE_ALPHABET,
+    CODE_LENGTH,
+    local_timezone,
+    mongodb_uri,
+    stripe_publishable_key,
+)
+from . import payment as _payment_provider
 from .http import (
     exception_response,
     read_form as _read_form,
@@ -177,6 +190,48 @@ def _view_user(user_id: str):
 
 def _update_user(user_id: str, form: dict[str, str]):
     return _update_user_action(user_id, form, user_class=User, render=_render)
+
+
+def _booking_availability(event_type_id: str | None):
+    return _booking_availability_action(
+        event_type_id,
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_hold(form: dict[str, str]):
+    return _booking_hold_action(
+        form,
+        event_class=Event,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_contact(form: dict[str, str]):
+    return _booking_contact_action(
+        form,
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        publishable_key=stripe_publishable_key(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_complete(form: dict[str, str]):
+    return _booking_complete_action(
+        form,
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        now=datetime.now(timezone.utc),
+    )
 
 
 def _method_not_allowed(allowed):
