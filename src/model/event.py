@@ -77,3 +77,34 @@ class Event(mongoengine.Document):
             and self.reservation_expires_at
             and self.reservation_expires_at > now
         )
+
+
+def migrate_events() -> None:
+    collection = Event._get_collection()
+    collection.update_many(
+        {"starts_at": {"$exists": True}, "dt": {"$exists": False}},
+        {"$rename": {"starts_at": "dt"}},
+    )
+    collection.update_many(
+        {"active": {"$exists": False}},
+        {"$set": {"active": True}},
+    )
+    event_type_collection = EventType._get_collection()
+    missing_price = {
+        "$or": [
+            {"price": {"$exists": False}},
+            {"currency": {"$exists": False}},
+        ]
+    }
+    for event in collection.find(missing_price, {"_id": 1, "event_type": 1}):
+        reference = event.get("event_type")
+        event_type_id = getattr(reference, "id", reference)
+        event_type = event_type_collection.find_one(
+            {"_id": event_type_id},
+            {"price": 1, "currency": 1},
+        )
+        if event_type and "price" in event_type and "currency" in event_type:
+            collection.update_one(
+                {"_id": event["_id"]},
+                {"$set": {"price": event_type["price"], "currency": event_type["currency"]}},
+            )

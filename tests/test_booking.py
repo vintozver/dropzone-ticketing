@@ -12,7 +12,14 @@ import stripe
 from bson import ObjectId
 
 from dropzone_ticketing.model import mongoengine_alias
-from dropzone_ticketing.model.event import Customer, Event, EventHistory, EventType, Payment
+from dropzone_ticketing.model.event import (
+    Customer,
+    Event,
+    EventHistory,
+    EventType,
+    Payment,
+    migrate_events,
+)
 from dropzone_ticketing.service import payment
 from dropzone_ticketing.service.actions import admin_events
 from dropzone_ticketing.service.actions import booking
@@ -58,6 +65,35 @@ class EventModelTest(unittest.TestCase):
         self.assertFalse(event.is_reserved(now + timedelta(minutes=1)))
         event.customer = Customer(name="Guest", email="guest@example.test", phone="+1")
         self.assertFalse(event.is_reserved(now))
+
+    @patch.object(EventType, "_get_collection")
+    @patch.object(Event, "_get_collection")
+    def test_migration_renames_time_and_snapshots_default_price(
+        self,
+        event_collection_factory,
+        event_type_collection_factory,
+    ) -> None:
+        event_id = ObjectId()
+        event_type_id = ObjectId()
+        event_collection = event_collection_factory.return_value
+        event_collection.find.return_value = [
+            {"_id": event_id, "event_type": event_type_id}
+        ]
+        event_type_collection_factory.return_value.find_one.return_value = {
+            "price": 10000,
+            "currency": "EUR",
+        }
+
+        migrate_events()
+
+        event_collection.update_many.assert_any_call(
+            {"starts_at": {"$exists": True}, "dt": {"$exists": False}},
+            {"$rename": {"starts_at": "dt"}},
+        )
+        event_collection.update_one.assert_called_once_with(
+            {"_id": event_id},
+            {"$set": {"price": 10000, "currency": "EUR"}},
+        )
 
 
 class BookingActionTest(unittest.TestCase):

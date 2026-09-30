@@ -7,6 +7,7 @@ from http import HTTPStatus
 from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError
+from mongoengine import Q
 
 from ...model.event import EventHistory
 from ...model.ticket import UserRef
@@ -149,7 +150,9 @@ def update_event(
     if action == "comment":
         if not comment:
             return render("error.html", HTTPStatus.BAD_REQUEST, message="Comment is required.")
-        event.history.append(_history("comment", user, comment, now=now))
+        event_class.objects(id=event.id).modify(
+            push__history=_history("comment", user, comment, now=now),
+        )
     elif action == "update":
         try:
             values = _event_values(
@@ -159,15 +162,42 @@ def update_event(
             )
         except ValueError as error:
             return render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
-        for name, value in values.items():
-            setattr(event, name, value)
-        event.history.append(_history("updated", user, comment, now=now))
+        updated = event_class.objects(
+            Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
+            id=event.id,
+            customer=None,
+        ).modify(
+            **{f"set__{name}": value for name, value in values.items()},
+            push__history=_history("updated", user, comment, now=now),
+            new=True,
+        )
+        if updated is None:
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="Booked or reserved events cannot be changed.",
+            )
     elif action == "remove":
-        event.active = False
-        event.history.append(_history("removed", user, comment, now=now))
+        removed = event_class.objects(
+            Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
+            id=event.id,
+            customer=None,
+        ).modify(
+            set__active=False,
+            push__history=_history("removed", user, comment, now=now),
+            new=True,
+        )
+        if removed is None:
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="Cancel the booking or wait for checkout to expire before removing this event.",
+            )
     elif action == "restore":
-        event.active = True
-        event.history.append(_history("restored", user, comment, now=now))
+        event_class.objects(id=event.id).modify(
+            set__active=True,
+            push__history=_history("restored", user, comment, now=now),
+        )
     elif action == "cancel_booking":
         if event.customer is None or event.payment is None:
             return render("error.html", HTTPStatus.CONFLICT, message="This event is not booked.")
@@ -199,8 +229,6 @@ def update_event(
         return HTTPStatus.SEE_OTHER, [("Location", f"/admin/event/view/{event.id}")], b""
     else:
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid action.")
-
-    event.save()
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/event/view/{event.id}")], b""
 
 

@@ -13,7 +13,7 @@ from .. import PDF, Ticket
 from ..model import mongoengine_alias
 from ..model.auth import User
 from ..model.ticket import UserRef
-from ..model.event import Event, EventType
+from ..model.event import Event, EventType, migrate_events
 
 from . import auth as _auth_module
 from .actions.admin_users import admin_index as _admin_index_action
@@ -92,6 +92,7 @@ def _ensure_storage() -> None:
                 host=mongodb_uri(),
                 tz_aware=True,
             )
+            migrate_events()
             _storage_connected = True
 
 
