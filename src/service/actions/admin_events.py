@@ -204,8 +204,12 @@ def update_event(
         if not comment:
             return render("error.html", HTTPStatus.BAD_REQUEST, message="Cancellation comment is required.")
         refund = payment_provider.refund_payment(event.payment.reference)
-        if refund.get("status") not in {"pending", "succeeded"}:
-            return render("error.html", HTTPStatus.CONFLICT, message="The payment was not refunded.")
+        if refund.get("status") != "succeeded":
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="The refund is not complete; the booking remains in place.",
+            )
         cancelled = event_class.objects(
             id=event.id,
             customer__ne=None,

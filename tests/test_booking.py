@@ -360,6 +360,42 @@ class EventManagementTest(unittest.TestCase):
         self.assertEqual(cancel_query.modify.call_args.kwargs["unset__customer"], 1)
         event.save.assert_not_called()
 
+    def test_pending_refund_does_not_reopen_event(self) -> None:
+        event = MagicMock(
+            id=ObjectId(),
+            customer=Customer(name="Guest", email="guest@example.test", phone="+1"),
+            payment=Payment(
+                provider="stripe",
+                reference="pi_1",
+                amount=10000,
+                currency="EUR",
+                paid_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            ),
+        )
+        lookup = MagicMock()
+        lookup.first.return_value = event
+        event_class = MagicMock()
+        event_class.objects.return_value = lookup
+        provider = MagicMock()
+        provider.refund_payment.return_value = {"status": "pending"}
+        render = MagicMock(return_value="pending")
+
+        result = admin_events.update_event(
+            str(event.id),
+            {"action": "cancel_booking", "comment": "Weather"},
+            {"id": ObjectId(), "display_name": "Manager"},
+            event_class=event_class,
+            event_type_class=MagicMock(),
+            payment_provider=provider,
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "pending")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.CONFLICT)
+        event_class.objects.assert_called_once_with(id=event.id)
+
 
 if __name__ == "__main__":
     unittest.main()
