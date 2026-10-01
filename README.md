@@ -60,9 +60,8 @@ user-attributed history fields during checkout and management. Availability
 is shown in the configured local `timezone` for the current day and following
 13 days.
 
-Users with the `event_management` permission (and administrators) can manage
-event types and individual events, prices, comments, removal/restoration, and
-booking cancellation from `/admin/event/list`.
+Administrators can manage event types and individual events, prices, comments,
+removal/restoration, and booking cancellation from `/admin/event/list`.
 
 ### Partner API
 

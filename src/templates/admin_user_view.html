@@ -12,10 +12,6 @@
         <option value="admin" {% if 'admin' in user.roles %}selected{% endif %}>Administrator</option>
       </select>
     </label>
-    <label>
-      <input name="event_management" type="checkbox" {% if 'event_management' in user.permissions %}checked{% endif %}>
-      Manage events and event types
-    </label>
     <button type="submit">Save</button>
   </form>
   <dl>
@@ -23,7 +19,6 @@
     <dt>Name</dt><dd>{{ user.display_name or '' }}</dd>
     <dt>Email</dt><dd>{{ user.email or '' }}</dd>
     <dt>Roles</dt><dd>{{ user.roles|join(', ') }}</dd>
-    <dt>Permissions</dt><dd>{{ user.permissions|join(', ') }}</dd>
   </dl>
 
   <h2>Regular email authentication</h2>

@@ -1225,10 +1225,8 @@ class ServiceApplicationTest(unittest.TestCase):
         form: Optional[dict] = None,
         authenticated: bool = True,
         roles: Optional[list[str]] = None,
-        permissions: Optional[list[str]] = None,
     ):
         roles = roles if roles is not None else ["admin"]
-        permissions = permissions or []
         body = urlencode(form or {}).encode()
         environ = {
             "PATH_INFO": path,
@@ -1253,7 +1251,6 @@ class ServiceApplicationTest(unittest.TestCase):
                 id=ObjectId("507f1f77bcf86cd799439011"),
                 display_name="Jane",
                 roles=roles,
-                permissions=permissions,
             )
             if authenticated
             else None,
@@ -1264,7 +1261,6 @@ class ServiceApplicationTest(unittest.TestCase):
                 "id": ObjectId("507f1f77bcf86cd799439011"),
                 "display_name": "Jane",
                 "roles": roles,
-                "permissions": permissions,
             }
             if authenticated
             else None,
@@ -1308,8 +1304,10 @@ class ServiceApplicationTest(unittest.TestCase):
         user_response = self.request("/", roles=["solo"])
 
         self.assertIn(b'href="/admin">Admin</a>', admin_response["body"])
+        self.assertIn(b'href="/admin/event/list">Manage events</a>', admin_response["body"])
         self.assertNotIn(b'href="/admin/user/new"', admin_response["body"])
         self.assertNotIn(b'href="/admin">Admin</a>', user_response["body"])
+        self.assertNotIn(b'href="/admin/event/list">Manage events</a>', user_response["body"])
 
     def test_admin_page_lists_admin_functions(self) -> None:
         response = self.request("/admin")
@@ -1356,20 +1354,15 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'name="identity_type"', response["body"])
         self.assertIn(b'name="role"', response["body"])
-        self.assertIn(b'name="event_management"', response["body"])
 
-    def test_event_manager_can_use_event_routes_without_admin_role(self) -> None:
+    def test_admin_can_use_event_routes(self) -> None:
         with patch.object(service, "_list_events", return_value=(service.HTTPStatus.OK, [], b"events")):
-            response = self.request(
-                "/admin/event/list",
-                roles=["solo"],
-                permissions=["event_management"],
-            )
+            response = self.request("/admin/event/list")
 
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"], b"events")
 
-    def test_user_without_event_management_permission_is_forbidden(self) -> None:
+    def test_non_admin_cannot_use_event_routes(self) -> None:
         response = self.request("/admin/event/list", roles=["solo"])
         self.assertEqual(response["status"], "403 Forbidden")
 
@@ -1390,8 +1383,6 @@ class ServiceApplicationTest(unittest.TestCase):
                 "/admin/event/new",
                 "POST",
                 form,
-                roles=["solo"],
-                permissions=["event_management"],
             )
 
         self.assertEqual(response["status"], "303 See Other")

@@ -66,7 +66,7 @@ def dispatch(environ: dict, handlers):
     if path == "/admin/event/list":
         if method != "GET":
             return method_not_allowed(["GET"])
-        auth_response = handlers._require_event_management(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         return handlers._list_events()
@@ -74,7 +74,7 @@ def dispatch(environ: dict, handlers):
     if path == "/admin/event/new":
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_event_management(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
@@ -88,7 +88,7 @@ def dispatch(environ: dict, handlers):
     if event_match:
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_event_management(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
@@ -102,7 +102,7 @@ def dispatch(environ: dict, handlers):
     if path == "/admin/event-type/list":
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_event_management(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
@@ -113,7 +113,7 @@ def dispatch(environ: dict, handlers):
     if event_type_match:
         if method not in {"GET", "POST"}:
             return method_not_allowed(["GET", "POST"])
-        auth_response = handlers._require_event_management(environ)
+        auth_response = handlers._require_admin(environ)
         if auth_response is not None:
             return auth_response
         if method == "GET":
