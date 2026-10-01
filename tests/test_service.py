@@ -568,7 +568,9 @@ class ServiceHelperTest(unittest.TestCase):
         self.addCleanup(setattr, service, "_storage_connected", original_connected)
         service._storage_connected = False
         file_config.return_value = {"mongodb_uri": "mongodb://yaml.example/test"}
-        service._ensure_storage()
+        with patch.object(service, "migrate_events") as migrate:
+            service._ensure_storage()
+            migrate.assert_called_once_with()
 
         register_connection.assert_called_once_with(
             service.mongoengine_alias,
@@ -1275,6 +1277,11 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'href="/reports/redeemed"', response["body"])
         self.assertIn(b'href="/reports/issued"', response["body"])
 
+    def test_unexpected_application_error_is_not_caught(self) -> None:
+        with patch.object(service, "_dispatch", side_effect=RuntimeError("programming error")):
+            with self.assertRaisesRegex(RuntimeError, "programming error"):
+                self.request("/")
+
     def test_redeem_page_offers_the_com_port_scanner(self) -> None:
         response = self.request("/redeem")
 
@@ -1302,8 +1309,10 @@ class ServiceApplicationTest(unittest.TestCase):
         user_response = self.request("/", roles=["solo"])
 
         self.assertIn(b'href="/admin">Admin</a>', admin_response["body"])
+        self.assertIn(b'href="/admin/event/list">Manage events</a>', admin_response["body"])
         self.assertNotIn(b'href="/admin/user/new"', admin_response["body"])
         self.assertNotIn(b'href="/admin">Admin</a>', user_response["body"])
+        self.assertNotIn(b'href="/admin/event/list">Manage events</a>', user_response["body"])
 
     def test_admin_page_lists_admin_functions(self) -> None:
         response = self.request("/admin")
@@ -1311,6 +1320,8 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'href="/admin/user/list">Users</a>', response["body"])
         self.assertIn(b'href="/admin/partner/list">Partners</a>', response["body"])
+        self.assertIn(b'href="/admin/event/list">Events</a>', response["body"])
+        self.assertIn(b'href="/admin/event-type/list">Event types</a>', response["body"])
         self.assertNotIn(b'href="/admin/user/new">Add user</a>', response["body"])
 
     def test_admin_user_list_route_uses_handler(self) -> None:
@@ -1348,6 +1359,40 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertIn(b'name="identity_type"', response["body"])
         self.assertIn(b'name="role"', response["body"])
+
+    def test_admin_can_use_event_routes(self) -> None:
+        with patch.object(service, "_list_events", return_value=(service.HTTPStatus.OK, [], b"events")):
+            response = self.request("/admin/event/list")
+
+        self.assertEqual(response["status"], "200 OK")
+        self.assertEqual(response["body"], b"events")
+
+    def test_non_admin_cannot_use_event_routes(self) -> None:
+        response = self.request("/admin/event/list", roles=["solo"])
+        self.assertEqual(response["status"], "403 Forbidden")
+
+    def test_event_creation_route_passes_form_and_current_user(self) -> None:
+        form = {
+            "dt": "2026-10-01T10:00",
+            "duration_minutes": "60",
+            "event_type": "507f1f77bcf86cd799439012",
+            "price": "100.00",
+            "currency": "EUR",
+        }
+        with patch.object(
+            service,
+            "_create_event",
+            return_value=(service.HTTPStatus.SEE_OTHER, [], b""),
+        ) as handler:
+            response = self.request(
+                "/admin/event/new",
+                "POST",
+                form,
+            )
+
+        self.assertEqual(response["status"], "303 See Other")
+        self.assertEqual(handler.call_args.args[0], form)
+        self.assertEqual(handler.call_args.args[1]["display_name"], "Jane")
 
     def test_issue_rejects_out_of_range_count(self) -> None:
         response = self.request(

@@ -12,11 +12,15 @@
         <a href="/register">Register credential</a>
       {% else %}
         <a href="/">Home</a>
+        <a href="/book">Book an event</a>
         {% if not authenticated %}
           <a href="/authn">Sign in</a>
         {% endif %}
         {% if 'admin' in current_user_roles %}
           <a href="/issue">Issue tickets</a>
+        {% endif %}
+        {% if 'admin' in current_user_roles %}
+          <a href="/admin/event/list">Manage events</a>
         {% endif %}
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>

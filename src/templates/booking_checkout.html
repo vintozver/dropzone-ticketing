@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Checkout{% endblock %}
+{% block head %}
+  {% if step == "payment" %}<script src="https://js.stripe.com/v3/"></script>{% endif %}
+{% endblock %}
+{% block content %}
+  <h1>Checkout</h1>
+  <p>
+    {{ event.event_type.name }} at {{ event.dt|datetime }}
+    ({{ event.duration_minutes }} minutes)
+  </p>
+  <p id="reservation-time">
+    Reserved until {{ event.reservation_expires_at|datetime }}.
+  </p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+
+  {% if step == "details" %}
+    <form method="post" action="/book/contact">
+      <input type="hidden" name="event_id" value="{{ event.id }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <label>Name <input name="name" autocomplete="name" required value="{{ customer.name|default('') }}"></label>
+      <label>Email <input name="email" type="email" autocomplete="email" required value="{{ customer.email|default('') }}"></label>
+      <label>Phone <input name="phone" type="tel" autocomplete="tel" required value="{{ customer.phone|default('') }}"></label>
+      <button type="submit">Continue to payment</button>
+    </form>
+  {% else %}
+    <p>Total: {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</p>
+    <form id="payment-form">
+      <div id="payment-element"></div>
+      <p id="payment-error" role="alert"></p>
+      <button id="pay-button" type="submit">Pay and book</button>
+    </form>
+    <form id="complete-form" method="post" action="/book/complete">
+      <input type="hidden" name="event_id" value="{{ event.id }}">
+      <input type="hidden" name="token" value="{{ token }}">
+      <input id="payment-intent" type="hidden" name="payment_intent">
+    </form>
+    <script>
+      const stripe = Stripe({{ publishable_key|tojson }});
+      const elements = stripe.elements({clientSecret: {{ client_secret|tojson }}});
+      elements.create("payment").mount("#payment-element");
+      document.getElementById("payment-form").addEventListener("submit", async event => {
+        event.preventDefault();
+        const button = document.getElementById("pay-button");
+        button.disabled = true;
+        const result = await stripe.confirmPayment({elements, redirect: "if_required"});
+        if (result.error) {
+          document.getElementById("payment-error").textContent = result.error.message;
+          button.disabled = false;
+          return;
+        }
+        document.getElementById("payment-intent").value = result.paymentIntent.id;
+        document.getElementById("complete-form").submit();
+      });
+    </script>
+  {% endif %}
+{% endblock %}
