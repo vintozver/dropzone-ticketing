@@ -6,6 +6,7 @@ from datetime import datetime, time, timedelta, timezone
 from http import HTTPStatus
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from mongoengine import Q
 
 from ...model.event import Customer, Payment
@@ -38,8 +39,12 @@ def availability(
     if event_type_id:
         try:
             selected_type = event_type_class.objects(id=ObjectId(event_type_id), active=True).first()
-        except Exception:
-            selected_type = None
+        except (InvalidId, TypeError):
+            return render(
+                "error.html",
+                HTTPStatus.BAD_REQUEST,
+                message="Choose a valid event type.",
+            )
 
     local_today, start, end = _window(now, local_timezone)
     events = []
@@ -90,7 +95,7 @@ def hold(
 ):
     try:
         event_id = ObjectId(form.get("event_id", ""))
-    except Exception:
+    except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     _today, start, end = _window(now, local_timezone)
     token = secrets.token_urlsafe(32)
@@ -133,8 +138,8 @@ def contact(
     token = form.get("token", "")
     try:
         event_id = ObjectId(form.get("event_id", ""))
-    except Exception:
-        event_id = None
+    except (InvalidId, TypeError):
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
         id=event_id,
         reservation_token=_token_hash(token) if token else "",
@@ -216,8 +221,8 @@ def complete(
     intent_id = form.get("payment_intent", "")
     try:
         event_id = ObjectId(form.get("event_id", ""))
-    except Exception:
-        event_id = None
+    except (InvalidId, TypeError):
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
         id=event_id,
         reservation_token=_token_hash(token) if token else "",
@@ -267,11 +272,15 @@ def complete(
         )
     try:
         captured = payment_provider.capture_payment_intent(intent_id)
-    except Exception:
+    except ValueError:
         event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
             unset__customer=1,
         )
-        raise
+        return render(
+            "error.html",
+            HTTPStatus.BAD_GATEWAY,
+            message="Payment could not be captured. Please try again.",
+        )
     if captured.get("status") != "succeeded" or captured.get("amount_received") != event.price:
         event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
             unset__customer=1,

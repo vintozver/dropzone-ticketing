@@ -59,7 +59,6 @@ from .config import (
 )
 from . import payment as _payment_provider
 from .http import (
-    exception_response,
     read_form as _read_form,
     render as _render,
     request_context,
@@ -333,6 +332,4 @@ def application(environ: dict, start_response: Callable):
             response = _dispatch(environ)
         except ValueError as error:
             response = _render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
-        except Exception as exc:
-            response = exception_response(exc)
     return response_with_length(response, start_response)

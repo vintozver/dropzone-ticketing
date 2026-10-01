@@ -1277,6 +1277,11 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertIn(b'href="/reports/redeemed"', response["body"])
         self.assertIn(b'href="/reports/issued"', response["body"])
 
+    def test_unexpected_application_error_is_not_caught(self) -> None:
+        with patch.object(service, "_dispatch", side_effect=RuntimeError("programming error")):
+            with self.assertRaisesRegex(RuntimeError, "programming error"):
+                self.request("/")
+
     def test_redeem_page_offers_the_com_port_scanner(self) -> None:
         response = self.request("/redeem")
 

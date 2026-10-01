@@ -97,6 +97,41 @@ class EventModelTest(unittest.TestCase):
 
 
 class BookingActionTest(unittest.TestCase):
+    def test_invalid_event_type_is_reported_as_bad_request(self) -> None:
+        event_types = MagicMock()
+        event_types.order_by.return_value = []
+        event_type_class = MagicMock()
+        event_type_class.objects.return_value = event_types
+        render = MagicMock(return_value="invalid")
+
+        result = booking.availability(
+            "not-an-object-id",
+            event_class=MagicMock(),
+            event_type_class=event_type_class,
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "invalid")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(render.call_args.kwargs["message"], "Choose a valid event type.")
+
+    def test_invalid_event_id_is_reported_as_bad_request(self) -> None:
+        render = MagicMock(return_value="invalid")
+
+        result = booking.hold(
+            {"event_id": "not-an-object-id"},
+            event_class=MagicMock(),
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "invalid")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(render.call_args.kwargs["message"], "Choose a valid event.")
+
     def test_availability_groups_fourteen_local_days_and_marks_sold_out(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
         event_type = SimpleNamespace(id=ObjectId(), name="Tandem")
@@ -237,6 +272,99 @@ class BookingActionTest(unittest.TestCase):
         recorded_payment = finish_query.modify.call_args.kwargs["set__payment"]
         self.assertEqual(recorded_payment.reference, "pi_1")
         self.assertEqual(recorded_payment.amount, 12500)
+
+    def test_capture_provider_error_is_reported_and_releases_claim(self) -> None:
+        now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
+        event_id = ObjectId()
+        event = SimpleNamespace(
+            id=event_id,
+            event_type=SimpleNamespace(),
+            price=12500,
+            currency="EUR",
+            checkout_customer=Customer(
+                name="Guest",
+                email="guest@example.test",
+                phone="+1",
+            ),
+        )
+        lookup_query = MagicMock()
+        lookup_query.first.return_value = event
+        authorize_query = MagicMock()
+        authorize_query.modify.return_value = event
+        release_query = MagicMock()
+        event_class = MagicMock()
+        event_class.objects.side_effect = [
+            lookup_query,
+            authorize_query,
+            release_query,
+        ]
+        token_hash = booking._token_hash("secret")
+        provider = MagicMock()
+        provider.retrieve_payment_intent.return_value = {
+            "status": "requires_capture",
+            "amount": 12500,
+            "currency": "eur",
+            "metadata": {
+                "event_id": str(event_id),
+                "reservation_token": token_hash,
+            },
+        }
+        provider.capture_payment_intent.side_effect = ValueError("provider unavailable")
+        render = MagicMock(return_value="capture-error")
+
+        result = booking.complete(
+            {"event_id": str(event_id), "token": "secret", "payment_intent": "pi_1"},
+            event_class=event_class,
+            render=render,
+            payment_provider=provider,
+            now=now,
+        )
+
+        self.assertEqual(result, "capture-error")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_GATEWAY)
+        release_query.modify.assert_called_once_with(unset__customer=1)
+
+    def test_unexpected_capture_error_is_not_caught(self) -> None:
+        now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
+        event_id = ObjectId()
+        event = SimpleNamespace(
+            id=event_id,
+            event_type=SimpleNamespace(),
+            price=12500,
+            currency="EUR",
+            checkout_customer=Customer(
+                name="Guest",
+                email="guest@example.test",
+                phone="+1",
+            ),
+        )
+        lookup_query = MagicMock()
+        lookup_query.first.return_value = event
+        authorize_query = MagicMock()
+        authorize_query.modify.return_value = event
+        event_class = MagicMock()
+        event_class.objects.side_effect = [lookup_query, authorize_query]
+        token_hash = booking._token_hash("secret")
+        provider = MagicMock()
+        provider.retrieve_payment_intent.return_value = {
+            "status": "requires_capture",
+            "amount": 12500,
+            "currency": "eur",
+            "metadata": {
+                "event_id": str(event_id),
+                "reservation_token": token_hash,
+            },
+        }
+        provider.capture_payment_intent.side_effect = RuntimeError("programming error")
+
+        with self.assertRaisesRegex(RuntimeError, "programming error"):
+            booking.complete(
+                {"event_id": str(event_id), "token": "secret", "payment_intent": "pi_1"},
+                event_class=event_class,
+                render=MagicMock(),
+                payment_provider=provider,
+                now=now,
+            )
 
 
 class StripePaymentTest(unittest.TestCase):
