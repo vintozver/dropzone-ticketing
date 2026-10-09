@@ -36,7 +36,6 @@ def create_payment_intent(
             "amount": amount,
             "currency": currency.lower(),
             "receipt_email": email,
-            "payment_method_types": ["card"],
             "capture_method": "manual",
             "metadata": {
                 "event_id": event_id,

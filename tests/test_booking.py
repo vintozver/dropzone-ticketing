@@ -657,6 +657,7 @@ class StripePaymentTest(unittest.TestCase):
 
         values = create.call_args.args[0]
         self.assertEqual(values["capture_method"], "manual")
+        self.assertNotIn("payment_method_types", values)
         self.assertEqual(
             create.call_args.args[1]["idempotency_key"],
             "reservation-hash-event",
