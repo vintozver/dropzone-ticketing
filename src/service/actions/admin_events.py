@@ -261,6 +261,8 @@ def update_event(
             unset__checkout_responses=1,
             unset__responses=1,
             unset__reservation_token=1,
+            unset__reservation_nonce=1,
+            unset__reservation_slot=1,
             unset__reservation_expires_at=1,
             push_all__history=[
                 _history(

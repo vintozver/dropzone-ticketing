@@ -43,7 +43,7 @@ def create_payment_intent(
                 "reservation_token": reservation_token,
             },
         },
-        {"idempotency_key": reservation_token},
+        {"idempotency_key": f"{reservation_token}-{event_id}"},
     )
 
 

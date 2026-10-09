@@ -7,6 +7,7 @@ import os
 import traceback
 import unittest
 from datetime import datetime, timezone
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import ANY, MagicMock, call, patch
@@ -50,6 +51,44 @@ def user_ref(display_name: str, *, object_id: str | None = None) -> UserRef:
 
 
 class ServiceHelperTest(unittest.TestCase):
+    @patch.object(service, "local_timezone", return_value=timezone.utc)
+    @patch.object(service, "_booking_hold_action")
+    def test_booking_hold_reuses_guest_cookie_and_refreshes_it(
+        self,
+        hold_action,
+        _local_timezone,
+    ) -> None:
+        token = "a" * 43
+        hold_action.return_value = (HTTPStatus.SEE_OTHER, [], b"")
+
+        response = service._booking_hold(
+            {"event_id": str(ObjectId())},
+            {"HTTP_COOKIE": f"booking_guest={token}"},
+        )
+
+        self.assertEqual(hold_action.call_args.args[1], token)
+        cookie = next(value for name, value in response[1] if name == "Set-Cookie")
+        self.assertIn(f"booking_guest={token}", cookie)
+        self.assertIn("Max-Age=900", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("Path=/book", cookie)
+
+    @patch.object(service, "local_timezone", return_value=timezone.utc)
+    @patch.object(service, "_booking_hold_action")
+    def test_failed_first_hold_does_not_replace_the_guest_cookie(
+        self,
+        hold_action,
+        _local_timezone,
+    ) -> None:
+        hold_action.return_value = (HTTPStatus.CONFLICT, [], b"")
+
+        response = service._booking_hold(
+            {"event_id": str(ObjectId())},
+            {"HTTP_COOKIE": ""},
+        )
+
+        self.assertFalse(any(name == "Set-Cookie" for name, _value in response[1]))
+
     def test_generated_code_is_printable_ascii_with_exact_length(self) -> None:
         for _ in range(100):
             code = service.generate_code()

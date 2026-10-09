@@ -36,22 +36,28 @@ def dispatch(environ: dict, handlers):
         if method != "GET":
             return method_not_allowed(["GET"])
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-        return handlers._booking_availability(query.get("type", [None])[0])
+        return handlers._booking_availability(query.get("type", [None])[0], environ)
 
     if path == "/book/hold":
         if method != "POST":
             return method_not_allowed(["POST"])
-        return handlers._booking_hold(handlers._read_form(environ))
+        return handlers._booking_hold(handlers._read_form(environ), environ)
+
+    if path == "/book/resume":
+        if method != "GET":
+            return method_not_allowed(["GET"])
+        query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
+        return handlers._booking_resume(query.get("event_id", [None])[0], environ)
 
     if path == "/book/contact":
         if method != "POST":
             return method_not_allowed(["POST"])
-        return handlers._booking_contact(handlers._read_form(environ))
+        return handlers._booking_contact(handlers._read_form(environ), environ)
 
     if path == "/book/complete":
         if method != "POST":
             return method_not_allowed(["POST"])
-        return handlers._booking_complete(handlers._read_form(environ))
+        return handlers._booking_complete(handlers._read_form(environ), environ)
 
     if path == "/admin/partner/list":
         if method not in {"GET", "POST"}:

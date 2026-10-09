@@ -51,6 +51,8 @@ class EventModelTest(unittest.TestCase):
         self.assertIsInstance(fields["price"], mongoengine.IntField)
         self.assertIsInstance(fields["currency"], mongoengine.StringField)
         self.assertIsInstance(fields["reservation_expires_at"], mongoengine.DateTimeField)
+        self.assertIsInstance(fields["reservation_slot"], mongoengine.IntField)
+        self.assertEqual(fields["reservation_slot"].max_value, 2)
         self.assertIs(Event._meta["db_alias"], mongoengine_alias)
 
     def test_customer_phone_is_optional_and_payment_uses_dt(self) -> None:
@@ -144,6 +146,7 @@ class BookingActionTest(unittest.TestCase):
 
         result = booking.availability(
             "not-an-object-id",
+            None,
             event_class=MagicMock(),
             event_type_class=event_type_class,
             render=render,
@@ -160,6 +163,7 @@ class BookingActionTest(unittest.TestCase):
 
         result = booking.hold(
             {"event_id": "not-an-object-id"},
+            "secret",
             event_class=MagicMock(),
             render=render,
             local_timezone=ZoneInfo("UTC"),
@@ -198,6 +202,7 @@ class BookingActionTest(unittest.TestCase):
 
         result = booking.availability(
             str(event_type.id),
+            None,
             event_class=event_class,
             event_type_class=event_type_class,
             render=render,
@@ -212,25 +217,55 @@ class BookingActionTest(unittest.TestCase):
         self.assertTrue(days[1]["sold_out"])
         self.assertFalse(days[2]["has_events"])
 
-    @patch("dropzone_ticketing.service.actions.booking.secrets.token_urlsafe", return_value="secret")
-    def test_hold_is_atomic_and_last_exactly_fifteen_minutes(self, _token) -> None:
+    def test_availability_lists_the_guests_active_holds(self) -> None:
+        held = SimpleNamespace(dt=datetime(2026, 10, 1, tzinfo=timezone.utc))
+        event_type_query = MagicMock()
+        event_type_query.order_by.return_value = []
+        held_query = MagicMock()
+        held_query.order_by.return_value = [held]
+        event_class = MagicMock()
+        event_class.objects.return_value = held_query
+        event_type_class = MagicMock()
+        event_type_class.objects.return_value = event_type_query
+        render = MagicMock(return_value="rendered")
+
+        booking.availability(
+            None,
+            "secret",
+            event_class=event_class,
+            event_type_class=event_type_class,
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(render.call_args.kwargs["held_events"], [held])
+        event_class.objects.assert_called_once_with(
+            reservation_token=booking._token_hash("secret"),
+            reservation_expires_at__gt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            customer=None,
+            active=True,
+        )
+
+    def test_hold_is_atomic_and_last_exactly_fifteen_minutes(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
         event = SimpleNamespace(id=ObjectId())
         query = MagicMock()
         query.modify.return_value = event
         event_class = MagicMock()
         event_class.objects.return_value = query
-        render = MagicMock(return_value="rendered")
 
         result = booking.hold(
             {"event_id": str(event.id)},
+            "secret",
             event_class=event_class,
-            render=render,
+            render=MagicMock(),
             local_timezone=ZoneInfo("UTC"),
             now=now,
         )
 
-        self.assertEqual(result, "rendered")
+        self.assertEqual(result[0], HTTPStatus.SEE_OTHER)
+        self.assertEqual(result[1], [("Location", f"/book/resume?event_id={event.id}")])
         self.assertEqual(
             query.modify.call_args.kwargs["set__reservation_expires_at"],
             now + timedelta(minutes=15),
@@ -239,17 +274,19 @@ class BookingActionTest(unittest.TestCase):
             query.modify.call_args.kwargs["set__reservation_token"],
             booking._token_hash("secret"),
         )
-        self.assertEqual(render.call_args.kwargs["customer"], {})
+        self.assertEqual(query.modify.call_args.kwargs["set__reservation_slot"], 0)
 
     def test_hold_conflict_does_not_override_an_existing_reservation(self) -> None:
         query = MagicMock()
         query.modify.return_value = None
+        query.first.return_value = None
         event_class = MagicMock()
         event_class.objects.return_value = query
         render = MagicMock(return_value="conflict")
 
         result = booking.hold(
             {"event_id": str(ObjectId())},
+            "secret",
             event_class=event_class,
             render=render,
             local_timezone=ZoneInfo("UTC"),
@@ -258,6 +295,103 @@ class BookingActionTest(unittest.TestCase):
 
         self.assertEqual(result, "conflict")
         self.assertEqual(render.call_args.args[1], HTTPStatus.CONFLICT)
+
+    def test_repeated_hold_resumes_the_guests_existing_reservation(self) -> None:
+        event_id = ObjectId()
+        query = MagicMock()
+        query.modify.return_value = None
+        query.first.return_value = SimpleNamespace(id=event_id)
+        event_class = MagicMock()
+        event_class.objects.return_value = query
+
+        result = booking.hold(
+            {"event_id": str(event_id)},
+            "secret",
+            event_class=event_class,
+            render=MagicMock(),
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result[0], HTTPStatus.SEE_OTHER)
+        self.assertEqual(result[1], [("Location", f"/book/resume?event_id={event_id}")])
+
+    def test_hold_rejects_a_fourth_concurrent_slot(self) -> None:
+        query = MagicMock()
+        query.modify.side_effect = [
+            mongoengine.NotUniqueError(),
+            mongoengine.NotUniqueError(),
+            mongoengine.NotUniqueError(),
+        ]
+        event_class = MagicMock()
+        event_class.objects.return_value = query
+        render = MagicMock(return_value="limit")
+
+        result = booking.hold(
+            {"event_id": str(ObjectId())},
+            "secret",
+            event_class=event_class,
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "limit")
+        self.assertEqual(query.modify.call_count, 3)
+        self.assertIn("up to three", render.call_args.kwargs["message"])
+
+    def test_resume_restores_contact_details_for_the_guest(self) -> None:
+        customer = Customer(name="Guest", email="guest@example.test")
+        event = SimpleNamespace(checkout_customer=customer, payment_intent=None)
+        query = MagicMock()
+        query.first.return_value = event
+        event_class = MagicMock()
+        event_class.objects.return_value = query
+        render = MagicMock(return_value="details")
+
+        result = booking.resume(
+            str(ObjectId()),
+            "secret",
+            event_class=event_class,
+            render=render,
+            payment_provider=MagicMock(),
+            publishable_key="pk_test",
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "details")
+        self.assertEqual(render.call_args.kwargs["customer"], customer)
+        self.assertEqual(render.call_args.kwargs["step"], "details")
+
+    def test_resume_restores_authorized_payment(self) -> None:
+        event = SimpleNamespace(
+            checkout_customer=Customer(name="Guest", email="guest@example.test"),
+            payment_intent="pi_1",
+        )
+        query = MagicMock()
+        query.first.return_value = event
+        event_class = MagicMock()
+        event_class.objects.return_value = query
+        provider = MagicMock()
+        provider.retrieve_payment_intent.return_value = {
+            "status": "requires_capture",
+            "client_secret": "pi_secret",
+        }
+        render = MagicMock(return_value="payment")
+
+        result = booking.resume(
+            str(ObjectId()),
+            "secret",
+            event_class=event_class,
+            render=render,
+            payment_provider=provider,
+            publishable_key="pk_test",
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "payment")
+        self.assertTrue(render.call_args.kwargs["payment_ready"])
+        self.assertEqual(render.call_args.kwargs["payment_intent"], "pi_1")
 
     def test_complete_verifies_authorization_then_captures_and_books(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
@@ -271,6 +405,7 @@ class BookingActionTest(unittest.TestCase):
             currency="EUR",
             checkout_customer=customer,
             checkout_responses={"question": ["response"]},
+            reservation_nonce="hold-nonce",
         )
         authorized = SimpleNamespace(id=event_id)
         booked = SimpleNamespace(id=event_id)
@@ -282,14 +417,13 @@ class BookingActionTest(unittest.TestCase):
         finish_query.modify.return_value = booked
         event_class = MagicMock()
         event_class.objects.side_effect = [lookup_query, authorize_query, finish_query]
-        token_hash = booking._token_hash("secret")
         provider = MagicMock()
         provider.retrieve_payment_intent.return_value = {
             "id": "pi_1",
             "status": "requires_capture",
             "amount": 12500,
             "currency": "eur",
-            "metadata": {"event_id": str(event_id), "reservation_token": token_hash},
+            "metadata": {"event_id": str(event_id), "reservation_token": "hold-nonce"},
         }
         provider.capture_payment_intent.return_value = {
             "status": "succeeded",
@@ -299,7 +433,8 @@ class BookingActionTest(unittest.TestCase):
         render = MagicMock(return_value="confirmed")
 
         result = booking.complete(
-            {"event_id": str(event_id), "token": "secret", "payment_intent": "pi_1"},
+            {"event_id": str(event_id), "payment_intent": "pi_1"},
+            "secret",
             event_class=event_class,
             render=render,
             payment_provider=provider,
@@ -333,10 +468,11 @@ class BookingActionTest(unittest.TestCase):
             price=10000,
             currency="EUR",
             event_type=SimpleNamespace(questions=[question]),
+            reservation_nonce="hold-nonce",
         )
         lookup = MagicMock()
         lookup.first.return_value = event
-        updated = MagicMock()
+        updated = MagicMock(id=event.id)
         save_query = MagicMock()
         save_query.modify.return_value = updated
         event_class = MagicMock()
@@ -348,14 +484,14 @@ class BookingActionTest(unittest.TestCase):
         }
         first_response = str(question.responses[0].id)
 
-        booking.contact(
+        result = booking.contact(
             {
                 "event_id": str(event.id),
-                "token": "token",
                 "name": "Guest",
                 "email": "guest@example.test",
                 f"question_{question.id}_{first_response}": "on",
             },
+            "secret",
             event_class=event_class,
             render=MagicMock(return_value="payment"),
             payment_provider=provider,
@@ -368,6 +504,11 @@ class BookingActionTest(unittest.TestCase):
         self.assertEqual(
             save_query.modify.call_args.kwargs["set__checkout_responses"],
             {str(question.id): [first_response]},
+        )
+        self.assertEqual(result[0], HTTPStatus.SEE_OTHER)
+        self.assertEqual(
+            result[1],
+            [("Location", f"/book/resume?event_id={event.id}")],
         )
 
     def test_invalid_single_choice_response_is_rejected(self) -> None:
@@ -388,11 +529,11 @@ class BookingActionTest(unittest.TestCase):
         result = booking.contact(
             {
                 "event_id": str(event.id),
-                "token": "token",
                 "name": "Guest",
                 "email": "guest@example.test",
                 f"question_{question.id}": str(ObjectId()),
             },
+            "secret",
             event_class=event_class,
             render=render,
             payment_provider=MagicMock(),
@@ -418,6 +559,7 @@ class BookingActionTest(unittest.TestCase):
                 phone="+1",
             ),
             checkout_responses={},
+            reservation_nonce="hold-nonce",
         )
         lookup_query = MagicMock()
         lookup_query.first.return_value = event
@@ -430,7 +572,6 @@ class BookingActionTest(unittest.TestCase):
             authorize_query,
             release_query,
         ]
-        token_hash = booking._token_hash("secret")
         provider = MagicMock()
         provider.retrieve_payment_intent.return_value = {
             "status": "requires_capture",
@@ -438,14 +579,15 @@ class BookingActionTest(unittest.TestCase):
             "currency": "eur",
             "metadata": {
                 "event_id": str(event_id),
-                "reservation_token": token_hash,
+                "reservation_token": "hold-nonce",
             },
         }
         provider.capture_payment_intent.side_effect = ValueError("provider unavailable")
         render = MagicMock(return_value="capture-error")
 
         result = booking.complete(
-            {"event_id": str(event_id), "token": "secret", "payment_intent": "pi_1"},
+            {"event_id": str(event_id), "payment_intent": "pi_1"},
+            "secret",
             event_class=event_class,
             render=render,
             payment_provider=provider,
@@ -470,6 +612,7 @@ class BookingActionTest(unittest.TestCase):
                 phone="+1",
             ),
             checkout_responses={},
+            reservation_nonce="hold-nonce",
         )
         lookup_query = MagicMock()
         lookup_query.first.return_value = event
@@ -477,7 +620,6 @@ class BookingActionTest(unittest.TestCase):
         authorize_query.modify.return_value = event
         event_class = MagicMock()
         event_class.objects.side_effect = [lookup_query, authorize_query]
-        token_hash = booking._token_hash("secret")
         provider = MagicMock()
         provider.retrieve_payment_intent.return_value = {
             "status": "requires_capture",
@@ -485,14 +627,15 @@ class BookingActionTest(unittest.TestCase):
             "currency": "eur",
             "metadata": {
                 "event_id": str(event_id),
-                "reservation_token": token_hash,
+                "reservation_token": "hold-nonce",
             },
         }
         provider.capture_payment_intent.side_effect = RuntimeError("programming error")
 
         with self.assertRaisesRegex(RuntimeError, "programming error"):
             booking.complete(
-                {"event_id": str(event_id), "token": "secret", "payment_intent": "pi_1"},
+                {"event_id": str(event_id), "payment_intent": "pi_1"},
+                "secret",
                 event_class=event_class,
                 render=MagicMock(),
                 payment_provider=provider,
@@ -514,7 +657,10 @@ class StripePaymentTest(unittest.TestCase):
 
         values = create.call_args.args[0]
         self.assertEqual(values["capture_method"], "manual")
-        self.assertEqual(create.call_args.args[1]["idempotency_key"], "reservation-hash")
+        self.assertEqual(
+            create.call_args.args[1]["idempotency_key"],
+            "reservation-hash-event",
+        )
 
     @patch("dropzone_ticketing.service.payment._client")
     def test_refund_uses_payment_intent_and_idempotency(self, client) -> None:

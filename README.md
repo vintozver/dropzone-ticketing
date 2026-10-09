@@ -49,7 +49,9 @@ uses STARTTLS.
 
 Guests can book at `/book`. Card details are collected by Stripe Elements and
 payments are authorized before the event is atomically booked, then captured.
-The checkout reservation lasts 15 minutes.
+The checkout reservation lasts 15 minutes. A secure browser cookie lets guests
+resume their active holds after refreshing or returning to `/book`; each guest
+can hold up to three events at once.
 
 Administrators create event types in the `event_type` collection with `name`,
 optional `description`, default `price` (the integer minor-unit amount),

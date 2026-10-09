@@ -50,6 +50,7 @@ from .actions.booking import availability as _booking_availability_action
 from .actions.booking import complete as _booking_complete_action
 from .actions.booking import contact as _booking_contact_action
 from .actions.booking import hold as _booking_hold_action
+from .actions.booking import resume as _booking_resume_action
 from .config import (
     CODE_ALPHABET,
     CODE_LENGTH,
@@ -265,9 +266,17 @@ def _update_event_type(event_type_id: str, form: dict[str, str]):
     )
 
 
-def _booking_availability(event_type_id: str | None):
+def _booking_guest_token(environ: dict, *, create: bool = False) -> str | None:
+    token = _auth_module._cookies(environ).get("booking_guest", "")
+    if len(token) == 43 and all(character.isalnum() or character in "_-" for character in token):
+        return token
+    return secrets.token_urlsafe(32) if create else None
+
+
+def _booking_availability(event_type_id: str | None, environ: dict):
     return _booking_availability_action(
         event_type_id,
+        _booking_guest_token(environ),
         event_class=Event,
         event_type_class=EventType,
         render=_render,
@@ -276,19 +285,32 @@ def _booking_availability(event_type_id: str | None):
     )
 
 
-def _booking_hold(form: dict[str, str]):
-    return _booking_hold_action(
+def _booking_hold(form: dict[str, str], environ: dict):
+    token = _booking_guest_token(environ, create=True)
+    response = _booking_hold_action(
         form,
+        token,
         event_class=Event,
         render=_render,
         local_timezone=local_timezone(),
         now=datetime.now(timezone.utc),
     )
+    if response[0] == HTTPStatus.SEE_OTHER:
+        response[1].append(
+            _auth_module._cookie(
+                "booking_guest",
+                token,
+                max_age=15 * 60,
+                path="/book",
+            )
+        )
+    return response
 
 
-def _booking_contact(form: dict[str, str]):
-    return _booking_contact_action(
-        form,
+def _booking_resume(event_id: str | None, environ: dict):
+    return _booking_resume_action(
+        event_id,
+        _booking_guest_token(environ),
         event_class=Event,
         render=_render,
         payment_provider=_payment_provider,
@@ -297,9 +319,22 @@ def _booking_contact(form: dict[str, str]):
     )
 
 
-def _booking_complete(form: dict[str, str]):
+def _booking_contact(form: dict[str, str], environ: dict):
+    return _booking_contact_action(
+        form,
+        _booking_guest_token(environ),
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        publishable_key=stripe_publishable_key(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_complete(form: dict[str, str], environ: dict):
     return _booking_complete_action(
         form,
+        _booking_guest_token(environ),
         event_class=Event,
         render=_render,
         payment_provider=_payment_provider,

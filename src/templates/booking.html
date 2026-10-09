@@ -2,6 +2,21 @@
 {% block title %}Book an event{% endblock %}
 {% block content %}
   <h1>Book an event</h1>
+  {% if held_events %}
+    <section>
+      <h2>Your held events</h2>
+      <ul>
+        {% for event in held_events %}
+          <li>
+            <a href="/book/resume?event_id={{ event.id }}">
+              {{ event.event_type.name }} at {{ event.dt|datetime }}
+            </a>
+            (held until {{ event.reservation_expires_at|datetime }})
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
   <form method="get" action="/book">
     <label>
       Event type

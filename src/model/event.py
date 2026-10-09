@@ -104,6 +104,8 @@ class Event(mongoengine.Document):
     )
     payment_intent = mongoengine.StringField(required=False)
     reservation_token = mongoengine.StringField(required=False)
+    reservation_nonce = mongoengine.StringField(required=False)
+    reservation_slot = mongoengine.IntField(required=False, min_value=0, max_value=2)
     reservation_expires_at = mongoengine.DateTimeField(required=False)
     history = mongoengine.EmbeddedDocumentListField(EventHistoryItem, default=list)
 
@@ -116,6 +118,11 @@ class Event(mongoengine.Document):
             "customer",
             "reservation_expires_at",
             {"fields": ["event_type", "dt"]},
+            {
+                "fields": ["reservation_token", "reservation_slot"],
+                "unique": True,
+                "sparse": True,
+            },
         ],
     }
 

@@ -8,10 +8,12 @@ from http import HTTPStatus
 from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine import Q
+from mongoengine.errors import NotUniqueError
 
 from ...model.event import Customer, EventHistoryItem, Payment
 
 RESERVATION_MINUTES = 15
+MAX_GUEST_HOLDS = 3
 
 
 def _token_hash(token: str) -> str:
@@ -50,6 +52,7 @@ def _responses(form: dict[str, str], questions):
 
 def availability(
     event_type_id: str | None,
+    reservation_token: str | None,
     *,
     event_class,
     event_type_class,
@@ -81,6 +84,17 @@ def availability(
             ).order_by("dt")
         )
 
+    held_events = []
+    if reservation_token:
+        held_events = list(
+            event_class.objects(
+                reservation_token=_token_hash(reservation_token),
+                reservation_expires_at__gt=now,
+                customer=None,
+                active=True,
+            ).order_by("dt")
+        )
+
     grouped = []
     for offset in range(14):
         day = local_today + timedelta(days=offset)
@@ -105,11 +119,13 @@ def availability(
         event_types=event_types,
         selected_type=selected_type,
         days=grouped,
+        held_events=held_events,
     )
 
 
 def hold(
     form: dict[str, str],
+    reservation_token: str,
     *,
     event_class,
     render,
@@ -121,42 +137,80 @@ def hold(
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     _today, start, end = _window(now, local_timezone)
-    token = secrets.token_urlsafe(32)
-    token_hash = _token_hash(token)
-    event = (
-        event_class.objects(
-            Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
-            id=event_id,
-            dt__gte=start,
-            dt__lt=end,
-            active=True,
-            customer=None,
-        )
-        .modify(
-            set__reservation_token=token_hash,
-            set__reservation_expires_at=now + timedelta(minutes=RESERVATION_MINUTES),
-            unset__checkout_customer=1,
-            unset__payment_intent=1,
-            new=True,
-        )
+    token_hash = _token_hash(reservation_token)
+    event_class.objects(
+        reservation_token=token_hash,
+        reservation_expires_at__lte=now,
+    ).update(
+        unset__reservation_token=1,
+        unset__reservation_nonce=1,
+        unset__reservation_slot=1,
+        unset__reservation_expires_at=1,
+        unset__checkout_customer=1,
+        unset__checkout_responses=1,
+        unset__payment_intent=1,
     )
+    event = None
+    for slot in range(MAX_GUEST_HOLDS):
+        try:
+            event = (
+                event_class.objects(
+                    Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
+                    id=event_id,
+                    dt__gte=start,
+                    dt__lt=end,
+                    active=True,
+                    customer=None,
+                )
+                .modify(
+                    set__reservation_token=token_hash,
+                    set__reservation_nonce=secrets.token_urlsafe(32),
+                    set__reservation_slot=slot,
+                    set__reservation_expires_at=now + timedelta(minutes=RESERVATION_MINUTES),
+                    unset__checkout_customer=1,
+                    unset__checkout_responses=1,
+                    unset__payment_intent=1,
+                    new=True,
+                )
+            )
+        except NotUniqueError:
+            continue
+        if event is None:
+            own_hold = event_class.objects(
+                id=event_id,
+                reservation_token=token_hash,
+                reservation_expires_at__gt=now,
+                customer=None,
+                active=True,
+            ).first()
+            if own_hold is not None:
+                return (
+                    HTTPStatus.SEE_OTHER,
+                    [("Location", f"/book/resume?event_id={event_id}")],
+                    b"",
+                )
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="That event is no longer available. Please choose another time.",
+            )
+        break
     if event is None:
         return render(
             "error.html",
             HTTPStatus.CONFLICT,
-            message="That event is no longer available. Please choose another time.",
+            message="You can hold up to three events at a time.",
         )
-    return render(
-        "booking_checkout.html",
-        event=event,
-        token=token,
-        step="details",
-        customer={},
+    return (
+        HTTPStatus.SEE_OTHER,
+        [("Location", f"/book/resume?event_id={event.id}")],
+        b"",
     )
 
 
-def contact(
-    form: dict[str, str],
+def resume(
+    event_id: str | None,
+    reservation_token: str | None,
     *,
     event_class,
     render,
@@ -164,14 +218,71 @@ def contact(
     publishable_key: str,
     now: datetime,
 ):
-    token = form.get("token", "")
+    try:
+        identifier = ObjectId(event_id or "")
+    except (InvalidId, TypeError):
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
+    if not reservation_token:
+        return render(
+            "error.html",
+            HTTPStatus.NOT_FOUND,
+            message="That reservation is not available.",
+        )
+    event = event_class.objects(
+        id=identifier,
+        reservation_token=_token_hash(reservation_token),
+        reservation_expires_at__gt=now,
+        customer=None,
+        active=True,
+    ).first()
+    if event is None:
+        return render(
+            "error.html",
+            HTTPStatus.NOT_FOUND,
+            message="That reservation is not available.",
+        )
+    if not event.checkout_customer or not event.payment_intent:
+        return render(
+            "booking_checkout.html",
+            event=event,
+            step="details",
+            customer=event.checkout_customer or {},
+        )
+    if not publishable_key:
+        return render(
+            "error.html",
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            message="Online payment is not configured.",
+        )
+    intent = payment_provider.retrieve_payment_intent(event.payment_intent)
+    return render(
+        "booking_checkout.html",
+        event=event,
+        step="payment",
+        publishable_key=publishable_key,
+        client_secret=intent.get("client_secret"),
+        payment_ready=intent.get("status") == "requires_capture",
+        payment_intent=event.payment_intent,
+    )
+
+
+def contact(
+    form: dict[str, str],
+    reservation_token: str | None,
+    *,
+    event_class,
+    render,
+    payment_provider,
+    publishable_key: str,
+    now: datetime,
+):
     try:
         event_id = ObjectId(form.get("event_id", ""))
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
         id=event_id,
-        reservation_token=_token_hash(token) if token else "",
+        reservation_token=_token_hash(reservation_token) if reservation_token else "",
         reservation_expires_at__gt=now,
         customer=None,
         active=True,
@@ -191,7 +302,6 @@ def contact(
             "booking_checkout.html",
             HTTPStatus.BAD_REQUEST,
             event=event,
-            token=token,
             step="details",
             error="Enter your name and email address.",
             customer={"name": name, "email": email, "phone": phone},
@@ -210,7 +320,6 @@ def contact(
             "booking_checkout.html",
             HTTPStatus.BAD_REQUEST,
             event=event,
-            token=token,
             step="details",
             error=str(error),
             customer={"name": name, "email": email, "phone": phone},
@@ -222,11 +331,11 @@ def contact(
         currency=event.currency,
         email=email,
         event_id=str(event.id),
-        reservation_token=_token_hash(token),
+        reservation_token=event.reservation_nonce,
     )
     event = event_class.objects(
         id=event.id,
-        reservation_token=_token_hash(token),
+        reservation_token=_token_hash(reservation_token),
         reservation_expires_at__gt=now,
         customer=None,
         active=True,
@@ -242,25 +351,22 @@ def contact(
             HTTPStatus.CONFLICT,
             message="Your 15-minute reservation expired before payment could begin.",
         )
-    return render(
-        "booking_checkout.html",
-        event=event,
-        token=token,
-        step="payment",
-        publishable_key=publishable_key,
-        client_secret=intent["client_secret"],
+    return (
+        HTTPStatus.SEE_OTHER,
+        [("Location", f"/book/resume?event_id={event.id}")],
+        b"",
     )
 
 
 def complete(
     form: dict[str, str],
+    reservation_token: str | None,
     *,
     event_class,
     render,
     payment_provider,
     now: datetime,
 ):
-    token = form.get("token", "")
     intent_id = form.get("payment_intent", "")
     try:
         event_id = ObjectId(form.get("event_id", ""))
@@ -268,7 +374,7 @@ def complete(
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
         id=event_id,
-        reservation_token=_token_hash(token) if token else "",
+        reservation_token=_token_hash(reservation_token) if reservation_token else "",
         reservation_expires_at__gt=now,
         payment_intent=intent_id,
         customer=None,
@@ -287,7 +393,7 @@ def complete(
         and intent.get("amount") == event.price
         and str(intent.get("currency", "")).lower() == event.currency.lower()
         and intent.get("metadata", {}).get("event_id") == str(event.id)
-        and intent.get("metadata", {}).get("reservation_token") == _token_hash(token)
+        and intent.get("metadata", {}).get("reservation_token") == event.reservation_nonce
     )
     if not expected:
         return render(
@@ -298,7 +404,7 @@ def complete(
 
     authorized = event_class.objects(
         id=event.id,
-        reservation_token=_token_hash(token),
+        reservation_token=_token_hash(reservation_token),
         reservation_expires_at__gt=now,
         payment_intent=intent_id,
         customer=None,
@@ -357,6 +463,8 @@ def complete(
         unset__checkout_customer=1,
         unset__checkout_responses=1,
         unset__reservation_token=1,
+        unset__reservation_nonce=1,
+        unset__reservation_slot=1,
         unset__reservation_expires_at=1,
         new=True,
     )
