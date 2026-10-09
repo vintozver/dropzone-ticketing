@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-import uuid
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from types import SimpleNamespace
@@ -17,9 +16,9 @@ from dropzone_ticketing.model.event import (
     Customer,
     Event,
     EventHistoryItem,
-    EventQuestion,
     EventType,
     Payment,
+    Question,
     QuestionResponse,
 )
 from dropzone_ticketing.service import payment
@@ -47,7 +46,7 @@ class EventModelTest(unittest.TestCase):
         self.assertIs(fields["customer"].document_type_obj, Customer)
         self.assertNotIn("payment", fields)
         self.assertIs(fields["history"].field.document_type_obj, EventHistoryItem)
-        self.assertIs(fields["questions"].field.document_type_obj, EventQuestion)
+        self.assertIs(fields["questions"].field.document_type_obj, Question)
         self.assertIsInstance(fields["responses"], mongoengine.DictField)
         self.assertIsInstance(fields["price"], mongoengine.IntField)
         self.assertIsInstance(fields["currency"], mongoengine.StringField)
@@ -69,14 +68,18 @@ class EventModelTest(unittest.TestCase):
         self.assertIs(fields["payment"].document_type_obj, Payment)
 
     def test_questions_and_responses_have_unique_default_identifiers(self) -> None:
-        first_question = EventQuestion(
+        first_question = Question(
             text="Experience?",
             responses=[QuestionResponse(label="None")],
         )
-        second_question = EventQuestion(
+        second_question = Question(
             text="Weight?",
             responses=[QuestionResponse(label="Under 90 kg")],
         )
+        self.assertIsInstance(Question._fields["id"], mongoengine.ObjectIdField)
+        self.assertIsInstance(QuestionResponse._fields["id"], mongoengine.ObjectIdField)
+        self.assertIsInstance(first_question.id, ObjectId)
+        self.assertIsInstance(first_question.responses[0].id, ObjectId)
         self.assertNotEqual(first_question.id, second_question.id)
         self.assertNotEqual(
             first_question.responses[0].id,
@@ -84,11 +87,11 @@ class EventModelTest(unittest.TestCase):
         )
 
     def test_duplicate_question_and_response_identifiers_are_rejected(self) -> None:
-        first = EventQuestion(
+        first = Question(
             text="First",
             responses=[QuestionResponse(label="One")],
         )
-        duplicate_question = EventQuestion(
+        duplicate_question = Question(
             id=first.id,
             text="Second",
             responses=[QuestionResponse(label="Two")],
@@ -101,7 +104,7 @@ class EventModelTest(unittest.TestCase):
                 questions=[first, duplicate_question],
             ).validate()
 
-        duplicate_response = EventQuestion(
+        duplicate_response = Question(
             text="Second",
             responses=[
                 QuestionResponse(id=first.responses[0].id, label="Duplicate")
@@ -316,7 +319,7 @@ class BookingActionTest(unittest.TestCase):
         )
 
     def test_contact_accepts_optional_phone_and_records_question_responses(self) -> None:
-        question = EventQuestion(
+        question = Question(
             text="Choose",
             multiple=True,
             responses=[
@@ -367,7 +370,7 @@ class BookingActionTest(unittest.TestCase):
         )
 
     def test_invalid_single_choice_response_is_rejected(self) -> None:
-        question = EventQuestion(
+        question = Question(
             text="Choose",
             responses=[QuestionResponse(label="One")],
         )
@@ -387,7 +390,7 @@ class BookingActionTest(unittest.TestCase):
                 "token": "token",
                 "name": "Guest",
                 "email": "guest@example.test",
-                f"question_{question.id}": str(uuid.uuid4()),
+                f"question_{question.id}": str(ObjectId()),
             },
             event_class=event_class,
             render=render,
@@ -578,7 +581,7 @@ class EventManagementTest(unittest.TestCase):
         self.assertEqual(event_type.questions, [])
 
     def test_create_event_copies_explicit_price_and_records_user_history(self) -> None:
-        question = EventQuestion(
+        question = Question(
             text="Question",
             responses=[QuestionResponse(label="Answer")],
         )

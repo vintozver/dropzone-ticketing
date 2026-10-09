@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
@@ -11,7 +10,7 @@ from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError
 from mongoengine import Q
 
-from ...model.event import EventHistoryItem, EventQuestion, Payment, QuestionResponse
+from ...model.event import EventHistoryItem, Payment, Question, QuestionResponse
 from ...model.ticket import UserRef
 
 
@@ -371,7 +370,7 @@ def update_event_type(identifier, form, *, event_type_class, render):
                 message="Question text and at least one response are required.",
             )
         event_type.questions.append(
-            EventQuestion(
+            Question(
                 text=text,
                 order=order,
                 multiple=form.get("multiple") == "on",
@@ -384,8 +383,8 @@ def update_event_type(identifier, form, *, event_type_class, render):
         )
     elif action == "remove_question":
         try:
-            question_id = uuid.UUID(form.get("question_id", ""))
-        except (ValueError, AttributeError):
+            question_id = ObjectId(form.get("question_id", ""))
+        except (InvalidId, TypeError):
             return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid question.")
         event_type.questions = [
             question for question in event_type.questions if question.id != question_id

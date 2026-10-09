@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 
 import mongoengine
+from bson import ObjectId
 
 from . import mongoengine_alias
 from .ticket import UserRef
@@ -35,19 +35,17 @@ class EventHistoryItem(mongoengine.EmbeddedDocument):
 
 
 class QuestionResponse(mongoengine.EmbeddedDocument):
-    id = mongoengine.UUIDField(
+    id = mongoengine.ObjectIdField(
         required=True,
-        binary=False,
-        default=uuid.uuid4,
+        default=ObjectId,
     )
     label = mongoengine.StringField(required=True)
 
 
-class EventQuestion(mongoengine.EmbeddedDocument):
-    id = mongoengine.UUIDField(
+class Question(mongoengine.EmbeddedDocument):
+    id = mongoengine.ObjectIdField(
         required=True,
-        binary=False,
-        default=uuid.uuid4,
+        default=ObjectId,
     )
     text = mongoengine.StringField(required=True)
     order = mongoengine.IntField(required=True, default=0)
@@ -75,7 +73,7 @@ class EventType(mongoengine.Document):
     price = mongoengine.IntField(required=True, min_value=0)
     currency = mongoengine.StringField(required=True, min_length=3, max_length=3)
     active = mongoengine.BooleanField(required=True, default=True)
-    questions = mongoengine.EmbeddedDocumentListField(EventQuestion, default=list)
+    questions = mongoengine.EmbeddedDocumentListField(Question, default=list)
 
     meta = {
         "db_alias": mongoengine_alias,
@@ -96,7 +94,7 @@ class Event(mongoengine.Document):
     active = mongoengine.BooleanField(required=True, default=True)
     customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
     checkout_customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
-    questions = mongoengine.EmbeddedDocumentListField(EventQuestion, default=list)
+    questions = mongoengine.EmbeddedDocumentListField(Question, default=list)
     responses = mongoengine.DictField(
         field=mongoengine.ListField(mongoengine.StringField()),
         default=dict,
