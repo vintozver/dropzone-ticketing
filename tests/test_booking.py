@@ -239,6 +239,7 @@ class BookingActionTest(unittest.TestCase):
             query.modify.call_args.kwargs["set__reservation_token"],
             booking._token_hash("secret"),
         )
+        self.assertEqual(render.call_args.kwargs["customer"], {})
 
     def test_hold_conflict_does_not_override_an_existing_reservation(self) -> None:
         query = MagicMock()

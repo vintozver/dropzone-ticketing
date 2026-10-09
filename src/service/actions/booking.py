@@ -146,7 +146,13 @@ def hold(
             HTTPStatus.CONFLICT,
             message="That event is no longer available. Please choose another time.",
         )
-    return render("booking_checkout.html", event=event, token=token, step="details")
+    return render(
+        "booking_checkout.html",
+        event=event,
+        token=token,
+        step="details",
+        customer={},
+    )
 
 
 def contact(
