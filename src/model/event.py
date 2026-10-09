@@ -94,7 +94,6 @@ class Event(mongoengine.Document):
     active = mongoengine.BooleanField(required=True, default=True)
     customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
     checkout_customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
-    questions = mongoengine.EmbeddedDocumentListField(Question, default=list)
     responses = mongoengine.DictField(
         field=mongoengine.ListField(mongoengine.StringField()),
         default=dict,
@@ -127,6 +126,3 @@ class Event(mongoengine.Document):
             and self.reservation_expires_at
             and self.reservation_expires_at > now
         )
-
-    def clean(self):
-        _validate_question_ids(self.questions)

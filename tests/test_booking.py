@@ -46,7 +46,7 @@ class EventModelTest(unittest.TestCase):
         self.assertIs(fields["customer"].document_type_obj, Customer)
         self.assertNotIn("payment", fields)
         self.assertIs(fields["history"].field.document_type_obj, EventHistoryItem)
-        self.assertIs(fields["questions"].field.document_type_obj, Question)
+        self.assertNotIn("questions", fields)
         self.assertIsInstance(fields["responses"], mongoengine.DictField)
         self.assertIsInstance(fields["price"], mongoengine.IntField)
         self.assertIsInstance(fields["currency"], mongoengine.StringField)
@@ -331,7 +331,7 @@ class BookingActionTest(unittest.TestCase):
             id=ObjectId(),
             price=10000,
             currency="EUR",
-            questions=[question],
+            event_type=SimpleNamespace(questions=[question]),
         )
         lookup = MagicMock()
         lookup.first.return_value = event
@@ -376,7 +376,7 @@ class BookingActionTest(unittest.TestCase):
         )
         event = SimpleNamespace(
             id=ObjectId(),
-            questions=[question],
+            event_type=SimpleNamespace(questions=[question]),
         )
         query = MagicMock()
         query.first.return_value = event
@@ -580,12 +580,8 @@ class EventManagementTest(unittest.TestCase):
         )
         self.assertEqual(event_type.questions, [])
 
-    def test_create_event_copies_explicit_price_and_records_user_history(self) -> None:
-        question = Question(
-            text="Question",
-            responses=[QuestionResponse(label="Answer")],
-        )
-        event_type = SimpleNamespace(id=ObjectId(), questions=[question])
+    def test_create_event_uses_explicit_price_and_records_user_history(self) -> None:
+        event_type = SimpleNamespace(id=ObjectId())
         type_query = MagicMock()
         type_query.first.return_value = event_type
         event_type_class = MagicMock()
@@ -619,10 +615,7 @@ class EventManagementTest(unittest.TestCase):
         self.assertEqual(history.action, "comment")
         self.assertEqual(history.by.id, user_id)
         self.assertEqual(history.by.display_name, "Manager")
-        self.assertEqual(
-            event_class.call_args.kwargs["questions"][0].id,
-            question.id,
-        )
+        self.assertNotIn("questions", event_class.call_args.kwargs)
         event.save.assert_called_once_with()
 
     def test_cancel_booking_refunds_and_records_manager(self) -> None:

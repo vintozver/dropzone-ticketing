@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
@@ -113,7 +112,6 @@ def create_event(
         )
     event = event_class(
         **values,
-        questions=copy.deepcopy(values["event_type"].questions),
         history=[
             _history(
                 "comment",

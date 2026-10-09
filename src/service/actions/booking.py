@@ -198,7 +198,7 @@ def contact(
         )
 
     try:
-        responses = _responses(form, event.questions)
+        responses = _responses(form, event.event_type.questions)
     except ValueError as error:
         return render(
             "booking_checkout.html",

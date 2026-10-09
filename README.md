@@ -57,8 +57,8 @@ three-letter `currency`, and `active`. Events in the `event` collection contain
 `dt` (UTC date/time), `duration_minutes`, an `event_type` DBRef, and their own
 `price` and `currency`. Event types may also define ordered, visible questions
 with single-choice or multiple-choice responses; each question and response has
-a unique identifier. Questions are copied to an event when it is created, and
-the guest's selected response identifiers are recorded on that event.
+a unique identifier. Event bookings use the questions from their event type,
+and the guest's selected response identifiers are recorded on the event.
 
 The service adds reservation and customer fields during checkout. Payment and
 refund details are recorded as event history items alongside booking,

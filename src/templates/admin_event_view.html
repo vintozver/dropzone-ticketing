@@ -32,7 +32,7 @@
     {% if event.responses %}
       <h3>Responses</h3>
       <dl>
-        {% for question in event.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
+        {% for question in event.event_type.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
           <dt>{{ question.text }}</dt>
           <dd>
             {% for response in question.responses if response.id|string in event.responses[question.id|string] %}
