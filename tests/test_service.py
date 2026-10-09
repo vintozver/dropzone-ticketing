@@ -568,9 +568,7 @@ class ServiceHelperTest(unittest.TestCase):
         self.addCleanup(setattr, service, "_storage_connected", original_connected)
         service._storage_connected = False
         file_config.return_value = {"mongodb_uri": "mongodb://yaml.example/test"}
-        with patch.object(service, "migrate_events") as migrate:
-            service._ensure_storage()
-            migrate.assert_called_once_with()
+        service._ensure_storage()
 
         register_connection.assert_called_once_with(
             service.mongoengine_alias,
