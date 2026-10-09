@@ -683,6 +683,7 @@ class StripePaymentTest(unittest.TestCase):
             None,
         )
         result = payment._call(MagicMock(return_value=resource))
+        self.assertIsInstance(result, dict)
         self.assertEqual(result["status"], "requires_capture")
         self.assertEqual(result["metadata"]["event_id"], "event")
 

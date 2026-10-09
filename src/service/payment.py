@@ -17,8 +17,7 @@ def _call(method, *args, **kwargs):
         result = method(*args, **kwargs)
     except stripe.StripeError as error:
         raise ValueError(error.user_message or "The payment provider rejected the request.") from error
-    converter = getattr(result, "to_dict_recursive", None)
-    return converter() if callable(converter) else result
+    return result.to_dict() if isinstance(result, stripe.StripeObject) else result
 
 
 def create_payment_intent(
