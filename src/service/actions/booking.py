@@ -9,7 +9,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from mongoengine import Q
 
-from ...model.event import Customer, Payment
+from ...model.event import Customer, EventHistoryItem, Payment
 
 RESERVATION_MINUTES = 15
 
@@ -23,6 +23,29 @@ def _window(now: datetime, local_timezone):
     start = datetime.combine(local_today, time.min, local_timezone).astimezone(timezone.utc)
     end = datetime.combine(local_today + timedelta(days=14), time.min, local_timezone).astimezone(timezone.utc)
     return local_today, start, end
+
+
+def _responses(form: dict[str, str], questions):
+    answers = {}
+    for question in questions:
+        if not question.visible:
+            continue
+        question_id = str(question.id)
+        response_ids = {str(response.id) for response in question.responses}
+        if question.multiple:
+            selected = [
+                response_id
+                for response_id in response_ids
+                if form.get(f"question_{question_id}_{response_id}") == "on"
+            ]
+        else:
+            selected = [form.get(f"question_{question_id}", "")]
+            selected = [response_id for response_id in selected if response_id]
+        if any(response_id not in response_ids for response_id in selected):
+            raise ValueError("Choose valid responses to the booking questions.")
+        if selected:
+            answers[question_id] = selected
+    return answers
 
 
 def availability(
@@ -157,14 +180,14 @@ def contact(
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().lower()
     phone = form.get("phone", "").strip()
-    if not name or not phone or "@" not in email or email.startswith("@") or email.endswith("@"):
+    if not name or "@" not in email or email.startswith("@") or email.endswith("@"):
         return render(
             "booking_checkout.html",
             HTTPStatus.BAD_REQUEST,
             event=event,
             token=token,
             step="details",
-            error="Enter your name, email address, and phone number.",
+            error="Enter your name and email address.",
             customer={"name": name, "email": email, "phone": phone},
         )
     if not publishable_key:
@@ -174,7 +197,20 @@ def contact(
             message="Online payment is not configured.",
         )
 
-    customer = Customer(name=name, email=email, phone=phone)
+    try:
+        responses = _responses(form, event.questions)
+    except ValueError as error:
+        return render(
+            "booking_checkout.html",
+            HTTPStatus.BAD_REQUEST,
+            event=event,
+            token=token,
+            step="details",
+            error=str(error),
+            customer={"name": name, "email": email, "phone": phone},
+        )
+
+    customer = Customer(name=name, email=email, phone=phone or None)
     intent = payment_provider.create_payment_intent(
         amount=event.price,
         currency=event.currency,
@@ -190,6 +226,7 @@ def contact(
         active=True,
     ).modify(
         set__checkout_customer=customer,
+        set__checkout_responses=responses,
         set__payment_intent=intent["id"],
         new=True,
     )
@@ -273,7 +310,7 @@ def complete(
     try:
         captured = payment_provider.capture_payment_intent(intent_id)
     except ValueError:
-        event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
+        event_class.objects(id=event.id, payment_intent=intent_id).modify(
             unset__customer=1,
         )
         return render(
@@ -282,7 +319,7 @@ def complete(
             message="Payment could not be captured. Please try again.",
         )
     if captured.get("status") != "succeeded" or captured.get("amount_received") != event.price:
-        event_class.objects(id=event.id, payment_intent=intent_id, payment=None).modify(
+        event_class.objects(id=event.id, payment_intent=intent_id).modify(
             unset__customer=1,
         )
         return render(
@@ -290,19 +327,29 @@ def complete(
             HTTPStatus.PAYMENT_REQUIRED,
             message="Payment could not be captured.",
         )
+    payment = Payment(
+        provider="stripe",
+        reference=intent_id,
+        amount=captured["amount_received"],
+        currency=captured["currency"].upper(),
+        dt=now,
+    )
     booked = event_class.objects(
         id=event.id,
         payment_intent=intent_id,
-        payment=None,
+        __raw__={"history.payment.reference": {"$ne": intent_id}},
     ).modify(
-        set__payment=Payment(
-            provider="stripe",
-            reference=intent_id,
-            amount=captured["amount_received"],
-            currency=captured["currency"].upper(),
-            paid_at=now,
-        ),
+        set__responses=event.checkout_responses,
+        push_all__history=[
+            EventHistoryItem(
+                dt=now,
+                action="payment",
+                payment=payment,
+            ),
+            EventHistoryItem(dt=now, action="book"),
+        ],
         unset__checkout_customer=1,
+        unset__checkout_responses=1,
         unset__reservation_token=1,
         unset__reservation_expires_at=1,
         new=True,
@@ -313,4 +360,8 @@ def complete(
             HTTPStatus.CONFLICT,
             message="Payment succeeded but the booking confirmation could not be recorded.",
         )
-    return render("booking_confirmation.html", event=booked)
+    return render(
+        "booking_confirmation.html",
+        event=booked,
+        payment=payment,
+    )

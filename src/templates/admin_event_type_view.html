@@ -10,6 +10,38 @@
     <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event_type.currency }}"></label>
     <button type="submit">Save</button>
   </form>
+  <h2>Questions</h2>
+  <ol>
+    {% for question in event_type.questions|sort(attribute='order', reverse=true) %}
+      <li>
+        {{ question.text }}
+        ({% if question.multiple %}multiple answers{% else %}one answer{% endif %},
+        order {{ question.order }}, {% if question.visible %}visible{% else %}hidden{% endif %})
+        <ul>
+          {% for response in question.responses %}
+            <li>{{ response.label }} <code>{{ response.id }}</code></li>
+          {% endfor %}
+        </ul>
+        <form method="post">
+          <input type="hidden" name="action" value="remove_question">
+          <input type="hidden" name="question_id" value="{{ question.id }}">
+          <button type="submit">Remove question</button>
+        </form>
+      </li>
+    {% else %}
+      <li>No questions.</li>
+    {% endfor %}
+  </ol>
+  <h2>Add question</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="add_question">
+    <label>Question <input name="question" required></label>
+    <label>Order <input name="order" type="number" value="0" required></label>
+    <label><input name="multiple" type="checkbox"> Allow multiple answers</label>
+    <label><input name="visible" type="checkbox" checked> Visible</label>
+    <label>Responses (one per line) <textarea name="responses" required></textarea></label>
+    <button type="submit">Add question</button>
+  </form>
   <form method="post">
     {% if event_type.active %}
       <input type="hidden" name="action" value="deactivate">

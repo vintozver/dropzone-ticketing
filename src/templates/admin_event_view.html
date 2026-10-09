@@ -24,9 +24,24 @@
     <dl>
       <dt>Name</dt><dd>{{ event.customer.name }}</dd>
       <dt>Email</dt><dd>{{ event.customer.email }}</dd>
-      <dt>Phone</dt><dd>{{ event.customer.phone }}</dd>
-      <dt>Payment</dt><dd>{{ event.payment.currency }} {{ "%.2f"|format(event.payment.amount / 100) }} ({{ event.payment.reference }})</dd>
+      <dt>Phone</dt><dd>{{ event.customer.phone or '' }}</dd>
+      {% if payment %}
+        <dt>Payment</dt><dd>{{ payment.currency }} {{ "%.2f"|format(payment.amount / 100) }} ({{ payment.reference }})</dd>
+      {% endif %}
     </dl>
+    {% if event.responses %}
+      <h3>Responses</h3>
+      <dl>
+        {% for question in event.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
+          <dt>{{ question.text }}</dt>
+          <dd>
+            {% for response in question.responses if response.id|string in event.responses[question.id|string] %}
+              {{ response.label }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </dd>
+        {% endfor %}
+      </dl>
+    {% endif %}
     <form method="post">
       <input type="hidden" name="action" value="cancel_booking">
       <label>Cancellation comment <textarea name="comment" required></textarea></label>
@@ -43,7 +58,12 @@
   <ol>
     {% for item in event.history|reverse %}
       <li>
-        {{ item.dt|datetime }} — {{ item.action }} by {{ item.by.display_name or item.by.id }}
+        {{ item.dt|datetime }} — {{ item.action }}
+        {% if item.by %}by {{ item.by.display_name or item.by.id }}{% endif %}
+        {% if item.payment %}
+          — {{ item.payment.currency }} {{ "%.2f"|format(item.payment.amount / 100) }}
+          ({{ item.payment.reference }})
+        {% endif %}
         {% if item.comment %}<p>{{ item.comment }}</p>{% endif %}
       </li>
     {% else %}<li>No history.</li>{% endfor %}

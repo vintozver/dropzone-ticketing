@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import uuid
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 from types import SimpleNamespace
@@ -15,9 +16,11 @@ from dropzone_ticketing.model import mongoengine_alias
 from dropzone_ticketing.model.event import (
     Customer,
     Event,
-    EventHistory,
+    EventHistoryItem,
+    EventQuestion,
     EventType,
     Payment,
+    QuestionResponse,
     migrate_events,
 )
 from dropzone_ticketing.service import payment
@@ -43,12 +46,75 @@ class EventModelTest(unittest.TestCase):
         self.assertIsInstance(fields["event_type"], mongoengine.ReferenceField)
         self.assertIs(fields["event_type"].document_type, EventType)
         self.assertIs(fields["customer"].document_type_obj, Customer)
-        self.assertIs(fields["payment"].document_type_obj, Payment)
-        self.assertIs(fields["history"].field.document_type_obj, EventHistory)
+        self.assertNotIn("payment", fields)
+        self.assertIs(fields["history"].field.document_type_obj, EventHistoryItem)
+        self.assertIs(fields["questions"].field.document_type_obj, EventQuestion)
+        self.assertIsInstance(fields["responses"], mongoengine.DictField)
         self.assertIsInstance(fields["price"], mongoengine.IntField)
         self.assertIsInstance(fields["currency"], mongoengine.StringField)
         self.assertIsInstance(fields["reservation_expires_at"], mongoengine.DateTimeField)
         self.assertIs(Event._meta["db_alias"], mongoengine_alias)
+
+    def test_customer_phone_is_optional_and_payment_uses_dt(self) -> None:
+        self.assertFalse(Customer._fields["phone"].required)
+        self.assertIn("dt", Payment._fields)
+        self.assertNotIn("paid_at", Payment._fields)
+
+    def test_history_items_have_constrained_actions_and_optional_actor(self) -> None:
+        fields = EventHistoryItem._fields
+        self.assertFalse(fields["by"].required)
+        self.assertEqual(
+            fields["action"].choices,
+            ("payment", "refund", "comment", "book", "cancel"),
+        )
+        self.assertIs(fields["payment"].document_type_obj, Payment)
+
+    def test_questions_and_responses_have_unique_default_identifiers(self) -> None:
+        first_question = EventQuestion(
+            text="Experience?",
+            responses=[QuestionResponse(label="None")],
+        )
+        second_question = EventQuestion(
+            text="Weight?",
+            responses=[QuestionResponse(label="Under 90 kg")],
+        )
+        self.assertNotEqual(first_question.id, second_question.id)
+        self.assertNotEqual(
+            first_question.responses[0].id,
+            second_question.responses[0].id,
+        )
+
+    def test_duplicate_question_and_response_identifiers_are_rejected(self) -> None:
+        first = EventQuestion(
+            text="First",
+            responses=[QuestionResponse(label="One")],
+        )
+        duplicate_question = EventQuestion(
+            id=first.id,
+            text="Second",
+            responses=[QuestionResponse(label="Two")],
+        )
+        with self.assertRaisesRegex(mongoengine.ValidationError, "Question identifiers"):
+            EventType(
+                name="Tandem",
+                price=10000,
+                currency="EUR",
+                questions=[first, duplicate_question],
+            ).validate()
+
+        duplicate_response = EventQuestion(
+            text="Second",
+            responses=[
+                QuestionResponse(id=first.responses[0].id, label="Duplicate")
+            ],
+        )
+        with self.assertRaisesRegex(mongoengine.ValidationError, "Response identifiers"):
+            EventType(
+                name="AFF",
+                price=10000,
+                currency="EUR",
+                questions=[first, duplicate_response],
+            ).validate()
 
     def test_reservation_is_active_only_before_expiry(self) -> None:
         now = datetime(2026, 9, 30, tzinfo=timezone.utc)
@@ -94,6 +160,42 @@ class EventModelTest(unittest.TestCase):
             {"_id": event_id},
             {"$set": {"price": 10000, "currency": "EUR"}},
         )
+
+    @patch.object(EventType, "_get_collection")
+    @patch.object(Event, "_get_collection")
+    def test_migration_moves_legacy_payment_into_history(
+        self,
+        event_collection_factory,
+        _event_type_collection_factory,
+    ) -> None:
+        event_id = ObjectId()
+        paid_at = datetime(2026, 9, 30, tzinfo=timezone.utc)
+        event_collection = event_collection_factory.return_value
+        event_collection.find.side_effect = [
+            [],
+            [
+                {
+                    "_id": event_id,
+                    "payment": {
+                        "provider": "stripe",
+                        "reference": "pi_1",
+                        "amount": 10000,
+                        "currency": "EUR",
+                        "paid_at": paid_at,
+                    },
+                    "history": [{"dt": paid_at, "action": "created"}],
+                }
+            ],
+        ]
+
+        migrate_events()
+
+        update = event_collection.update_one.call_args.args[1]
+        self.assertEqual(update["$set"]["history"][0]["action"], "comment")
+        payment_item = update["$set"]["history"][1]
+        self.assertEqual(payment_item["action"], "payment")
+        self.assertEqual(payment_item["payment"]["dt"], paid_at)
+        self.assertEqual(update["$unset"], {"payment": ""})
 
 
 class BookingActionTest(unittest.TestCase):
@@ -231,6 +333,7 @@ class BookingActionTest(unittest.TestCase):
             price=12500,
             currency="EUR",
             checkout_customer=customer,
+            checkout_responses={"question": ["response"]},
         )
         authorized = SimpleNamespace(id=event_id)
         booked = SimpleNamespace(id=event_id)
@@ -269,9 +372,100 @@ class BookingActionTest(unittest.TestCase):
         self.assertEqual(result, "confirmed")
         provider.capture_payment_intent.assert_called_once_with("pi_1")
         self.assertEqual(authorize_query.modify.call_args.kwargs["set__customer"], customer)
-        recorded_payment = finish_query.modify.call_args.kwargs["set__payment"]
+        history = finish_query.modify.call_args.kwargs["push_all__history"]
+        self.assertEqual([item.action for item in history], ["payment", "book"])
+        recorded_payment = history[0].payment
         self.assertEqual(recorded_payment.reference, "pi_1")
         self.assertEqual(recorded_payment.amount, 12500)
+        self.assertEqual(
+            finish_query.modify.call_args.kwargs["set__responses"],
+            {"question": ["response"]},
+        )
+
+    def test_contact_accepts_optional_phone_and_records_question_responses(self) -> None:
+        question = EventQuestion(
+            text="Choose",
+            multiple=True,
+            responses=[
+                QuestionResponse(label="One"),
+                QuestionResponse(label="Two"),
+            ],
+        )
+        event = SimpleNamespace(
+            id=ObjectId(),
+            price=10000,
+            currency="EUR",
+            questions=[question],
+        )
+        lookup = MagicMock()
+        lookup.first.return_value = event
+        updated = MagicMock()
+        save_query = MagicMock()
+        save_query.modify.return_value = updated
+        event_class = MagicMock()
+        event_class.objects.side_effect = [lookup, save_query]
+        provider = MagicMock()
+        provider.create_payment_intent.return_value = {
+            "id": "pi_1",
+            "client_secret": "secret",
+        }
+        first_response = str(question.responses[0].id)
+
+        booking.contact(
+            {
+                "event_id": str(event.id),
+                "token": "token",
+                "name": "Guest",
+                "email": "guest@example.test",
+                f"question_{question.id}_{first_response}": "on",
+            },
+            event_class=event_class,
+            render=MagicMock(return_value="payment"),
+            payment_provider=provider,
+            publishable_key="pk_test",
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        customer = save_query.modify.call_args.kwargs["set__checkout_customer"]
+        self.assertIsNone(customer.phone)
+        self.assertEqual(
+            save_query.modify.call_args.kwargs["set__checkout_responses"],
+            {str(question.id): [first_response]},
+        )
+
+    def test_invalid_single_choice_response_is_rejected(self) -> None:
+        question = EventQuestion(
+            text="Choose",
+            responses=[QuestionResponse(label="One")],
+        )
+        event = SimpleNamespace(
+            id=ObjectId(),
+            questions=[question],
+        )
+        query = MagicMock()
+        query.first.return_value = event
+        event_class = MagicMock()
+        event_class.objects.return_value = query
+        render = MagicMock(return_value="invalid")
+
+        result = booking.contact(
+            {
+                "event_id": str(event.id),
+                "token": "token",
+                "name": "Guest",
+                "email": "guest@example.test",
+                f"question_{question.id}": str(uuid.uuid4()),
+            },
+            event_class=event_class,
+            render=render,
+            payment_provider=MagicMock(),
+            publishable_key="pk_test",
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "invalid")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_REQUEST)
+        self.assertIn("valid responses", render.call_args.kwargs["error"])
 
     def test_capture_provider_error_is_reported_and_releases_claim(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
@@ -286,6 +480,7 @@ class BookingActionTest(unittest.TestCase):
                 email="guest@example.test",
                 phone="+1",
             ),
+            checkout_responses={},
         )
         lookup_query = MagicMock()
         lookup_query.first.return_value = event
@@ -337,6 +532,7 @@ class BookingActionTest(unittest.TestCase):
                 email="guest@example.test",
                 phone="+1",
             ),
+            checkout_responses={},
         )
         lookup_query = MagicMock()
         lookup_query.first.return_value = event
@@ -408,8 +604,52 @@ class StripePaymentTest(unittest.TestCase):
 
 
 class EventManagementTest(unittest.TestCase):
+    def test_event_type_question_management_creates_and_removes_unique_ids(self) -> None:
+        event_type = MagicMock()
+        event_type.questions = []
+        lookup = MagicMock()
+        lookup.first.return_value = event_type
+        event_type_class = MagicMock()
+        event_type_class.objects.return_value = lookup
+
+        admin_events.update_event_type(
+            str(ObjectId()),
+            {
+                "action": "add_question",
+                "question": "Experience?",
+                "order": "10",
+                "multiple": "on",
+                "visible": "on",
+                "responses": "None\nSome",
+            },
+            event_type_class=event_type_class,
+            render=MagicMock(),
+        )
+
+        question = event_type.questions[0]
+        self.assertEqual(question.order, 10)
+        self.assertTrue(question.multiple)
+        self.assertTrue(question.visible)
+        self.assertEqual([response.label for response in question.responses], ["None", "Some"])
+        self.assertNotEqual(question.responses[0].id, question.responses[1].id)
+
+        admin_events.update_event_type(
+            str(ObjectId()),
+            {
+                "action": "remove_question",
+                "question_id": str(question.id),
+            },
+            event_type_class=event_type_class,
+            render=MagicMock(),
+        )
+        self.assertEqual(event_type.questions, [])
+
     def test_create_event_copies_explicit_price_and_records_user_history(self) -> None:
-        event_type = SimpleNamespace(id=ObjectId())
+        question = EventQuestion(
+            text="Question",
+            responses=[QuestionResponse(label="Answer")],
+        )
+        event_type = SimpleNamespace(id=ObjectId(), questions=[question])
         type_query = MagicMock()
         type_query.first.return_value = event_type
         event_type_class = MagicMock()
@@ -440,9 +680,13 @@ class EventManagementTest(unittest.TestCase):
         self.assertEqual(event_class.call_args.kwargs["price"], 19995)
         self.assertEqual(event_class.call_args.kwargs["currency"], "EUR")
         history = event_class.call_args.kwargs["history"][0]
-        self.assertEqual(history.action, "created")
+        self.assertEqual(history.action, "comment")
         self.assertEqual(history.by.id, user_id)
         self.assertEqual(history.by.display_name, "Manager")
+        self.assertEqual(
+            event_class.call_args.kwargs["questions"][0].id,
+            question.id,
+        )
         event.save.assert_called_once_with()
 
     def test_cancel_booking_refunds_and_records_manager(self) -> None:
@@ -450,15 +694,20 @@ class EventManagementTest(unittest.TestCase):
         event = MagicMock(
             id=event_id,
             customer=Customer(name="Guest", email="guest@example.test", phone="+1"),
-            payment=Payment(
-                provider="stripe",
-                reference="pi_1",
-                amount=10000,
-                currency="EUR",
-                paid_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
-            ),
         )
-        event.history = []
+        event.history = [
+            EventHistoryItem(
+                dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+                action="payment",
+                payment=Payment(
+                    provider="stripe",
+                    reference="pi_1",
+                    amount=10000,
+                    currency="EUR",
+                    dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+                ),
+            )
+        ]
         query = MagicMock()
         query.first.return_value = event
         cancel_query = MagicMock()
@@ -466,7 +715,12 @@ class EventManagementTest(unittest.TestCase):
         event_class = MagicMock()
         event_class.objects.side_effect = [query, cancel_query]
         provider = MagicMock()
-        provider.refund_payment.return_value = {"status": "succeeded"}
+        provider.refund_payment.return_value = {
+            "id": "re_1",
+            "status": "succeeded",
+            "amount": 10000,
+            "currency": "eur",
+        }
 
         status, _headers, _body = admin_events.update_event(
             str(event_id),
@@ -482,24 +736,33 @@ class EventManagementTest(unittest.TestCase):
 
         self.assertEqual(status, HTTPStatus.SEE_OTHER)
         provider.refund_payment.assert_called_once_with("pi_1")
-        cancellation = cancel_query.modify.call_args.kwargs["push__history"]
-        self.assertEqual(cancellation.action, "booking_cancelled")
+        history = cancel_query.modify.call_args.kwargs["push_all__history"]
+        self.assertEqual([item.action for item in history], ["refund", "cancel"])
+        cancellation = history[1]
         self.assertEqual(cancellation.comment, "Weather")
+        self.assertEqual(history[0].payment.reference, "re_1")
         self.assertEqual(cancel_query.modify.call_args.kwargs["unset__customer"], 1)
+        self.assertEqual(cancel_query.modify.call_args.kwargs["unset__responses"], 1)
         event.save.assert_not_called()
 
     def test_pending_refund_does_not_reopen_event(self) -> None:
         event = MagicMock(
             id=ObjectId(),
             customer=Customer(name="Guest", email="guest@example.test", phone="+1"),
-            payment=Payment(
-                provider="stripe",
-                reference="pi_1",
-                amount=10000,
-                currency="EUR",
-                paid_at=datetime(2026, 9, 30, tzinfo=timezone.utc),
-            ),
         )
+        event.history = [
+            EventHistoryItem(
+                dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+                action="payment",
+                payment=Payment(
+                    provider="stripe",
+                    reference="pi_1",
+                    amount=10000,
+                    currency="EUR",
+                    dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+                ),
+            )
+        ]
         lookup = MagicMock()
         lookup.first.return_value = event
         event_class = MagicMock()

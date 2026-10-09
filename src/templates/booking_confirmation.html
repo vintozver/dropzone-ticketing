@@ -7,6 +7,19 @@
     <dt>Event</dt><dd>{{ event.event_type.name }}</dd>
     <dt>Starts</dt><dd>{{ event.dt|datetime }}</dd>
     <dt>Duration</dt><dd>{{ event.duration_minutes }} minutes</dd>
-    <dt>Payment</dt><dd>{{ event.payment.currency }} {{ "%.2f"|format(event.payment.amount / 100) }}</dd>
+    <dt>Payment</dt><dd>{{ payment.currency }} {{ "%.2f"|format(payment.amount / 100) }}</dd>
   </dl>
+  {% if event.responses %}
+    <h2>Responses</h2>
+    <dl>
+      {% for question in event.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
+        <dt>{{ question.text }}</dt>
+        <dd>
+          {% for response in question.responses if response.id|string in event.responses[question.id|string] %}
+            {{ response.label }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </dd>
+      {% endfor %}
+    </dl>
+  {% endif %}
 {% endblock %}

@@ -20,7 +20,21 @@
       <input type="hidden" name="token" value="{{ token }}">
       <label>Name <input name="name" autocomplete="name" required value="{{ customer.name|default('') }}"></label>
       <label>Email <input name="email" type="email" autocomplete="email" required value="{{ customer.email|default('') }}"></label>
-      <label>Phone <input name="phone" type="tel" autocomplete="tel" required value="{{ customer.phone|default('') }}"></label>
+      <label>Phone <input name="phone" type="tel" autocomplete="tel" value="{{ customer.phone|default('') }}"></label>
+      {% for question in event.questions|sort(attribute='order', reverse=true) if question.visible %}
+        <fieldset>
+          <legend>{{ question.text }}</legend>
+          {% for response in question.responses %}
+            <label>
+              <input
+                type="{% if question.multiple %}checkbox{% else %}radio{% endif %}"
+                name="question_{{ question.id }}{% if question.multiple %}_{{ response.id }}{% endif %}"
+                value="{% if question.multiple %}on{% else %}{{ response.id }}{% endif %}">
+              {{ response.label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
       <button type="submit">Continue to payment</button>
     </form>
   {% else %}

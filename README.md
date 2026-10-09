@@ -55,8 +55,15 @@ Administrators create event types in the `event_type` collection with `name`,
 optional `description`, default `price` (the integer minor-unit amount),
 three-letter `currency`, and `active`. Events in the `event` collection contain
 `dt` (UTC date/time), `duration_minutes`, an `event_type` DBRef, and their own
-`price` and `currency`. The service adds reservation, customer, payment, and
-user-attributed history fields during checkout and management. Availability
+`price` and `currency`. Event types may also define ordered, visible questions
+with single-choice or multiple-choice responses; each question and response has
+a unique identifier. Questions are copied to an event when it is created, and
+the guest's selected response identifiers are recorded on that event.
+
+The service adds reservation and customer fields during checkout. Payment and
+refund details are recorded as event history items alongside booking,
+cancellation, and comment entries. Customer phone numbers are optional.
+Availability
 is shown in the configured local `timezone` for the current day and following
 13 days.
 

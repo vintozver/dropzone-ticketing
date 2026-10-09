@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from http import HTTPStatus
@@ -9,7 +11,7 @@ from bson.errors import InvalidId
 from mongoengine.errors import NotUniqueError
 from mongoengine import Q
 
-from ...model.event import EventHistory
+from ...model.event import EventHistoryItem, EventQuestion, Payment, QuestionResponse
 from ...model.ticket import UserRef
 
 
@@ -28,12 +30,13 @@ def _user_ref(user):
     )
 
 
-def _history(action, user, comment="", *, now):
-    return EventHistory(
+def _history(action, user=None, comment="", payment=None, *, now):
+    return EventHistoryItem(
         dt=now,
-        by=_user_ref(user),
+        by=_user_ref(user) if user is not None else None,
         action=action,
         comment=comment.strip() or None,
+        payment=payment,
     )
 
 
@@ -111,7 +114,15 @@ def create_event(
         )
     event = event_class(
         **values,
-        history=[_history("created", user, form.get("comment", ""), now=now)],
+        questions=copy.deepcopy(values["event_type"].questions),
+        history=[
+            _history(
+                "comment",
+                user,
+                form.get("comment", "").strip() or "Event created.",
+                now=now,
+            )
+        ],
     )
     event.save()
     return HTTPStatus.SEE_OTHER, [("Location", f"/admin/event/view/{event.id}")], b""
@@ -121,9 +132,18 @@ def view_event(identifier, *, event_class, event_type_class, render, local_timez
     event = _find(event_class, identifier)
     if event is None:
         return render("error.html", HTTPStatus.NOT_FOUND, message="Event not found.")
+    payment_item = next(
+        (
+            item
+            for item in reversed(event.history)
+            if item.action == "payment" and item.payment is not None
+        ),
+        None,
+    )
     return render(
         "admin_event_view.html",
         event=event,
+        payment=payment_item.payment if payment_item else None,
         event_types=event_type_class.objects().order_by("name"),
         input_dt=event.dt.astimezone(local_timezone).strftime("%Y-%m-%dT%H:%M"),
     )
@@ -168,7 +188,12 @@ def update_event(
             customer=None,
         ).modify(
             **{f"set__{name}": value for name, value in values.items()},
-            push__history=_history("updated", user, comment, now=now),
+            push__history=_history(
+                "comment",
+                user,
+                comment or "Event details updated.",
+                now=now,
+            ),
             new=True,
         )
         if updated is None:
@@ -184,7 +209,12 @@ def update_event(
             customer=None,
         ).modify(
             set__active=False,
-            push__history=_history("removed", user, comment, now=now),
+            push__history=_history(
+                "comment",
+                user,
+                comment or "Event removed.",
+                now=now,
+            ),
             new=True,
         )
         if removed is None:
@@ -196,14 +226,27 @@ def update_event(
     elif action == "restore":
         event_class.objects(id=event.id).modify(
             set__active=True,
-            push__history=_history("restored", user, comment, now=now),
+            push__history=_history(
+                "comment",
+                user,
+                comment or "Event restored.",
+                now=now,
+            ),
         )
     elif action == "cancel_booking":
-        if event.customer is None or event.payment is None:
+        payment_item = next(
+            (
+                item
+                for item in reversed(event.history)
+                if item.action == "payment" and item.payment is not None
+            ),
+            None,
+        )
+        if event.customer is None or payment_item is None:
             return render("error.html", HTTPStatus.CONFLICT, message="This event is not booked.")
         if not comment:
             return render("error.html", HTTPStatus.BAD_REQUEST, message="Cancellation comment is required.")
-        refund = payment_provider.refund_payment(event.payment.reference)
+        refund = payment_provider.refund_payment(payment_item.payment.reference)
         if refund.get("status") != "succeeded":
             return render(
                 "error.html",
@@ -213,15 +256,32 @@ def update_event(
         cancelled = event_class.objects(
             id=event.id,
             customer__ne=None,
-            payment__reference=event.payment.reference,
+            history__payment__reference=payment_item.payment.reference,
         ).modify(
             unset__customer=1,
-            unset__payment=1,
             unset__payment_intent=1,
             unset__checkout_customer=1,
+            unset__checkout_responses=1,
+            unset__responses=1,
             unset__reservation_token=1,
             unset__reservation_expires_at=1,
-            push__history=_history("booking_cancelled", user, comment, now=now),
+            push_all__history=[
+                _history(
+                    "refund",
+                    user,
+                    payment=Payment(
+                        provider="stripe",
+                        reference=refund["id"],
+                        amount=refund.get("amount", payment_item.payment.amount),
+                        currency=str(
+                            refund.get("currency", payment_item.payment.currency)
+                        ).upper(),
+                        dt=now,
+                    ),
+                    now=now,
+                ),
+                _history("cancel", user, comment, now=now),
+            ],
             new=True,
         )
         if cancelled is None:
@@ -293,6 +353,43 @@ def update_event_type(identifier, form, *, event_type_class, render):
         event_type.active = False
     elif action == "activate":
         event_type.active = True
+    elif action == "add_question":
+        text = form.get("question", "").strip()
+        response_labels = [
+            line.strip()
+            for line in form.get("responses", "").splitlines()
+            if line.strip()
+        ]
+        try:
+            order = int(form.get("order", "0"))
+        except ValueError:
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="Question order must be an integer.")
+        if not text or not response_labels:
+            return render(
+                "error.html",
+                HTTPStatus.BAD_REQUEST,
+                message="Question text and at least one response are required.",
+            )
+        event_type.questions.append(
+            EventQuestion(
+                text=text,
+                order=order,
+                multiple=form.get("multiple") == "on",
+                visible=form.get("visible") == "on",
+                responses=[
+                    QuestionResponse(label=label)
+                    for label in response_labels
+                ],
+            )
+        )
+    elif action == "remove_question":
+        try:
+            question_id = uuid.UUID(form.get("question_id", ""))
+        except (ValueError, AttributeError):
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid question.")
+        event_type.questions = [
+            question for question in event_type.questions if question.id != question_id
+        ]
     else:
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid action.")
     try:
