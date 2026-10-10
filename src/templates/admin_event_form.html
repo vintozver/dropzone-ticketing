@@ -4,7 +4,8 @@
   <h1>Add event</h1>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
   <form method="post">
-    <label>Date/time <input name="dt" type="datetime-local" required value="{{ values.dt|default('') }}"></label>
+    <label>Date <input name="date" type="date" required value="{{ values.date|default('') }}"></label>
+    <label>Times (one per line) <textarea name="times" required placeholder="09:00&#10;11:30">{{ values.times|default('') }}</textarea></label>
     <label>Duration (minutes) <input name="duration_minutes" type="number" min="1" required value="{{ values.duration_minutes|default('') }}"></label>
     <label>Event type
       <select id="event-type" name="event_type" required>

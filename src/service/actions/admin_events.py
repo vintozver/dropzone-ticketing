@@ -53,30 +53,43 @@ def _event_values(form, *, event_type_class, local_timezone):
     if event_type is None:
         raise ValueError("Choose a valid event type.")
     try:
-        dt = datetime.fromisoformat(form.get("dt", ""))
+        day = datetime.strptime(form.get("date", ""), "%Y-%m-%d").date()
     except ValueError:
-        raise ValueError("Enter a valid event date and time.") from None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=local_timezone)
-    return {
-        "dt": dt.astimezone(timezone.utc),
-        "event_type": event_type,
-        **_event_update_values(form),
-    }
-
-
-def _event_update_values(form):
+        raise ValueError("Enter a valid event date.") from None
+    raw_times = [value.strip() for value in form.get("times", "").splitlines() if value.strip()]
+    if not raw_times:
+        raise ValueError("Enter at least one event time.")
+    try:
+        times = [datetime.strptime(value, "%H:%M").time() for value in raw_times]
+    except ValueError:
+        raise ValueError("Enter event times as HH:MM, one per line.") from None
+    if len(set(times)) != len(times):
+        raise ValueError("Enter each event time only once.")
     try:
         duration = int(form.get("duration_minutes", ""))
     except ValueError:
         duration = 0
     if duration < 1:
         raise ValueError("Duration must be at least one minute.")
+    common_values = {
+        "event_type": event_type,
+        "duration_minutes": duration,
+        **_event_update_values(form),
+    }
+    return [
+        {
+            "dt": datetime.combine(day, event_time, tzinfo=local_timezone).astimezone(timezone.utc),
+            **common_values,
+        }
+        for event_time in times
+    ]
+
+
+def _event_update_values(form):
     currency = form.get("currency", "").strip().upper()
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("Currency must be a three-letter code.")
     return {
-        "duration_minutes": duration,
         "price": _price(form.get("price")),
         "currency": currency,
     }
@@ -113,7 +126,11 @@ def create_event(
     now,
 ):
     try:
-        values = _event_values(form, event_type_class=event_type_class, local_timezone=local_timezone)
+        event_values = _event_values(
+            form,
+            event_type_class=event_type_class,
+            local_timezone=local_timezone,
+        )
     except ValueError as error:
         return render(
             "admin_event_form.html",
@@ -123,19 +140,24 @@ def create_event(
             values=form,
             error=str(error),
         )
-    event = event_class(
-        **values,
-        history=[
-            _history(
-                "comment",
-                user,
-                form.get("comment", "").strip() or "Event created.",
-                now=now,
-            )
-        ],
-    )
-    event.save()
-    return HTTPStatus.SEE_OTHER, [("Location", f"/admin/event/view/{event.id}")], b""
+    events = [
+        event_class(
+            **values,
+            history=[
+                _history(
+                    "comment",
+                    user,
+                    form.get("comment", "").strip() or "Event created.",
+                    now=now,
+                )
+            ],
+        )
+        for values in event_values
+    ]
+    for event in events:
+        event.save()
+    location = f"/admin/event/view/{events[0].id}" if len(events) == 1 else "/admin/event/list"
+    return HTTPStatus.SEE_OTHER, [("Location", location)], b""
 
 
 def view_event(identifier, *, event_class, event_type_class, render, local_timezone):

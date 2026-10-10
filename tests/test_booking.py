@@ -691,7 +691,7 @@ class StripePaymentTest(unittest.TestCase):
 
 
 class EventManagementTest(unittest.TestCase):
-    def test_event_update_keeps_date_time_and_type_immutable(self) -> None:
+    def test_event_update_keeps_schedule_fields_immutable(self) -> None:
         event = SimpleNamespace(id=ObjectId())
         lookup = MagicMock()
         lookup.first.return_value = event
@@ -724,7 +724,7 @@ class EventManagementTest(unittest.TestCase):
         updates = update_query.modify.call_args.kwargs
         self.assertNotIn("set__dt", updates)
         self.assertNotIn("set__event_type", updates)
-        self.assertEqual(updates["set__duration_minutes"], 120)
+        self.assertNotIn("set__duration_minutes", updates)
         self.assertEqual(updates["set__price"], 24950)
         self.assertEqual(updates["set__currency"], "USD")
         event_type_class.objects.assert_not_called()
@@ -803,19 +803,20 @@ class EventManagementTest(unittest.TestCase):
         )
         self.assertEqual(event_type.questions, [])
 
-    def test_create_event_uses_explicit_price_and_records_user_history(self) -> None:
+    def test_create_events_uses_times_and_records_user_history(self) -> None:
         event_type = SimpleNamespace(id=ObjectId())
         type_query = MagicMock()
         type_query.first.return_value = event_type
         event_type_class = MagicMock()
         event_type_class.objects.return_value = type_query
-        event = MagicMock(id=ObjectId())
-        event_class = MagicMock(return_value=event)
+        events = [MagicMock(id=ObjectId()), MagicMock(id=ObjectId())]
+        event_class = MagicMock(side_effect=events)
         user_id = ObjectId()
 
         status, headers, _body = admin_events.create_event(
             {
-                "dt": "2026-10-01T10:30",
+                "date": "2026-10-01",
+                "times": "10:30\n12:00",
                 "duration_minutes": "90",
                 "event_type": str(event_type.id),
                 "price": "199.95",
@@ -831,15 +832,49 @@ class EventManagementTest(unittest.TestCase):
         )
 
         self.assertEqual(status, HTTPStatus.SEE_OTHER)
-        self.assertEqual(headers[0][0], "Location")
-        self.assertEqual(event_class.call_args.kwargs["price"], 19995)
-        self.assertEqual(event_class.call_args.kwargs["currency"], "EUR")
-        history = event_class.call_args.kwargs["history"][0]
+        self.assertEqual(headers, [("Location", "/admin/event/list")])
+        self.assertEqual(event_class.call_count, 2)
+        first_values = event_class.call_args_list[0].kwargs
+        second_values = event_class.call_args_list[1].kwargs
+        self.assertEqual(first_values["dt"], datetime(2026, 10, 1, 10, 30, tzinfo=timezone.utc))
+        self.assertEqual(second_values["dt"], datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+        self.assertEqual(first_values["duration_minutes"], 90)
+        self.assertEqual(first_values["price"], 19995)
+        self.assertEqual(first_values["currency"], "EUR")
+        history = first_values["history"][0]
         self.assertEqual(history.action, "comment")
         self.assertEqual(history.by.id, user_id)
         self.assertEqual(history.by.display_name, "Manager")
-        self.assertNotIn("questions", event_class.call_args.kwargs)
-        event.save.assert_called_once_with()
+        self.assertNotIn("questions", first_values)
+        for event in events:
+            event.save.assert_called_once_with()
+
+    def test_create_events_rejects_duplicate_times(self) -> None:
+        event_type = SimpleNamespace(id=ObjectId())
+        event_type_class = MagicMock()
+        event_type_class.objects.return_value.first.return_value = event_type
+        render = MagicMock(return_value="invalid")
+
+        result = admin_events.create_event(
+            {
+                "date": "2026-10-01",
+                "times": "10:30\n10:30",
+                "duration_minutes": "90",
+                "event_type": str(event_type.id),
+                "price": "199.95",
+                "currency": "eur",
+            },
+            {"id": ObjectId(), "display_name": "Manager"},
+            event_class=MagicMock(),
+            event_type_class=event_type_class,
+            render=render,
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result, "invalid")
+        self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(render.call_args.kwargs["error"], "Enter each event time only once.")
 
     def test_cancel_booking_refunds_and_records_manager(self) -> None:
         event_id = ObjectId()
