@@ -9,11 +9,11 @@
   </ul>
   <h2>Add event type</h2>
   <form method="post">
-    <label>Name <input name="name" required></label>
-    <label>Description <textarea name="description"></textarea></label>
-    <label>Default price <input name="price" type="number" min="0" step="0.01" required></label>
-    <label>Currency <input name="currency" minlength="3" maxlength="3" required></label>
-    <label>Order <input name="order" type="number" value="0" required></label>
+    <div><label>Name <input name="name" required></label></div>
+    <div><label>Description <textarea name="description"></textarea></label></div>
+    <div><label>Default price <input name="price" type="number" min="0" step="0.01" required></label></div>
+    <div><label>Currency <input name="currency" minlength="3" maxlength="3" required></label></div>
+    <div><label>Order <input name="order" type="number" value="0" required></label></div>
     <button type="submit">Add event type</button>
   </form>
 {% endblock %}

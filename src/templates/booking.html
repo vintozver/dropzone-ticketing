@@ -18,17 +18,19 @@
     </section>
   {% endif %}
   <form method="get" action="/book">
-    <label>
-      Event type
-      <select name="type" required>
-        <option value="">Choose an event type</option>
-        {% for event_type in event_types %}
-          <option value="{{ event_type.id }}" {% if selected_type and selected_type.id == event_type.id %}selected{% endif %}>
-            {{ event_type.name }}
-          </option>
-        {% endfor %}
-      </select>
-    </label>
+    <div>
+      <label>
+        Event type
+        <select name="type" required>
+          <option value="">Choose an event type</option>
+          {% for event_type in event_types %}
+            <option value="{{ event_type.id }}" {% if selected_type and selected_type.id == event_type.id %}selected{% endif %}>
+              {{ event_type.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
     <button type="submit">Show availability</button>
   </form>
 

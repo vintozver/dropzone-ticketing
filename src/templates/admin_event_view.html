@@ -7,9 +7,9 @@
     <p>Date/time: {{ event.dt|datetime }}</p>
     <p>Duration: {{ event.duration_minutes }} minutes</p>
     <p>Event type: {{ event.event_type.name }}</p>
-    <label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label>
-    <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label>
-    <label>Change comment <textarea name="comment"></textarea></label>
+    <div><label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label></div>
+    <div><label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label></div>
+    <div><label>Change comment <textarea name="comment"></textarea></label></div>
     <button type="submit">Save</button>
   </form>
 
@@ -38,7 +38,7 @@
     {% endif %}
     <form method="post">
       <input type="hidden" name="action" value="cancel_booking">
-      <label>Cancellation comment <textarea name="comment" required></textarea></label>
+      <div><label>Cancellation comment <textarea name="comment" required></textarea></label></div>
       <button type="submit">Refund and cancel booking</button>
     </form>
   {% else %}<p>Not booked.</p>{% endif %}
@@ -46,7 +46,7 @@
   <h2>History</h2>
   <form method="post">
     <input type="hidden" name="action" value="comment">
-    <label>Comment <textarea name="comment" required></textarea></label>
+    <div><label>Comment <textarea name="comment" required></textarea></label></div>
     <button type="submit">Add comment</button>
   </form>
   <ol>

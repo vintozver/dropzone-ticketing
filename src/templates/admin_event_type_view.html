@@ -4,11 +4,11 @@
   <h1>Event type {{ event_type.name }}</h1>
   <form method="post">
     <input type="hidden" name="action" value="update">
-    <label>Name <input name="name" required value="{{ event_type.name }}"></label>
-    <label>Description <textarea name="description">{{ event_type.description or '' }}</textarea></label>
-    <label>Default price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event_type.price / 100) }}"></label>
-    <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event_type.currency }}"></label>
-    <label>Order <input name="order" type="number" required value="{{ event_type.order }}"></label>
+    <div><label>Name <input name="name" required value="{{ event_type.name }}"></label></div>
+    <div><label>Description <textarea name="description">{{ event_type.description or '' }}</textarea></label></div>
+    <div><label>Default price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event_type.price / 100) }}"></label></div>
+    <div><label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event_type.currency }}"></label></div>
+    <div><label>Order <input name="order" type="number" required value="{{ event_type.order }}"></label></div>
     <button type="submit">Save</button>
   </form>
   <h2>Questions</h2>
@@ -26,7 +26,7 @@
         <form method="post">
           <input type="hidden" name="action" value="update_question_order">
           <input type="hidden" name="question_id" value="{{ question.id }}">
-          <label>Order <input name="order" type="number" required value="{{ question.order }}"></label>
+          <div><label>Order <input name="order" type="number" required value="{{ question.order }}"></label></div>
           <button type="submit">Update order</button>
         </form>
         <form method="post">
@@ -42,11 +42,11 @@
   <h2>Add question</h2>
   <form method="post">
     <input type="hidden" name="action" value="add_question">
-    <label>Question <input name="question" required></label>
-    <label>Order <input name="order" type="number" value="0" required></label>
-    <label><input name="multiple" type="checkbox"> Allow multiple answers</label>
-    <label><input name="visible" type="checkbox" checked> Visible</label>
-    <label>Responses (one per line) <textarea name="responses" required></textarea></label>
+    <div><label>Question <input name="question" required></label></div>
+    <div><label>Order <input name="order" type="number" value="0" required></label></div>
+    <div><label><input name="multiple" type="checkbox"> Allow multiple answers</label></div>
+    <div><label><input name="visible" type="checkbox" checked> Visible</label></div>
+    <div><label>Responses (one per line) <textarea name="responses" required></textarea></label></div>
     <button type="submit">Add question</button>
   </form>
   <form method="post">
