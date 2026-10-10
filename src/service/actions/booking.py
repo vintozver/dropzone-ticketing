@@ -60,7 +60,7 @@ def availability(
     local_timezone,
     now: datetime,
 ):
-    event_types = list(event_type_class.objects(active=True).order_by("name"))
+    event_types = list(event_type_class.objects(active=True).order_by("-order", "name"))
     selected_type = None
     if event_type_id:
         try:

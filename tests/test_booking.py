@@ -33,6 +33,8 @@ class EventModelTest(unittest.TestCase):
         self.assertTrue(fields["name"].unique)
         self.assertIsInstance(fields["price"], mongoengine.IntField)
         self.assertEqual(fields["price"].min_value, 0)
+        self.assertIsInstance(fields["order"], mongoengine.IntField)
+        self.assertEqual(fields["order"].default, 0)
         self.assertEqual(fields["currency"].min_length, 3)
         self.assertEqual(fields["currency"].max_length, 3)
         self.assertIs(EventType._meta["db_alias"], mongoengine_alias)
@@ -689,6 +691,78 @@ class StripePaymentTest(unittest.TestCase):
 
 
 class EventManagementTest(unittest.TestCase):
+    def test_event_update_keeps_date_time_and_type_immutable(self) -> None:
+        event = SimpleNamespace(id=ObjectId())
+        lookup = MagicMock()
+        lookup.first.return_value = event
+        update_query = MagicMock()
+        update_query.modify.return_value = event
+        event_class = MagicMock()
+        event_class.objects.side_effect = [lookup, update_query]
+        event_type_class = MagicMock()
+
+        result = admin_events.update_event(
+            str(event.id),
+            {
+                "action": "update",
+                "dt": "2030-01-01T12:00",
+                "event_type": str(ObjectId()),
+                "duration_minutes": "120",
+                "price": "249.50",
+                "currency": "usd",
+            },
+            {"id": ObjectId(), "display_name": "Manager"},
+            event_class=event_class,
+            event_type_class=event_type_class,
+            payment_provider=MagicMock(),
+            render=MagicMock(),
+            local_timezone=ZoneInfo("UTC"),
+            now=datetime(2026, 9, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(result[0], HTTPStatus.SEE_OTHER)
+        updates = update_query.modify.call_args.kwargs
+        self.assertNotIn("set__dt", updates)
+        self.assertNotIn("set__event_type", updates)
+        self.assertEqual(updates["set__duration_minutes"], 120)
+        self.assertEqual(updates["set__price"], 24950)
+        self.assertEqual(updates["set__currency"], "USD")
+        event_type_class.objects.assert_not_called()
+
+    def test_event_type_and_question_orders_can_be_updated(self) -> None:
+        question = Question(text="Experience?", order=1)
+        event_type = MagicMock(order=0, questions=[question])
+        lookup = MagicMock()
+        lookup.first.return_value = event_type
+        event_type_class = MagicMock()
+        event_type_class.objects.return_value = lookup
+
+        admin_events.update_event_type(
+            str(ObjectId()),
+            {
+                "action": "update",
+                "name": "Tandem",
+                "price": "199.00",
+                "currency": "eur",
+                "order": "20",
+            },
+            event_type_class=event_type_class,
+            render=MagicMock(),
+        )
+        self.assertEqual(event_type.order, 20)
+
+        admin_events.update_event_type(
+            str(ObjectId()),
+            {
+                "action": "update_question_order",
+                "question_id": str(question.id),
+                "order": "30",
+            },
+            event_type_class=event_type_class,
+            render=MagicMock(),
+        )
+        self.assertEqual(question.order, 30)
+
     def test_event_type_question_management_creates_and_removes_unique_ids(self) -> None:
         event_type = MagicMock()
         event_type.questions = []

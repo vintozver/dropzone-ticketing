@@ -58,6 +58,14 @@ def _event_values(form, *, event_type_class, local_timezone):
         raise ValueError("Enter a valid event date and time.") from None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=local_timezone)
+    return {
+        "dt": dt.astimezone(timezone.utc),
+        "event_type": event_type,
+        **_event_update_values(form),
+    }
+
+
+def _event_update_values(form):
     try:
         duration = int(form.get("duration_minutes", ""))
     except ValueError:
@@ -68,12 +76,17 @@ def _event_values(form, *, event_type_class, local_timezone):
     if len(currency) != 3 or not currency.isalpha():
         raise ValueError("Currency must be a three-letter code.")
     return {
-        "dt": dt.astimezone(timezone.utc),
         "duration_minutes": duration,
-        "event_type": event_type,
         "price": _price(form.get("price")),
         "currency": currency,
     }
+
+
+def _order(value, label):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} order must be an integer.") from None
 
 
 def list_events(*, event_class, render):
@@ -84,7 +97,7 @@ def new_event(*, event_type_class, render):
     return render(
         "admin_event_form.html",
         event=None,
-        event_types=event_type_class.objects(active=True).order_by("name"),
+        event_types=event_type_class.objects(active=True).order_by("-order", "name"),
         values={},
     )
 
@@ -106,7 +119,7 @@ def create_event(
             "admin_event_form.html",
             HTTPStatus.BAD_REQUEST,
             event=None,
-            event_types=event_type_class.objects(active=True).order_by("name"),
+            event_types=event_type_class.objects(active=True).order_by("-order", "name"),
             values=form,
             error=str(error),
         )
@@ -141,8 +154,6 @@ def view_event(identifier, *, event_class, event_type_class, render, local_timez
         "admin_event_view.html",
         event=event,
         payment=payment_item.payment if payment_item else None,
-        event_types=event_type_class.objects().order_by("name"),
-        input_dt=event.dt.astimezone(local_timezone).strftime("%Y-%m-%dT%H:%M"),
     )
 
 
@@ -172,11 +183,7 @@ def update_event(
         )
     elif action == "update":
         try:
-            values = _event_values(
-                form,
-                event_type_class=event_type_class,
-                local_timezone=local_timezone,
-            )
+            values = _event_update_values(form)
         except ValueError as error:
             return render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
         updated = event_class.objects(
@@ -298,7 +305,7 @@ def update_event(
 def list_event_types(*, event_type_class, render):
     return render(
         "admin_event_type_list.html",
-        event_types=event_type_class.objects().order_by("name"),
+        event_types=event_type_class.objects().order_by("-order", "name"),
     )
 
 
@@ -315,6 +322,7 @@ def create_event_type(form, *, event_type_class, render):
             description=form.get("description", "").strip() or None,
             price=_price(form.get("price")),
             currency=currency,
+            order=_order(form.get("order", "0"), "Event type"),
         )
         event_type.save()
     except NotUniqueError:
@@ -346,6 +354,7 @@ def update_event_type(identifier, form, *, event_type_class, render):
             event_type.description = form.get("description", "").strip() or None
             event_type.price = _price(form.get("price"))
             event_type.currency = currency
+            event_type.order = _order(form.get("order", "0"), "Event type")
         except ValueError as error:
             return render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
     elif action == "deactivate":
@@ -389,6 +398,21 @@ def update_event_type(identifier, form, *, event_type_class, render):
         event_type.questions = [
             question for question in event_type.questions if question.id != question_id
         ]
+    elif action == "update_question_order":
+        try:
+            question_id = ObjectId(form.get("question_id", ""))
+        except (InvalidId, TypeError):
+            return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid question.")
+        question = next(
+            (question for question in event_type.questions if question.id == question_id),
+            None,
+        )
+        if question is None:
+            return render("error.html", HTTPStatus.NOT_FOUND, message="Question not found.")
+        try:
+            question.order = _order(form.get("order"), "Question")
+        except ValueError as error:
+            return render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
     else:
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Invalid action.")
     try:

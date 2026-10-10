@@ -4,15 +4,9 @@
   <h1>Event {{ event.id }}</h1>
   <form method="post">
     <input type="hidden" name="action" value="update">
-    <label>Date/time <input name="dt" type="datetime-local" required value="{{ input_dt }}"></label>
+    <p>Date/time: {{ event.dt|datetime }}</p>
     <label>Duration (minutes) <input name="duration_minutes" type="number" min="1" required value="{{ event.duration_minutes }}"></label>
-    <label>Event type
-      <select name="event_type" required>
-        {% for event_type in event_types %}
-          <option value="{{ event_type.id }}" {% if event.event_type.id == event_type.id %}selected{% endif %}>{{ event_type.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
+    <p>Event type: {{ event.event_type.name }}</p>
     <label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label>
     <label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label>
     <label>Change comment <textarea name="comment"></textarea></label>

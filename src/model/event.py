@@ -72,13 +72,14 @@ class EventType(mongoengine.Document):
     description = mongoengine.StringField(required=False)
     price = mongoengine.IntField(required=True, min_value=0)
     currency = mongoengine.StringField(required=True, min_length=3, max_length=3)
+    order = mongoengine.IntField(required=True, default=0)
     active = mongoengine.BooleanField(required=True, default=True)
     questions = mongoengine.EmbeddedDocumentListField(Question, default=list)
 
     meta = {
         "db_alias": mongoengine_alias,
         "collection": "event_type",
-        "indexes": ["name", "active"],
+        "indexes": ["name", "active", "order"],
     }
 
     def clean(self):
