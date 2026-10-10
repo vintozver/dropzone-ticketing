@@ -19,6 +19,8 @@ def dispatch(environ: dict, handlers):
     from . import _fido2, api, auth, google, microsoft, register
 
     path = environ.get("PATH_INFO", "/")
+    if not path.startswith("/api/"):
+        path = path.rstrip("/") or "/"
     method = environ.get("REQUEST_METHOD", "GET").upper()
     registration_mode = authn_config().register
 
@@ -47,7 +49,16 @@ def dispatch(environ: dict, handlers):
         if method != "GET":
             return method_not_allowed(["GET"])
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
-        return handlers._booking_resume(query.get("event_id", [None])[0], environ)
+        return handlers._booking_resume(
+            query.get("event_id", [None])[0],
+            query.get("edit", [""])[0] == "1",
+            environ,
+        )
+
+    if path == "/book/cancel":
+        if method != "POST":
+            return method_not_allowed(["POST"])
+        return handlers._booking_cancel(handlers._read_form(environ), environ)
 
     if path == "/book/contact":
         if method != "POST":

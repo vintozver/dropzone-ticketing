@@ -8,20 +8,28 @@
     <p>Duration: {{ event.duration_minutes }} minutes</p>
     <p>Event type: {{ event.event_type.name }}</p>
     <div><label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label></div>
+    <div><label>Deposit (blank for full payment) <input name="deposit" type="number" min="0.01" step="0.01" value="{{ '%.2f'|format(event.deposit / 100) if event.deposit is not none else '' }}"></label></div>
     <div><label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label></div>
     <div><label>Change comment <textarea name="comment"></textarea></label></div>
     <button type="submit">Save</button>
   </form>
 
   <h2>Booking</h2>
+  {% if held %}
+    <p>This event is held until {{ event.reservation_expires_at|datetime }}.</p>
+    <form method="post">
+      <input type="hidden" name="action" value="cancel_hold">
+      <div><label>Comment <textarea name="comment"></textarea></label></div>
+      <button type="submit">Cancel hold</button>
+    </form>
+  {% endif %}
   {% if event.customer %}
     <dl>
       <dt>Name</dt><dd>{{ event.customer.name }}</dd>
       <dt>Email</dt><dd>{{ event.customer.email }}</dd>
       <dt>Phone</dt><dd>{{ event.customer.phone or '' }}</dd>
-      {% if payment %}
-        <dt>Payment</dt><dd>{{ payment.currency }} {{ "%.2f"|format(payment.amount / 100) }} ({{ payment.reference }})</dd>
-      {% endif %}
+      <dt>Payment balance</dt><dd>{{ event.currency }} {{ "%.2f"|format(balance / 100) }}</dd>
+      <dt>Status</dt><dd>{% if event.completed %}completed{% else %}booked{% endif %}</dd>
     </dl>
     {% if event.responses %}
       <h3>Responses</h3>
@@ -36,6 +44,18 @@
         {% endfor %}
       </dl>
     {% endif %}
+    {% if not event.completed %}
+      <form method="post">
+        <input type="hidden" name="action" value="complete">
+        <div><label>Completion comment <textarea name="comment"></textarea></label></div>
+        <button type="submit">Complete and charge balance</button>
+      </form>
+    {% endif %}
+    <form method="post">
+      <input type="hidden" name="action" value="charge">
+      <div><label>Custom charge <input name="amount" type="number" min="0.01" step="0.01" required></label></div>
+      <button type="submit">Charge</button>
+    </form>
     <form method="post">
       <input type="hidden" name="action" value="cancel_booking">
       <div><label>Cancellation comment <textarea name="comment" required></textarea></label></div>
@@ -57,6 +77,16 @@
         {% if item.payment %}
           — {{ item.payment.currency }} {{ "%.2f"|format(item.payment.amount / 100) }}
           ({{ item.payment.reference }})
+          {% if item.payment.status %}— {{ item.payment.status }}{% endif %}
+          {% if item.action == "payment" %}
+            <form method="post">
+              <input type="hidden" name="action" value="refund">
+              <input type="hidden" name="reference" value="{{ item.payment.reference }}">
+              <div><label>Refund amount <input name="amount" type="number" min="0.01" step="0.01" max="{{ '%.2f'|format(item.payment.amount / 100) }}" required></label></div>
+              <div><label>Comment <textarea name="comment"></textarea></label></div>
+              <button type="submit">Refund</button>
+            </form>
+          {% endif %}
         {% endif %}
         {% if item.comment %}<p>{{ item.comment }}</p>{% endif %}
       </li>

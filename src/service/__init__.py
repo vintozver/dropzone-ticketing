@@ -47,6 +47,7 @@ from .actions.partner import update as _update_partner
 from .actions.partner import view_partner as _view_partner
 from .actions.partner import view_partners as _view_partners
 from .actions.booking import availability as _booking_availability_action
+from .actions.booking import cancel as _booking_cancel_action
 from .actions.booking import complete as _booking_complete_action
 from .actions.booking import contact as _booking_contact_action
 from .actions.booking import hold as _booking_hold_action
@@ -307,14 +308,26 @@ def _booking_hold(form: dict[str, str], environ: dict):
     return response
 
 
-def _booking_resume(event_id: str | None, environ: dict):
+def _booking_resume(event_id: str | None, edit: bool, environ: dict):
     return _booking_resume_action(
         event_id,
         _booking_guest_token(environ),
+        edit,
         event_class=Event,
         render=_render,
         payment_provider=_payment_provider,
         publishable_key=stripe_publishable_key(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_cancel(form: dict[str, str], environ: dict):
+    return _booking_cancel_action(
+        form,
+        _booking_guest_token(environ),
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
         now=datetime.now(timezone.utc),
     )
 

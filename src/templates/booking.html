@@ -12,6 +12,10 @@
               {{ event.event_type.name }} at {{ event.dt|datetime }}
             </a>
             (held until {{ event.reservation_expires_at|datetime }})
+            <form method="post" action="/book/cancel">
+              <input type="hidden" name="event_id" value="{{ event.id }}">
+              <button type="submit">Cancel hold</button>
+            </form>
           </li>
         {% endfor %}
       </ul>

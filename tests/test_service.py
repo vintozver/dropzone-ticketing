@@ -1404,6 +1404,25 @@ class ServiceApplicationTest(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertEqual(response["body"], b"events")
 
+    def test_added_routes_accept_trailing_slashes(self) -> None:
+        with patch.object(
+            service,
+            "_booking_availability",
+            return_value=(service.HTTPStatus.OK, [], b"booking"),
+        ) as booking_handler:
+            booking_response = self.request("/book/")
+        with patch.object(
+            service,
+            "_list_events",
+            return_value=(service.HTTPStatus.OK, [], b"events"),
+        ) as event_handler:
+            event_response = self.request("/admin/event/list/")
+
+        self.assertEqual(booking_response["status"], "200 OK")
+        self.assertEqual(event_response["status"], "200 OK")
+        booking_handler.assert_called_once()
+        event_handler.assert_called_once()
+
     def test_non_admin_cannot_use_event_routes(self) -> None:
         response = self.request("/admin/event/list", roles=["solo"])
         self.assertEqual(response["status"], "403 Forbidden")

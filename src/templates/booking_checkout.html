@@ -12,14 +12,20 @@
   <p id="reservation-time">
     Reserved until {{ event.reservation_expires_at|datetime }}.
   </p>
+  <form method="post" action="/book/cancel">
+    <input type="hidden" name="event_id" value="{{ event.id }}">
+    <button type="submit">Cancel hold</button>
+  </form>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 
   {% if step == "details" %}
     <form method="post" action="/book/contact">
       <input type="hidden" name="event_id" value="{{ event.id }}">
+      {% if editing %}<input type="hidden" name="editing" value="1">{% endif %}
       <div><label>Name <input name="name" autocomplete="name" required value="{{ customer.name|default('') }}"></label></div>
       <div><label>Email <input name="email" type="email" autocomplete="email" required value="{{ customer.email|default('') }}"></label></div>
       <div><label>Phone <input name="phone" type="tel" autocomplete="tel" value="{{ customer.phone|default('') }}"></label></div>
+      {% if not editing %}
       {% for question in event.event_type.questions|sort(attribute='order', reverse=true) if question.visible %}
         <fieldset>
           <legend>{{ question.text }}</legend>
@@ -34,12 +40,18 @@
               </label>
             </div>
           {% endfor %}
-        </fieldset>
-      {% endfor %}
+            </fieldset>
+          {% endfor %}
+          {% endif %}
       <button type="submit">Continue to payment</button>
     </form>
   {% else %}
-    <p>Total: {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</p>
+    <p>
+      {% if event.deposit is not none %}Deposit{% else %}Total{% endif %}:
+      {{ event.currency|upper }}
+      {{ "%.2f"|format((event.deposit if event.deposit is not none else event.price) / 100) }}
+    </p>
+    <p><a href="/book/resume?event_id={{ event.id }}&amp;edit=1">Change contact information</a></p>
     {% if payment_ready %}
       <form method="post" action="/book/complete">
         <input type="hidden" name="event_id" value="{{ event.id }}">

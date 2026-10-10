@@ -21,6 +21,8 @@ class Payment(mongoengine.EmbeddedDocument):
     amount = mongoengine.IntField(required=True, min_value=0)
     currency = mongoengine.StringField(required=True)
     dt = mongoengine.DateTimeField(required=True)
+    source_reference = mongoengine.StringField(required=False)
+    status = mongoengine.StringField(required=False)
 
 
 class EventHistoryItem(mongoengine.EmbeddedDocument):
@@ -71,6 +73,7 @@ class EventType(mongoengine.Document):
     name = mongoengine.StringField(required=True, unique=True)
     description = mongoengine.StringField(required=False)
     price = mongoengine.IntField(required=True, min_value=0)
+    deposit = mongoengine.IntField(required=False, min_value=1)
     currency = mongoengine.StringField(required=True, min_length=3, max_length=3)
     order = mongoengine.IntField(required=True, default=0)
     active = mongoengine.BooleanField(required=True, default=True)
@@ -84,6 +87,8 @@ class EventType(mongoengine.Document):
 
     def clean(self):
         _validate_question_ids(self.questions)
+        if self.deposit is not None and self.deposit > self.price:
+            raise mongoengine.ValidationError("Deposit cannot exceed price.")
 
 
 class Event(mongoengine.Document):
@@ -91,7 +96,9 @@ class Event(mongoengine.Document):
     duration_minutes = mongoengine.IntField(required=True, min_value=1)
     event_type = mongoengine.ReferenceField(EventType, required=True)
     price = mongoengine.IntField(required=True, min_value=0)
+    deposit = mongoengine.IntField(required=False, min_value=1)
     currency = mongoengine.StringField(required=True, min_length=3, max_length=3)
+    completed = mongoengine.BooleanField(required=True, default=False)
     active = mongoengine.BooleanField(required=True, default=True)
     customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
     checkout_customer = mongoengine.EmbeddedDocumentField(Customer, required=False)
@@ -104,6 +111,9 @@ class Event(mongoengine.Document):
         default=dict,
     )
     payment_intent = mongoengine.StringField(required=False)
+    payment_operation = mongoengine.StringField(required=False)
+    payment_operation_expires_at = mongoengine.DateTimeField(required=False)
+    reservation_canceling = mongoengine.BooleanField(required=True, default=False)
     reservation_token = mongoengine.StringField(required=False)
     reservation_nonce = mongoengine.StringField(required=False)
     reservation_slot = mongoengine.IntField(required=False, min_value=0, max_value=2)
@@ -134,3 +144,7 @@ class Event(mongoengine.Document):
             and self.reservation_expires_at
             and self.reservation_expires_at > now
         )
+
+    def clean(self):
+        if self.deposit is not None and self.deposit > self.price:
+            raise mongoengine.ValidationError("Deposit cannot exceed price.")

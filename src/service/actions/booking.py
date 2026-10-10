@@ -16,6 +16,10 @@ RESERVATION_MINUTES = 15
 MAX_GUEST_HOLDS = 3
 
 
+def _not_canceling():
+    return Q(reservation_canceling=False) | Q(reservation_canceling=None)
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -88,6 +92,7 @@ def availability(
     if reservation_token:
         held_events = list(
             event_class.objects(
+                _not_canceling(),
                 reservation_token=_token_hash(reservation_token),
                 reservation_expires_at__gt=now,
                 customer=None,
@@ -167,6 +172,7 @@ def hold(
                     set__reservation_nonce=secrets.token_urlsafe(32),
                     set__reservation_slot=slot,
                     set__reservation_expires_at=now + timedelta(minutes=RESERVATION_MINUTES),
+                    set__reservation_canceling=False,
                     unset__checkout_customer=1,
                     unset__checkout_responses=1,
                     unset__payment_intent=1,
@@ -177,6 +183,7 @@ def hold(
             continue
         if event is None:
             own_hold = event_class.objects(
+                _not_canceling(),
                 id=event_id,
                 reservation_token=token_hash,
                 reservation_expires_at__gt=now,
@@ -211,6 +218,7 @@ def hold(
 def resume(
     event_id: str | None,
     reservation_token: str | None,
+    edit: bool = False,
     *,
     event_class,
     render,
@@ -229,6 +237,7 @@ def resume(
             message="That reservation is not available.",
         )
     event = event_class.objects(
+        _not_canceling(),
         id=identifier,
         reservation_token=_token_hash(reservation_token),
         reservation_expires_at__gt=now,
@@ -241,12 +250,13 @@ def resume(
             HTTPStatus.NOT_FOUND,
             message="That reservation is not available.",
         )
-    if not event.checkout_customer or not event.payment_intent:
+    if edit or not event.checkout_customer or not event.payment_intent:
         return render(
             "booking_checkout.html",
             event=event,
             step="details",
             customer=event.checkout_customer or {},
+            editing=edit,
         )
     if not publishable_key:
         return render(
@@ -263,6 +273,7 @@ def resume(
         client_secret=intent.get("client_secret"),
         payment_ready=intent.get("status") == "requires_capture",
         payment_intent=event.payment_intent,
+        customer=event.checkout_customer,
     )
 
 
@@ -281,6 +292,7 @@ def contact(
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
+        _not_canceling(),
         id=event_id,
         reservation_token=_token_hash(reservation_token) if reservation_token else "",
         reservation_expires_at__gt=now,
@@ -297,6 +309,7 @@ def contact(
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().lower()
     phone = form.get("phone", "").strip()
+    editing = form.get("editing") == "1"
     if not name or "@" not in email or email.startswith("@") or email.endswith("@"):
         return render(
             "booking_checkout.html",
@@ -305,6 +318,7 @@ def contact(
             step="details",
             error="Enter your name and email address.",
             customer={"name": name, "email": email, "phone": phone},
+            editing=editing,
         )
     if not publishable_key:
         return render(
@@ -314,7 +328,10 @@ def contact(
         )
 
     try:
-        responses = _responses(form, event.event_type.questions)
+        responses = getattr(event, "checkout_responses", {}) if editing else _responses(
+            form,
+            event.event_type.questions,
+        )
     except ValueError as error:
         return render(
             "booking_checkout.html",
@@ -323,17 +340,30 @@ def contact(
             step="details",
             error=str(error),
             customer={"name": name, "email": email, "phone": phone},
+            editing=editing,
         )
 
     customer = Customer(name=name, email=email, phone=phone or None)
-    intent = payment_provider.create_payment_intent(
-        amount=event.price,
-        currency=event.currency,
-        email=email,
-        event_id=str(event.id),
-        reservation_token=event.reservation_nonce,
-    )
+    payment_intent = getattr(event, "payment_intent", None)
+    try:
+        if payment_intent:
+            intent = payment_provider.update_payment_intent(payment_intent, email=email)
+        else:
+            intent = payment_provider.create_payment_intent(
+                amount=event.deposit if getattr(event, "deposit", None) is not None else event.price,
+                currency=event.currency,
+                email=email,
+                event_id=str(event.id),
+                reservation_token=event.reservation_nonce,
+            )
+    except ValueError as error:
+        return render(
+            "error.html",
+            HTTPStatus.BAD_GATEWAY,
+            message=str(error),
+        )
     event = event_class.objects(
+        _not_canceling(),
         id=event.id,
         reservation_token=_token_hash(reservation_token),
         reservation_expires_at__gt=now,
@@ -358,6 +388,81 @@ def contact(
     )
 
 
+def cancel(
+    form: dict[str, str],
+    reservation_token: str | None,
+    *,
+    event_class,
+    render,
+    payment_provider,
+    now: datetime,
+):
+    try:
+        event_id = ObjectId(form.get("event_id", ""))
+    except (InvalidId, TypeError):
+        return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
+    event = event_class.objects(
+        _not_canceling(),
+        id=event_id,
+        reservation_token=_token_hash(reservation_token) if reservation_token else "",
+        reservation_expires_at__gt=now,
+        customer=None,
+    ).modify(
+        set__reservation_canceling=True,
+        new=True,
+    )
+    if event is None:
+        return render(
+            "error.html",
+            HTTPStatus.CONFLICT,
+            message="That reservation is no longer available.",
+        )
+    if event.payment_intent:
+        try:
+            cancelled_intent = payment_provider.cancel_payment_intent(event.payment_intent)
+        except ValueError as error:
+            event_class.objects(id=event.id, reservation_canceling=True).update(
+                set__reservation_canceling=False,
+            )
+            return render(
+                "error.html",
+                HTTPStatus.BAD_GATEWAY,
+                message=str(error),
+            )
+        if cancelled_intent.get("status") != "canceled":
+            event_class.objects(id=event.id, reservation_canceling=True).update(
+                set__reservation_canceling=False,
+            )
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="The payment could not be canceled; the reservation remains in place.",
+            )
+    released = event_class.objects(
+        id=event.id,
+        reservation_token=_token_hash(reservation_token),
+        reservation_expires_at__gt=now,
+        reservation_canceling=True,
+        customer=None,
+    ).modify(
+        unset__reservation_token=1,
+        unset__reservation_nonce=1,
+        unset__reservation_slot=1,
+        unset__reservation_expires_at=1,
+        unset__checkout_customer=1,
+        unset__checkout_responses=1,
+        unset__payment_intent=1,
+        set__reservation_canceling=False,
+    )
+    if released is None:
+        return render(
+            "error.html",
+            HTTPStatus.CONFLICT,
+            message="That reservation was already changed.",
+        )
+    return HTTPStatus.SEE_OTHER, [("Location", "/book")], b""
+
+
 def complete(
     form: dict[str, str],
     reservation_token: str | None,
@@ -373,6 +478,7 @@ def complete(
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     event = event_class.objects(
+        _not_canceling(),
         id=event_id,
         reservation_token=_token_hash(reservation_token) if reservation_token else "",
         reservation_expires_at__gt=now,
@@ -388,9 +494,10 @@ def complete(
         )
 
     intent = payment_provider.retrieve_payment_intent(intent_id)
+    amount_due = event.deposit if getattr(event, "deposit", None) is not None else event.price
     expected = (
         intent.get("status") == "requires_capture"
-        and intent.get("amount") == event.price
+        and intent.get("amount") == amount_due
         and str(intent.get("currency", "")).lower() == event.currency.lower()
         and intent.get("metadata", {}).get("event_id") == str(event.id)
         and intent.get("metadata", {}).get("reservation_token") == event.reservation_nonce
@@ -403,6 +510,7 @@ def complete(
         )
 
     authorized = event_class.objects(
+        _not_canceling(),
         id=event.id,
         reservation_token=_token_hash(reservation_token),
         reservation_expires_at__gt=now,
@@ -430,7 +538,7 @@ def complete(
             HTTPStatus.BAD_GATEWAY,
             message="Payment could not be captured. Please try again.",
         )
-    if captured.get("status") != "succeeded" or captured.get("amount_received") != event.price:
+    if captured.get("status") != "succeeded" or captured.get("amount_received") != amount_due:
         event_class.objects(id=event.id, payment_intent=intent_id).modify(
             unset__customer=1,
         )

@@ -54,10 +54,12 @@ resume their active holds after refreshing or returning to `/book`; each guest
 can hold up to three events at once.
 
 Administrators create event types in the `event_type` collection with `name`,
-optional `description`, default `price` (the integer minor-unit amount),
+optional `description`, default `price` (the integer minor-unit amount), optional
+`deposit` (also in minor units),
 three-letter `currency`, and `active`. Events in the `event` collection contain
 `dt` (UTC date/time), `duration_minutes`, an `event_type` DBRef, and their own
-`price` and `currency`. Event types may also define ordered, visible questions
+`price`, optional `deposit`, and `currency`. If no deposit is set, guests pay the
+full event price when booking. Event types may also define ordered, visible questions
 with single-choice or multiple-choice responses; each question and response has
 a unique identifier. Event bookings use the questions from their event type,
 and the guest's selected response identifiers are recorded on the event.
@@ -69,8 +71,9 @@ Availability
 is shown in the configured local `timezone` for the current day and following
 13 days.
 
-Administrators can manage event types and individual events, prices, comments,
-removal/restoration, and booking cancellation from `/admin/event/list`.
+Administrators can manage event types and individual events, prices, deposits,
+comments, holds, removal/restoration, booking cancellation, completion charges,
+and custom charges/refunds from `/admin/event/list`.
 
 ### Partner API
 
