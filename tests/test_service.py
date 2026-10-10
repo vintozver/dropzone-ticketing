@@ -1329,6 +1329,7 @@ class ServiceApplicationTest(unittest.TestCase):
     def test_base_template_shows_authentication_status(self) -> None:
         response = self.request("/", authenticated=False)
 
+        self.assertIn(b'<a href="/book">Book an event</a>', response["body"])
         self.assertIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_base_template_shows_signed_in_user(self) -> None:
@@ -1338,6 +1339,7 @@ class ServiceApplicationTest(unittest.TestCase):
             response = self.request("/", authenticated=True)
 
         self.assertIn(b'Signed in as <a href="/authn">Jane</a>', response["body"])
+        self.assertNotIn(b'<a href="/book">Book an event</a>', response["body"])
         self.assertNotIn(b'<a href="/authn">Sign in</a>', response["body"])
 
     def test_admin_navigation_is_only_shown_to_administrators(self) -> None:

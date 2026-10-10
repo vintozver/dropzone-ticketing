@@ -12,8 +12,8 @@
         <a href="/register">Register credential</a>
       {% else %}
         <a href="/">Home</a>
-        <a href="/book">Book an event</a>
         {% if not authenticated %}
+          <a href="/book">Book an event</a>
           <a href="/authn">Sign in</a>
         {% endif %}
         {% if 'admin' in current_user_roles %}
