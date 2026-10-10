@@ -37,10 +37,40 @@ email:
   from:
     address: no-reply@example.test
     name: The Dropzone
+stripe:
+  publishable_key: pk_live_...
+  secret_key: sk_live_...
 ```
 
 The configured SMTP server is expected to be on a trusted local network; delivery
 uses STARTTLS.
+
+### Guest event booking
+
+Guests can book at `/book`. Card details are collected by Stripe Elements and
+payments are authorized before the event is atomically booked, then captured.
+The checkout reservation lasts 15 minutes. A secure browser cookie lets guests
+resume their active holds after refreshing or returning to `/book`; each guest
+can hold up to three events at once.
+
+Administrators create event types in the `event_type` collection with `name`,
+optional `description`, default `price` (the integer minor-unit amount),
+three-letter `currency`, and `active`. Events in the `event` collection contain
+`dt` (UTC date/time), `duration_minutes`, an `event_type` DBRef, and their own
+`price` and `currency`. Event types may also define ordered, visible questions
+with single-choice or multiple-choice responses; each question and response has
+a unique identifier. Event bookings use the questions from their event type,
+and the guest's selected response identifiers are recorded on the event.
+
+The service adds reservation and customer fields during checkout. Payment and
+refund details are recorded as event history items alongside booking,
+cancellation, and comment entries. Customer phone numbers are optional.
+Availability
+is shown in the configured local `timezone` for the current day and following
+13 days.
+
+Administrators can manage event types and individual events, prices, comments,
+removal/restoration, and booking cancellation from `/admin/event/list`.
 
 ### Partner API
 

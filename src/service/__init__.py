@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import threading
+from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Callable
 
@@ -12,6 +13,7 @@ from .. import PDF, Ticket
 from ..model import mongoengine_alias
 from ..model.auth import User
 from ..model.ticket import UserRef
+from ..model.event import Event, EventType
 
 from . import auth as _auth_module
 from .actions.admin_users import admin_index as _admin_index_action
@@ -20,6 +22,15 @@ from .actions.admin_users import list_users as _list_users_action
 from .actions.admin_users import new_user as _new_user_action
 from .actions.admin_users import update_user as _update_user_action
 from .actions.admin_users import view_user as _view_user_action
+from .actions.admin_events import create_event as _create_event_action
+from .actions.admin_events import create_event_type as _create_event_type_action
+from .actions.admin_events import list_events as _list_events_action
+from .actions.admin_events import list_event_types as _list_event_types_action
+from .actions.admin_events import new_event as _new_event_action
+from .actions.admin_events import update_event as _update_event_action
+from .actions.admin_events import update_event_type as _update_event_type_action
+from .actions.admin_events import view_event as _view_event_action
+from .actions.admin_events import view_event_type as _view_event_type_action
 from .actions.issue import issue as _issue_action
 from .actions.print_tickets import print_tickets as _print_tickets_action
 from .actions.print_tickets import print_url as _print_url
@@ -35,9 +46,20 @@ from .actions.partner import create as _create_partner
 from .actions.partner import update as _update_partner
 from .actions.partner import view_partner as _view_partner
 from .actions.partner import view_partners as _view_partners
-from .config import CODE_ALPHABET, CODE_LENGTH, mongodb_uri
+from .actions.booking import availability as _booking_availability_action
+from .actions.booking import complete as _booking_complete_action
+from .actions.booking import contact as _booking_contact_action
+from .actions.booking import hold as _booking_hold_action
+from .actions.booking import resume as _booking_resume_action
+from .config import (
+    CODE_ALPHABET,
+    CODE_LENGTH,
+    local_timezone,
+    mongodb_uri,
+    stripe_publishable_key,
+)
+from . import payment as _payment_provider
 from .http import (
-    exception_response,
     read_form as _read_form,
     render as _render,
     request_context,
@@ -179,6 +201,147 @@ def _update_user(user_id: str, form: dict[str, str]):
     return _update_user_action(user_id, form, user_class=User, render=_render)
 
 
+def _list_events():
+    return _list_events_action(event_class=Event, render=_render)
+
+
+def _new_event():
+    return _new_event_action(event_type_class=EventType, render=_render)
+
+
+def _create_event(form: dict[str, str], user):
+    return _create_event_action(
+        form,
+        user,
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _view_event(event_id: str):
+    return _view_event_action(
+        event_id,
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+    )
+
+
+def _update_event(event_id: str, form: dict[str, str], user):
+    return _update_event_action(
+        event_id,
+        form,
+        user,
+        event_class=Event,
+        event_type_class=EventType,
+        payment_provider=_payment_provider,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _list_event_types():
+    return _list_event_types_action(event_type_class=EventType, render=_render)
+
+
+def _create_event_type(form: dict[str, str]):
+    return _create_event_type_action(form, event_type_class=EventType, render=_render)
+
+
+def _view_event_type(event_type_id: str):
+    return _view_event_type_action(event_type_id, event_type_class=EventType, render=_render)
+
+
+def _update_event_type(event_type_id: str, form: dict[str, str]):
+    return _update_event_type_action(
+        event_type_id,
+        form,
+        event_type_class=EventType,
+        render=_render,
+    )
+
+
+def _booking_guest_token(environ: dict, *, create: bool = False) -> str | None:
+    token = _auth_module._cookies(environ).get("booking_guest", "")
+    if len(token) == 43 and all(character.isalnum() or character in "_-" for character in token):
+        return token
+    return secrets.token_urlsafe(32) if create else None
+
+
+def _booking_availability(event_type_id: str | None, environ: dict):
+    return _booking_availability_action(
+        event_type_id,
+        _booking_guest_token(environ),
+        event_class=Event,
+        event_type_class=EventType,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_hold(form: dict[str, str], environ: dict):
+    token = _booking_guest_token(environ, create=True)
+    response = _booking_hold_action(
+        form,
+        token,
+        event_class=Event,
+        render=_render,
+        local_timezone=local_timezone(),
+        now=datetime.now(timezone.utc),
+    )
+    if response[0] == HTTPStatus.SEE_OTHER:
+        response[1].append(
+            _auth_module._cookie(
+                "booking_guest",
+                token,
+                max_age=15 * 60,
+                path="/book",
+            )
+        )
+    return response
+
+
+def _booking_resume(event_id: str | None, environ: dict):
+    return _booking_resume_action(
+        event_id,
+        _booking_guest_token(environ),
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        publishable_key=stripe_publishable_key(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_contact(form: dict[str, str], environ: dict):
+    return _booking_contact_action(
+        form,
+        _booking_guest_token(environ),
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        publishable_key=stripe_publishable_key(),
+        now=datetime.now(timezone.utc),
+    )
+
+
+def _booking_complete(form: dict[str, str], environ: dict):
+    return _booking_complete_action(
+        form,
+        _booking_guest_token(environ),
+        event_class=Event,
+        render=_render,
+        payment_provider=_payment_provider,
+        now=datetime.now(timezone.utc),
+    )
+
+
 def _method_not_allowed(allowed):
     from .http import method_not_allowed
 
@@ -203,6 +366,4 @@ def application(environ: dict, start_response: Callable):
             response = _dispatch(environ)
         except ValueError as error:
             response = _render("error.html", HTTPStatus.BAD_REQUEST, message=str(error))
-        except Exception as exc:
-            response = exception_response(exc)
     return response_with_length(response, start_response)

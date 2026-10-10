@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Checkout{% endblock %}
+{% block head %}
+  {% if step == "payment" %}<script src="https://js.stripe.com/v3/"></script>{% endif %}
+{% endblock %}
+{% block content %}
+  <h1>Checkout</h1>
+  <p>
+    {{ event.event_type.name }} at {{ event.dt|datetime }}
+    ({{ event.duration_minutes }} minutes)
+  </p>
+  <p id="reservation-time">
+    Reserved until {{ event.reservation_expires_at|datetime }}.
+  </p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+
+  {% if step == "details" %}
+    <form method="post" action="/book/contact">
+      <input type="hidden" name="event_id" value="{{ event.id }}">
+      <div><label>Name <input name="name" autocomplete="name" required value="{{ customer.name|default('') }}"></label></div>
+      <div><label>Email <input name="email" type="email" autocomplete="email" required value="{{ customer.email|default('') }}"></label></div>
+      <div><label>Phone <input name="phone" type="tel" autocomplete="tel" value="{{ customer.phone|default('') }}"></label></div>
+      {% for question in event.event_type.questions|sort(attribute='order', reverse=true) if question.visible %}
+        <fieldset>
+          <legend>{{ question.text }}</legend>
+          {% for response in question.responses %}
+            <div>
+              <label>
+                <input
+                  type="{% if question.multiple %}checkbox{% else %}radio{% endif %}"
+                  name="question_{{ question.id }}{% if question.multiple %}_{{ response.id }}{% endif %}"
+                  value="{% if question.multiple %}on{% else %}{{ response.id }}{% endif %}">
+                {{ response.label }}
+              </label>
+            </div>
+          {% endfor %}
+        </fieldset>
+      {% endfor %}
+      <button type="submit">Continue to payment</button>
+    </form>
+  {% else %}
+    <p>Total: {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</p>
+    {% if payment_ready %}
+      <form method="post" action="/book/complete">
+        <input type="hidden" name="event_id" value="{{ event.id }}">
+        <input type="hidden" name="payment_intent" value="{{ payment_intent }}">
+        <button type="submit">Complete booking</button>
+      </form>
+    {% else %}
+      <form id="payment-form">
+        <div id="payment-element"></div>
+        <p id="payment-error" role="alert"></p>
+        <button id="pay-button" type="submit">Pay and book</button>
+      </form>
+      <form id="complete-form" method="post" action="/book/complete">
+        <input type="hidden" name="event_id" value="{{ event.id }}">
+        <input id="payment-intent" type="hidden" name="payment_intent">
+      </form>
+      <script>
+        const stripe = Stripe({{ publishable_key|tojson }});
+        const elements = stripe.elements({clientSecret: {{ client_secret|tojson }}});
+        elements.create("payment").mount("#payment-element");
+        document.getElementById("payment-form").addEventListener("submit", async event => {
+          event.preventDefault();
+          const button = document.getElementById("pay-button");
+          button.disabled = true;
+          const result = await stripe.confirmPayment({elements, redirect: "if_required"});
+          if (result.error) {
+            document.getElementById("payment-error").textContent = result.error.message;
+            button.disabled = false;
+            return;
+          }
+          document.getElementById("payment-intent").value = result.paymentIntent.id;
+          document.getElementById("complete-form").submit();
+        });
+      </script>
+    {% endif %}
+  {% endif %}
+{% endblock %}

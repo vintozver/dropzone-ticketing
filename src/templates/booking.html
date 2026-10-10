@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Book an event{% endblock %}
+{% block content %}
+  <h1>Book an event</h1>
+  {% if held_events %}
+    <section>
+      <h2>Your held events</h2>
+      <ul>
+        {% for event in held_events %}
+          <li>
+            <a href="/book/resume?event_id={{ event.id }}">
+              {{ event.event_type.name }} at {{ event.dt|datetime }}
+            </a>
+            (held until {{ event.reservation_expires_at|datetime }})
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+  <form method="get" action="/book">
+    <div>
+      <label>
+        Event type
+        <select name="type" required>
+          <option value="">Choose an event type</option>
+          {% for event_type in event_types %}
+            <option value="{{ event_type.id }}" {% if selected_type and selected_type.id == event_type.id %}selected{% endif %}>
+              {{ event_type.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <button type="submit">Show availability</button>
+  </form>
+
+  {% if selected_type %}
+    <h2>{{ selected_type.name }}</h2>
+    {% if selected_type.description %}<p>{{ selected_type.description }}</p>{% endif %}
+    {% for day in days %}
+      <section>
+        <h3>{{ day.date.strftime("%A, %Y-%m-%d") }}</h3>
+        {% if not day.has_events %}
+          <p>Nothing for this day.</p>
+        {% elif day.sold_out %}
+          <p>Sold out.</p>
+        {% elif not day.events %}
+          <p>No times currently available.</p>
+        {% else %}
+          <ul>
+            {% for event in day.events %}
+              <li>
+                <form method="post" action="/book/hold">
+                  <input type="hidden" name="event_id" value="{{ event.id }}">
+                  <button type="submit">
+                    {{ event.dt|datetime }} ({{ event.duration_minutes }} minutes)
+                    — {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}
+                  </button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </section>
+    {% endfor %}
+  {% endif %}
+{% endblock %}

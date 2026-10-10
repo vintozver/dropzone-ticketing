@@ -563,5 +563,6 @@ def require_role(environ: dict, role: str):
         return error(HTTPStatus.FORBIDDEN, "Permission denied.")
     return None
 
+
 import fido2.features
 fido2.features.webauthn_json_mapping.enabled = True

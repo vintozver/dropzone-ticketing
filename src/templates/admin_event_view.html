@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Event {{ event.id }}{% endblock %}
+{% block content %}
+  <h1>Event {{ event.id }}</h1>
+  <form method="post">
+    <input type="hidden" name="action" value="update">
+    <p>Date/time: {{ event.dt|datetime }}</p>
+    <p>Duration: {{ event.duration_minutes }} minutes</p>
+    <p>Event type: {{ event.event_type.name }}</p>
+    <div><label>Price <input name="price" type="number" min="0" step="0.01" required value="{{ '%.2f'|format(event.price / 100) }}"></label></div>
+    <div><label>Currency <input name="currency" minlength="3" maxlength="3" required value="{{ event.currency }}"></label></div>
+    <div><label>Change comment <textarea name="comment"></textarea></label></div>
+    <button type="submit">Save</button>
+  </form>
+
+  <h2>Booking</h2>
+  {% if event.customer %}
+    <dl>
+      <dt>Name</dt><dd>{{ event.customer.name }}</dd>
+      <dt>Email</dt><dd>{{ event.customer.email }}</dd>
+      <dt>Phone</dt><dd>{{ event.customer.phone or '' }}</dd>
+      {% if payment %}
+        <dt>Payment</dt><dd>{{ payment.currency }} {{ "%.2f"|format(payment.amount / 100) }} ({{ payment.reference }})</dd>
+      {% endif %}
+    </dl>
+    {% if event.responses %}
+      <h3>Responses</h3>
+      <dl>
+        {% for question in event.event_type.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
+          <dt>{{ question.text }}</dt>
+          <dd>
+            {% for response in question.responses if response.id|string in event.responses[question.id|string] %}
+              {{ response.label }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+          </dd>
+        {% endfor %}
+      </dl>
+    {% endif %}
+    <form method="post">
+      <input type="hidden" name="action" value="cancel_booking">
+      <div><label>Cancellation comment <textarea name="comment" required></textarea></label></div>
+      <button type="submit">Refund and cancel booking</button>
+    </form>
+  {% else %}<p>Not booked.</p>{% endif %}
+
+  <h2>History</h2>
+  <form method="post">
+    <input type="hidden" name="action" value="comment">
+    <div><label>Comment <textarea name="comment" required></textarea></label></div>
+    <button type="submit">Add comment</button>
+  </form>
+  <ol>
+    {% for item in event.history|reverse %}
+      <li>
+        {{ item.dt|datetime }} — {{ item.action }}
+        {% if item.by %}by {{ item.by.display_name or item.by.id }}{% endif %}
+        {% if item.payment %}
+          — {{ item.payment.currency }} {{ "%.2f"|format(item.payment.amount / 100) }}
+          ({{ item.payment.reference }})
+        {% endif %}
+        {% if item.comment %}<p>{{ item.comment }}</p>{% endif %}
+      </li>
+    {% else %}<li>No history.</li>{% endfor %}
+  </ol>
+
+  <form method="post">
+    {% if event.active %}
+      <input type="hidden" name="action" value="remove">
+      <button type="submit">Remove event</button>
+    {% else %}
+      <input type="hidden" name="action" value="restore">
+      <button type="submit">Restore event</button>
+    {% endif %}
+  </form>
+{% endblock %}
