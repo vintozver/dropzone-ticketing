@@ -24,6 +24,7 @@ from dropzone_ticketing.model.event import (
 from dropzone_ticketing.service import payment
 from dropzone_ticketing.service.actions import admin_events
 from dropzone_ticketing.service.actions import booking
+from dropzone_ticketing.service.http import render
 
 
 class EventModelTest(unittest.TestCase):
@@ -818,6 +819,57 @@ class StripePaymentTest(unittest.TestCase):
 
 
 class EventManagementTest(unittest.TestCase):
+    def test_event_view_uses_tables_and_single_line_comment_inputs(self) -> None:
+        response = QuestionResponse(label="Yes")
+        question = Question(text="Ready?", responses=[response])
+        event = SimpleNamespace(
+            id=ObjectId(),
+            dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            event_type=SimpleNamespace(name="Tandem", questions=[question]),
+            duration_minutes=60,
+            price=20000,
+            deposit=5000,
+            currency="EUR",
+            customer=SimpleNamespace(name="Guest", email="guest@example.test", phone=None),
+            responses={str(question.id): [str(response.id)]},
+            completed=False,
+            history=[
+                SimpleNamespace(
+                    dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+                    action="payment",
+                    by=None,
+                    comment="Deposit collected",
+                    payment=SimpleNamespace(
+                        reference="pi_1",
+                        amount=5000,
+                        currency="EUR",
+                        status="succeeded",
+                    ),
+                )
+            ],
+        )
+
+        body = render(
+            "admin_event_view.html",
+            event=event,
+            held=False,
+            balance=5000,
+            local_timezone=ZoneInfo("UTC"),
+        )[2].decode()
+
+        self.assertIn('<th scope="row">Name</th><td>Guest</td>', body)
+        self.assertIn('<th scope="row">Ready?</th>', body)
+        self.assertIn('<th scope="col">Date/time</th>', body)
+        self.assertIn('<th scope="col">Activity</th>', body)
+        self.assertIn('<th scope="col">By</th>', body)
+        self.assertIn('<th scope="col">Actions</th>', body)
+        self.assertIn("payment", body)
+        self.assertIn("Deposit collected", body)
+        self.assertIn('name="action" value="refund"', body)
+        self.assertNotIn("<dl", body)
+        self.assertNotIn("<ol", body)
+        self.assertNotIn("<textarea", body)
+
     def test_event_update_keeps_schedule_fields_immutable(self) -> None:
         event = SimpleNamespace(id=ObjectId())
         lookup = MagicMock()
