@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Booking confirmed{% endblock %}
+{% block content %}
+  <h1>Booking confirmed</h1>
+  <p>Thank you, {{ event.customer.name }}. Your payment and booking are confirmed.</p>
+  <dl>
+    <dt>Event</dt><dd>{{ event.event_type.name }}</dd>
+    <dt>Starts</dt><dd>{{ event.dt|datetime }}</dd>
+    <dt>Duration</dt><dd>{{ event.duration_minutes }} minutes</dd>
+    <dt>Payment</dt><dd>{{ payment.currency }} {{ "%.2f"|format(payment.amount / 100) }}</dd>
+  </dl>
+  {% if event.responses %}
+    <h2>Responses</h2>
+    <dl>
+      {% for question in event.event_type.questions|sort(attribute='order', reverse=true) if question.id|string in event.responses %}
+        <dt>{{ question.text }}</dt>
+        <dd>
+          {% for response in question.responses if response.id|string in event.responses[question.id|string] %}
+            {{ response.label }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </dd>
+      {% endfor %}
+    </dl>
+  {% endif %}
+{% endblock %}

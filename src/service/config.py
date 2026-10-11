@@ -140,3 +140,11 @@ def mongodb_uri() -> str:
     if not configured:
         raise KeyError("mongodb_uri")
     return str(configured)
+
+
+def stripe_publishable_key() -> str:
+    return str(_section("stripe").get("publishable_key", "") or "")
+
+
+def stripe_secret_key() -> str:
+    return str(_section("stripe").get("secret_key", "") or "")

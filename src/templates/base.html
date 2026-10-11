@@ -13,10 +13,14 @@
       {% else %}
         <a href="/">Home</a>
         {% if not authenticated %}
+          <a href="/book">Book an event</a>
           <a href="/authn">Sign in</a>
         {% endif %}
         {% if 'admin' in current_user_roles %}
           <a href="/issue">Issue tickets</a>
+        {% endif %}
+        {% if 'admin' in current_user_roles %}
+          <a href="/admin/event/list">Manage events</a>
         {% endif %}
         <a href="/redeem">Redeem tickets</a>
         <a href="/tickets">View tickets</a>

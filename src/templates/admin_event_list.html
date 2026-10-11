@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+  <h1>Events</h1>
+  <p><a href="/admin/event/new">Add event</a> · <a href="/admin/event-type/list">Manage event types</a></p>
+  <table>
+    <thead><tr><th>Date/time</th><th>Type</th><th>Price</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for event in events %}
+        <tr>
+          <td><a href="/admin/event/view/{{ event.id }}">{{ event.dt|datetime }}</a></td>
+          <td>{{ event.event_type.name }}</td>
+          <td>{{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</td>
+          <td>
+            {% if not event.active %}Removed
+            {% elif event.customer %}Booked
+            {% elif event.reservation_token %}Checkout in progress
+            {% else %}Available{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">No events.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
