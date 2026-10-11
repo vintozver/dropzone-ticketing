@@ -49,6 +49,8 @@ def _responses(form: dict[str, str], questions):
             selected = [response_id for response_id in selected if response_id]
         if any(response_id not in response_ids for response_id in selected):
             raise ValueError("Choose valid responses to the booking questions.")
+        if not question.multiple and not selected:
+            raise ValueError("Answer all required booking questions.")
         if selected:
             answers[question_id] = selected
     return answers
@@ -142,76 +144,41 @@ def hold(
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
     _today, start, end = _window(now, local_timezone)
-    token_hash = _token_hash(reservation_token)
-    event_class.objects(
-        reservation_token=token_hash,
-        reservation_expires_at__lte=now,
-    ).update(
-        unset__reservation_token=1,
-        unset__reservation_nonce=1,
-        unset__reservation_slot=1,
-        unset__reservation_expires_at=1,
-        unset__checkout_customer=1,
-        unset__checkout_responses=1,
-        unset__payment_intent=1,
-    )
-    event = None
-    for slot in range(MAX_GUEST_HOLDS):
-        try:
-            event = (
-                event_class.objects(
-                    Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
-                    id=event_id,
-                    dt__gte=start,
-                    dt__lt=end,
-                    active=True,
-                    customer=None,
-                )
-                .modify(
-                    set__reservation_token=token_hash,
-                    set__reservation_nonce=secrets.token_urlsafe(32),
-                    set__reservation_slot=slot,
-                    set__reservation_expires_at=now + timedelta(minutes=RESERVATION_MINUTES),
-                    set__reservation_canceling=False,
-                    unset__checkout_customer=1,
-                    unset__checkout_responses=1,
-                    unset__payment_intent=1,
-                    new=True,
-                )
-            )
-        except NotUniqueError:
-            continue
-        if event is None:
-            own_hold = event_class.objects(
-                _not_canceling(),
-                id=event_id,
-                reservation_token=token_hash,
-                reservation_expires_at__gt=now,
-                customer=None,
-                active=True,
-            ).first()
-            if own_hold is not None:
-                return (
-                    HTTPStatus.SEE_OTHER,
-                    [("Location", f"/book/resume?event_id={event_id}")],
-                    b"",
-                )
-            return render(
-                "error.html",
-                HTTPStatus.CONFLICT,
-                message="That event is no longer available. Please choose another time.",
-            )
-        break
+    event = event_class.objects(
+        Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
+        id=event_id,
+        dt__gte=start,
+        dt__lt=end,
+        active=True,
+        customer=None,
+    ).first()
     if event is None:
+        own_hold = event_class.objects(
+            _not_canceling(),
+            id=event_id,
+            reservation_token=_token_hash(reservation_token),
+            reservation_expires_at__gt=now,
+            customer=None,
+            active=True,
+        ).first()
+        if own_hold is not None:
+            return (
+                HTTPStatus.SEE_OTHER,
+                [("Location", f"/book/resume?event_id={event_id}")],
+                b"",
+            )
         return render(
             "error.html",
             HTTPStatus.CONFLICT,
-            message="You can hold up to three events at a time.",
+            message="That event is no longer available. Please choose another time.",
         )
-    return (
-        HTTPStatus.SEE_OTHER,
-        [("Location", f"/book/resume?event_id={event.id}")],
-        b"",
+    return render(
+        "booking_checkout.html",
+        event=event,
+        step="details",
+        customer={},
+        editing=False,
+        held=False,
     )
 
 
@@ -256,7 +223,9 @@ def resume(
             event=event,
             step="details",
             customer=event.checkout_customer or {},
+            responses=getattr(event, "checkout_responses", {}) or {},
             editing=edit,
+            held=True,
         )
     if not publishable_key:
         return render(
@@ -274,6 +243,7 @@ def resume(
         payment_ready=intent.get("status") == "requires_capture",
         payment_intent=event.payment_intent,
         customer=event.checkout_customer,
+        held=True,
     )
 
 
@@ -285,48 +255,46 @@ def contact(
     render,
     payment_provider,
     publishable_key: str,
+    local_timezone,
     now: datetime,
 ):
     try:
         event_id = ObjectId(form.get("event_id", ""))
     except (InvalidId, TypeError):
         return render("error.html", HTTPStatus.BAD_REQUEST, message="Choose a valid event.")
-    event = event_class.objects(
-        _not_canceling(),
-        id=event_id,
-        reservation_token=_token_hash(reservation_token) if reservation_token else "",
-        reservation_expires_at__gt=now,
-        customer=None,
-        active=True,
-    ).first()
+    editing = form.get("editing") == "1"
+    if editing:
+        event = event_class.objects(
+            _not_canceling(),
+            id=event_id,
+            reservation_token=_token_hash(reservation_token) if reservation_token else "",
+            reservation_expires_at__gt=now,
+            customer=None,
+            active=True,
+        ).first()
+    else:
+        _today, start, end = _window(now, local_timezone)
+        event = event_class.objects(
+            id=event_id,
+            dt__gte=start,
+            dt__lt=end,
+            customer=None,
+            active=True,
+        ).first()
     if event is None:
         return render(
             "error.html",
             HTTPStatus.CONFLICT,
-            message="Your 15-minute reservation has expired. Please choose the event again.",
+            message=(
+                "Your 15-minute reservation has expired. Please choose the event again."
+                if editing
+                else "That event is no longer available. Please choose another time."
+            ),
         )
 
     name = form.get("name", "").strip()
     email = form.get("email", "").strip().lower()
     phone = form.get("phone", "").strip()
-    editing = form.get("editing") == "1"
-    if not name or "@" not in email or email.startswith("@") or email.endswith("@"):
-        return render(
-            "booking_checkout.html",
-            HTTPStatus.BAD_REQUEST,
-            event=event,
-            step="details",
-            error="Enter your name and email address.",
-            customer={"name": name, "email": email, "phone": phone},
-            editing=editing,
-        )
-    if not publishable_key:
-        return render(
-            "error.html",
-            HTTPStatus.SERVICE_UNAVAILABLE,
-            message="Online payment is not configured.",
-        )
-
     try:
         responses = getattr(event, "checkout_responses", {}) if editing else _responses(
             form,
@@ -340,10 +308,95 @@ def contact(
             step="details",
             error=str(error),
             customer={"name": name, "email": email, "phone": phone},
+            responses={},
             editing=editing,
+            held=editing,
+        )
+    if not name or "@" not in email or email.startswith("@") or email.endswith("@"):
+        return render(
+            "booking_checkout.html",
+            HTTPStatus.BAD_REQUEST,
+            event=event,
+            step="details",
+            error="Enter your name and email address.",
+            customer={"name": name, "email": email, "phone": phone},
+            responses=responses,
+            editing=editing,
+            held=editing,
+        )
+    if not publishable_key:
+        return render(
+            "error.html",
+            HTTPStatus.SERVICE_UNAVAILABLE,
+            message="Online payment is not configured.",
         )
 
     customer = Customer(name=name, email=email, phone=phone or None)
+    if not editing:
+        token_hash = _token_hash(reservation_token) if reservation_token else ""
+        event_class.objects(
+            reservation_token=token_hash,
+            reservation_expires_at__lte=now,
+        ).update(
+            unset__reservation_token=1,
+            unset__reservation_nonce=1,
+            unset__reservation_slot=1,
+            unset__reservation_expires_at=1,
+            unset__checkout_customer=1,
+            unset__checkout_responses=1,
+            unset__payment_intent=1,
+        )
+        selected_event = event
+        event = None
+        for slot in range(MAX_GUEST_HOLDS):
+            try:
+                event = event_class.objects(
+                    Q(reservation_expires_at=None) | Q(reservation_expires_at__lte=now),
+                    id=selected_event.id,
+                    dt__gte=start,
+                    dt__lt=end,
+                    active=True,
+                    customer=None,
+                ).modify(
+                    set__reservation_token=token_hash,
+                    set__reservation_nonce=secrets.token_urlsafe(32),
+                    set__reservation_slot=slot,
+                    set__reservation_expires_at=now + timedelta(minutes=RESERVATION_MINUTES),
+                    set__reservation_canceling=False,
+                    set__checkout_customer=customer,
+                    set__checkout_responses=responses,
+                    unset__payment_intent=1,
+                    new=True,
+                )
+            except NotUniqueError:
+                continue
+            if event is None:
+                event = event_class.objects(
+                    _not_canceling(),
+                    id=selected_event.id,
+                    reservation_token=token_hash,
+                    reservation_expires_at__gt=now,
+                    customer=None,
+                    active=True,
+                ).modify(
+                    set__checkout_customer=customer,
+                    set__checkout_responses=responses,
+                    new=True,
+                )
+                if event is None:
+                    return render(
+                        "error.html",
+                        HTTPStatus.CONFLICT,
+                        message="That event is no longer available. Please choose another time.",
+                    )
+            break
+        if event is None:
+            return render(
+                "error.html",
+                HTTPStatus.CONFLICT,
+                message="You can hold up to three events at a time.",
+            )
+
     payment_intent = getattr(event, "payment_intent", None)
     try:
         if payment_intent:
@@ -362,6 +415,15 @@ def contact(
             HTTPStatus.BAD_GATEWAY,
             message=str(error),
         )
+    updates = {
+        "set__payment_intent": intent["id"],
+        "new": True,
+    }
+    if editing:
+        updates.update(
+            set__checkout_customer=customer,
+            set__checkout_responses=responses,
+        )
     event = event_class.objects(
         _not_canceling(),
         id=event.id,
@@ -369,12 +431,7 @@ def contact(
         reservation_expires_at__gt=now,
         customer=None,
         active=True,
-    ).modify(
-        set__checkout_customer=customer,
-        set__checkout_responses=responses,
-        set__payment_intent=intent["id"],
-        new=True,
-    )
+    ).modify(**updates)
     if event is None:
         return render(
             "error.html",

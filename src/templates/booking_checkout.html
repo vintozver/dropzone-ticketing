@@ -9,13 +9,15 @@
     {{ event.event_type.name }} at {{ event.dt|datetime }}
     ({{ event.duration_minutes }} minutes)
   </p>
-  <p id="reservation-time">
-    Reserved until {{ event.reservation_expires_at|datetime }}.
-  </p>
-  <form method="post" action="/book/cancel">
-    <input type="hidden" name="event_id" value="{{ event.id }}">
-    <button type="submit">Cancel hold</button>
-  </form>
+  {% if held %}
+    <p id="reservation-time">
+      Reserved until {{ event.reservation_expires_at|datetime }}.
+    </p>
+    <form method="post" action="/book/cancel">
+      <input type="hidden" name="event_id" value="{{ event.id }}">
+      <button type="submit">Cancel hold</button>
+    </form>
+  {% endif %}
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 
   {% if step == "details" %}
@@ -35,7 +37,9 @@
                 <input
                   type="{% if question.multiple %}checkbox{% else %}radio{% endif %}"
                   name="question_{{ question.id }}{% if question.multiple %}_{{ response.id }}{% endif %}"
-                  value="{% if question.multiple %}on{% else %}{{ response.id }}{% endif %}">
+                  value="{% if question.multiple %}on{% else %}{{ response.id }}{% endif %}"
+                  {% if response.id|string in (responses|default({})).get(question.id|string, []) %}checked{% endif %}
+                  {% if not question.multiple %}required{% endif %}>
                 {{ response.label }}
               </label>
             </div>

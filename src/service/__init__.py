@@ -296,7 +296,7 @@ def _booking_hold(form: dict[str, str], environ: dict):
         local_timezone=local_timezone(),
         now=datetime.now(timezone.utc),
     )
-    if response[0] == HTTPStatus.SEE_OTHER:
+    if response[0] in {HTTPStatus.OK, HTTPStatus.SEE_OTHER}:
         response[1].append(
             _auth_module._cookie(
                 "booking_guest",
@@ -333,15 +333,26 @@ def _booking_cancel(form: dict[str, str], environ: dict):
 
 
 def _booking_contact(form: dict[str, str], environ: dict):
-    return _booking_contact_action(
+    token = _booking_guest_token(environ, create=True)
+    response = _booking_contact_action(
         form,
-        _booking_guest_token(environ),
+        token,
         event_class=Event,
         render=_render,
         payment_provider=_payment_provider,
         publishable_key=stripe_publishable_key(),
+        local_timezone=local_timezone(),
         now=datetime.now(timezone.utc),
     )
+    response[1].append(
+        _auth_module._cookie(
+            "booking_guest",
+            token,
+            max_age=15 * 60,
+            path="/book",
+        )
+    )
+    return response
 
 
 def _booking_complete(form: dict[str, str], environ: dict):

@@ -59,7 +59,7 @@ class ServiceHelperTest(unittest.TestCase):
         _local_timezone,
     ) -> None:
         token = "a" * 43
-        hold_action.return_value = (HTTPStatus.SEE_OTHER, [], b"")
+        hold_action.return_value = (HTTPStatus.OK, [], b"")
 
         response = service._booking_hold(
             {"event_id": str(ObjectId())},
@@ -88,6 +88,26 @@ class ServiceHelperTest(unittest.TestCase):
         )
 
         self.assertFalse(any(name == "Set-Cookie" for name, _value in response[1]))
+
+    @patch.object(service, "local_timezone", return_value=timezone.utc)
+    @patch.object(service, "_booking_contact_action")
+    def test_booking_contact_starts_guest_cookie_lifetime(
+        self,
+        contact_action,
+        _local_timezone,
+    ) -> None:
+        contact_action.return_value = (HTTPStatus.SEE_OTHER, [], b"")
+
+        response = service._booking_contact(
+            {"event_id": str(ObjectId())},
+            {"HTTP_COOKIE": ""},
+        )
+
+        token = contact_action.call_args.args[1]
+        self.assertEqual(len(token), 43)
+        cookie = next(value for name, value in response[1] if name == "Set-Cookie")
+        self.assertIn(f"booking_guest={token}", cookie)
+        self.assertIn("Max-Age=900", cookie)
 
     def test_generated_code_is_printable_ascii_with_exact_length(self) -> None:
         for _ in range(100):
