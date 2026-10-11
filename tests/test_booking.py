@@ -819,6 +819,40 @@ class StripePaymentTest(unittest.TestCase):
 
 
 class EventManagementTest(unittest.TestCase):
+    def test_event_admin_forms_use_requested_control_sizes(self) -> None:
+        event_type = SimpleNamespace(
+            id=ObjectId(),
+            name="Tandem",
+            description="",
+            price=20000,
+            deposit=5000,
+            currency="EUR",
+            order=0,
+            questions=[],
+            active=True,
+        )
+        add_event = render(
+            "admin_event_form.html",
+            event_types=[event_type],
+            values={},
+        )[2].decode()
+        event_type_list = render(
+            "admin_event_type_list.html",
+            event_types=[],
+        )[2].decode()
+        event_type_view = render(
+            "admin_event_type_view.html",
+            event_type=event_type,
+        )[2].decode()
+
+        self.assertIn('name="times" rows="8" cols="5"', add_event)
+        self.assertIn('name="duration_minutes" type="number" min="1" size="4"', add_event)
+        for body in (add_event, event_type_list, event_type_view):
+            self.assertIn('name="price" type="number"', body)
+            self.assertIn('step="0.01" size="8"', body)
+            self.assertIn('name="deposit" type="number"', body)
+            self.assertIn('maxlength="3" size="3"', body)
+
     def test_event_view_uses_tables_and_single_line_comment_inputs(self) -> None:
         response = QuestionResponse(label="Yes")
         question = Question(text="Ready?", responses=[response])
@@ -833,6 +867,7 @@ class EventManagementTest(unittest.TestCase):
             customer=SimpleNamespace(name="Guest", email="guest@example.test", phone=None),
             responses={str(question.id): [str(response.id)]},
             completed=False,
+            active=True,
             history=[
                 SimpleNamespace(
                     dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
@@ -866,6 +901,16 @@ class EventManagementTest(unittest.TestCase):
         self.assertIn("payment", body)
         self.assertIn("Deposit collected", body)
         self.assertIn('name="action" value="refund"', body)
+        self.assertIn("<title>Event details</title>", body)
+        self.assertIn("<h1>Event details</h1>", body)
+        self.assertNotIn(f"<h1>Event {event.id}</h1>", body)
+        self.assertLess(body.index("<h2>History</h2>"), body.index("<h2>Add comment</h2>"))
+        self.assertIn("<h2>Remove event</h2>", body)
+        self.assertIn('name="action" value="remove"', body)
+        self.assertIn("<button type=\"submit\">Proceed</button>", body)
+        self.assertIn('name="price" type="number" min="0" step="0.01" size="8"', body)
+        self.assertIn('name="deposit" type="number" min="0.01" step="0.01" size="8"', body)
+        self.assertIn('name="currency" minlength="3" maxlength="3" size="3"', body)
         self.assertNotIn("<dl", body)
         self.assertNotIn("<ol", body)
         self.assertNotIn("<textarea", body)
