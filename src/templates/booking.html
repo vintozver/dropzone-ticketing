@@ -1,5 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Book an event{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/themes/base/jquery-ui.min.css" integrity="sha256-Y6jCdwjQRMCYr1alUxqNKUiK/cdfQd8PvQ/AcEj3TNM=" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/jquery-ui@1.14.1/dist/jquery-ui.min.js" integrity="sha256-AlTido85uXPlSyyaZNsjJXeCs07eSv3r43kyCVc8ChI=" crossorigin="anonymous"></script>
+  <style>
+    .ui-datepicker td.booking-available a { background: #b7e4b7; }
+    .ui-datepicker td.booking-unavailable span,
+    .ui-datepicker td.booking-sold-out span { background: #eee; color: #777; }
+    .ui-datepicker td.booking-sold-out span { text-decoration: line-through; }
+  </style>
+{% endblock %}
 {% block content %}
   <h1>Book an event</h1>
   {% if held_events %}
@@ -41,31 +51,50 @@
   {% if selected_type %}
     <h2>{{ selected_type.name }}</h2>
     {% if selected_type.description %}<p>{{ selected_type.description }}</p>{% endif %}
-    {% for day in days %}
-      <section>
-        <h3>{{ day.date.strftime("%A, %Y-%m-%d") }}</h3>
-        {% if not day.has_events %}
-          <p>Nothing for this day.</p>
-        {% elif day.sold_out %}
-          <p>Sold out.</p>
-        {% elif not day.events %}
-          <p>No times currently available.</p>
-        {% else %}
-          <ul>
-            {% for event in day.events %}
-              <li>
-                <form method="post" action="/book/hold">
-                  <input type="hidden" name="event_id" value="{{ event.id }}">
-                  <button type="submit">
-                    {{ event.dt|datetime }} ({{ event.duration_minutes }} minutes)
-                    — {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}
-                  </button>
-                </form>
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-      </section>
-    {% endfor %}
+    <div id="availability-calendar"></div>
+    <section id="available-times" hidden>
+      <h3></h3>
+      <div></div>
+    </section>
+    <script>
+      $(function() {
+        const availability = {{ availability|tojson }};
+        const parseDate = value => {
+          const parts = value.split("-").map(Number);
+          return new Date(parts[0], parts[1] - 1, parts[2]);
+        };
+        const dateKey = date => $.datepicker.formatDate("yy-mm-dd", date);
+        const times = $("#available-times");
+
+        $("#availability-calendar").datepicker({
+          defaultDate: parseDate({{ start_date|tojson }}),
+          minDate: parseDate({{ start_date|tojson }}),
+          maxDate: parseDate({{ end_date|tojson }}),
+          numberOfMonths: 2,
+          dateFormat: "yy-mm-dd",
+          beforeShowDay: date => {
+            const day = availability[dateKey(date)];
+            if (!day || day.status === "unavailable") return [false, "booking-unavailable", "Unavailable"];
+            if (day.status === "sold_out") return [false, "booking-sold-out", "Sold out"];
+            return [true, "booking-available", "Available"];
+          },
+          onSelect: value => {
+            const day = availability[value];
+            const list = $("<ul>");
+            day.events.forEach(event => {
+              const form = $("<form>", { method: "post", action: "/book/hold" });
+              form.append($("<input>", { type: "hidden", name: "event_id", value: event.id }));
+              form.append($("<button>", { type: "submit" }).text(
+                `${event.time} (${event.duration_minutes} minutes) — ${event.currency} ${event.price}`
+              ));
+              list.append($("<li>").append(form));
+            });
+            times.find("h3").text($.datepicker.formatDate("DD, yy-mm-dd", parseDate(value)));
+            times.find("div").empty().append(list);
+            times.prop("hidden", false);
+          }
+        });
+      });
+    </script>
   {% endif %}
 {% endblock %}

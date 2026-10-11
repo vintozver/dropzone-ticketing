@@ -24,7 +24,7 @@ from dropzone_ticketing.model.event import (
 from dropzone_ticketing.service import payment
 from dropzone_ticketing.service.actions import admin_events
 from dropzone_ticketing.service.actions import booking
-from dropzone_ticketing.service.http import render
+from dropzone_ticketing.service.http import render as render_template
 
 
 class EventModelTest(unittest.TestCase):
@@ -143,6 +143,16 @@ class EventModelTest(unittest.TestCase):
         self.assertFalse(event.is_reserved(now))
 
 class BookingActionTest(unittest.TestCase):
+    def test_availability_window_spans_current_and_next_month_across_year(self) -> None:
+        today, start, end = booking._window(
+            datetime(2026, 12, 15, 12, tzinfo=timezone.utc),
+            ZoneInfo("UTC"),
+        )
+
+        self.assertEqual(today.isoformat(), "2026-12-15")
+        self.assertEqual(start, datetime(2026, 12, 15, tzinfo=timezone.utc))
+        self.assertEqual(end, datetime(2027, 2, 1, tzinfo=timezone.utc))
+
     def test_invalid_event_type_is_reported_as_bad_request(self) -> None:
         event_types = MagicMock()
         event_types.order_by.return_value = []
@@ -180,11 +190,15 @@ class BookingActionTest(unittest.TestCase):
         self.assertEqual(render.call_args.args[1], HTTPStatus.BAD_REQUEST)
         self.assertEqual(render.call_args.kwargs["message"], "Choose a valid event.")
 
-    def test_availability_groups_fourteen_local_days_and_marks_sold_out(self) -> None:
+    def test_availability_serializes_two_calendar_months(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)
-        event_type = SimpleNamespace(id=ObjectId(), name="Tandem")
+        event_type = SimpleNamespace(id=ObjectId(), name="Tandem", description="")
         available = SimpleNamespace(
+            id=ObjectId(),
             dt=datetime(2026, 9, 30, 10, tzinfo=timezone.utc),
+            duration_minutes=60,
+            currency="eur",
+            price=12500,
             customer=None,
             is_reserved=lambda _now: False,
         )
@@ -217,11 +231,42 @@ class BookingActionTest(unittest.TestCase):
         )
 
         self.assertEqual(result, "rendered")
-        days = render.call_args.kwargs["days"]
-        self.assertEqual(len(days), 14)
-        self.assertEqual(days[0]["events"], [available])
-        self.assertTrue(days[1]["sold_out"])
-        self.assertFalse(days[2]["has_events"])
+        availability = render.call_args.kwargs["availability"]
+        self.assertEqual(len(availability), 32)
+        self.assertEqual(render.call_args.kwargs["start_date"], "2026-09-30")
+        self.assertEqual(render.call_args.kwargs["end_date"], "2026-10-31")
+        self.assertEqual(availability["2026-09-30"]["status"], "available")
+        self.assertEqual(
+            availability["2026-09-30"]["events"],
+            [
+                {
+                    "id": str(available.id),
+                    "time": "10:00",
+                    "duration_minutes": 60,
+                    "currency": "EUR",
+                    "price": "125.00",
+                }
+            ],
+        )
+        self.assertEqual(availability["2026-10-01"]["status"], "sold_out")
+        self.assertEqual(availability["2026-10-02"]["status"], "unavailable")
+
+        body = render_template(
+            "booking.html",
+            event_types=[event_type],
+            selected_type=event_type,
+            availability=availability,
+            start_date="2026-09-30",
+            end_date="2026-10-31",
+            held_events=[],
+        )[2].decode()
+        self.assertIn('id="availability-calendar"', body)
+        self.assertIn("numberOfMonths: 2", body)
+        self.assertIn("beforeShowDay:", body)
+        self.assertIn("booking-available", body)
+        self.assertIn("booking-sold-out", body)
+        self.assertIn("booking-unavailable", body)
+        self.assertIn("day.events.forEach", body)
 
     def test_availability_lists_the_guests_active_holds(self) -> None:
         held = SimpleNamespace(dt=datetime(2026, 10, 1, tzinfo=timezone.utc))
@@ -797,7 +842,7 @@ class BookingActionTest(unittest.TestCase):
             duration_minutes=60,
         )
 
-        body = render(
+        body = render_template(
             "booking_checkout.html",
             event=event,
             step="details",
@@ -998,16 +1043,16 @@ class EventManagementTest(unittest.TestCase):
             questions=[],
             active=True,
         )
-        add_event = render(
+        add_event = render_template(
             "admin_event_form.html",
             event_types=[event_type],
             values={},
         )[2].decode()
-        event_type_list = render(
+        event_type_list = render_template(
             "admin_event_type_list.html",
             event_types=[],
         )[2].decode()
-        event_type_view = render(
+        event_type_view = render_template(
             "admin_event_type_view.html",
             event_type=event_type,
         )[2].decode()
@@ -1051,7 +1096,7 @@ class EventManagementTest(unittest.TestCase):
             ],
         )
 
-        body = render(
+        body = render_template(
             "admin_event_view.html",
             event=event,
             held=False,

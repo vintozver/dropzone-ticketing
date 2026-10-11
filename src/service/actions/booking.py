@@ -27,7 +27,13 @@ def _token_hash(token: str) -> str:
 def _window(now: datetime, local_timezone):
     local_today = now.astimezone(local_timezone).date()
     start = datetime.combine(local_today, time.min, local_timezone).astimezone(timezone.utc)
-    end = datetime.combine(local_today + timedelta(days=14), time.min, local_timezone).astimezone(timezone.utc)
+    end_month = local_today.month + 2
+    end_year = local_today.year
+    if end_month > 12:
+        end_month -= 12
+        end_year += 1
+    end_date = local_today.replace(year=end_year, month=end_month, day=1)
+    end = datetime.combine(end_date, time.min, local_timezone).astimezone(timezone.utc)
     return local_today, start, end
 
 
@@ -102,8 +108,9 @@ def availability(
             ).order_by("dt")
         )
 
-    grouped = []
-    for offset in range(14):
+    availability_by_date = {}
+    day_count = (end.astimezone(local_timezone).date() - local_today).days
+    for offset in range(day_count):
         day = local_today + timedelta(days=offset)
         day_events = [
             event for event in events if event.dt.astimezone(local_timezone).date() == day
@@ -113,19 +120,32 @@ def availability(
             for event in day_events
             if event.customer is None and not event.is_reserved(now)
         ]
-        grouped.append(
-            {
-                "date": day,
-                "events": available,
-                "has_events": bool(day_events),
-                "sold_out": bool(day_events) and all(event.customer is not None for event in day_events),
-            }
-        )
+        if available:
+            status = "available"
+        elif day_events and all(event.customer is not None for event in day_events):
+            status = "sold_out"
+        else:
+            status = "unavailable"
+        availability_by_date[day.isoformat()] = {
+            "status": status,
+            "events": [
+                {
+                    "id": str(event.id),
+                    "time": event.dt.astimezone(local_timezone).strftime("%H:%M"),
+                    "duration_minutes": event.duration_minutes,
+                    "currency": event.currency.upper(),
+                    "price": f"{event.price / 100:.2f}",
+                }
+                for event in available
+            ],
+        }
     return render(
         "booking.html",
         event_types=event_types,
         selected_type=selected_type,
-        days=grouped,
+        availability=availability_by_date,
+        start_date=local_today.isoformat(),
+        end_date=(end.astimezone(local_timezone).date() - timedelta(days=1)).isoformat(),
         held_events=held_events,
     )
 
