@@ -9,6 +9,8 @@
     {{ event.event_type.name }} at {{ event.dt|datetime }}
     ({{ event.duration_minutes }} minutes)
   </p>
+  <p>Total price: {{ event.currency|upper }} {{ "%.2f"|format(event.price / 100) }}</p>
+  <p>Deposit required: {{ event.currency|upper }} {{ "%.2f"|format((event.deposit if event.deposit is not none else event.price) / 100) }}</p>
   {% if held %}
     <p id="reservation-time">
       Reserved until {{ event.reservation_expires_at|datetime }}.
@@ -50,11 +52,9 @@
       <button type="submit">Continue to payment</button>
     </form>
   {% else %}
-    <p>
-      {% if event.deposit is not none %}Deposit{% else %}Total{% endif %}:
-      {{ event.currency|upper }}
-      {{ "%.2f"|format((event.deposit if event.deposit is not none else event.price) / 100) }}
-    </p>
+    {% set pay_now = event.deposit if event.deposit is not none else event.price %}
+    <p>Pay now: {{ event.currency|upper }} {{ "%.2f"|format(pay_now / 100) }}</p>
+    <p>Pay later: {{ event.currency|upper }} {{ "%.2f"|format((event.price - pay_now) / 100) }}</p>
     <p><a href="/book/resume?event_id={{ event.id }}&amp;edit=1">Change contact information</a></p>
     {% if payment_ready %}
       <form method="post" action="/book/complete">

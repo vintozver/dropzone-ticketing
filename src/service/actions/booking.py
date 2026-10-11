@@ -135,6 +135,11 @@ def availability(
                     "duration_minutes": event.duration_minutes,
                     "currency": event.currency.upper(),
                     "price": f"{event.price / 100:.2f}",
+                    "deposit": (
+                        f"{event.deposit / 100:.2f}"
+                        if event.deposit is not None
+                        else None
+                    ),
                 }
                 for event in available
             ],

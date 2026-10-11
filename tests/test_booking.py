@@ -199,6 +199,7 @@ class BookingActionTest(unittest.TestCase):
             duration_minutes=60,
             currency="eur",
             price=12500,
+            deposit=2500,
             customer=None,
             is_reserved=lambda _now: False,
         )
@@ -245,6 +246,7 @@ class BookingActionTest(unittest.TestCase):
                     "duration_minutes": 60,
                     "currency": "EUR",
                     "price": "125.00",
+                    "deposit": "25.00",
                 }
             ],
         )
@@ -267,6 +269,12 @@ class BookingActionTest(unittest.TestCase):
         self.assertIn("booking-sold-out", body)
         self.assertIn("booking-unavailable", body)
         self.assertIn("day.events.forEach", body)
+        self.assertIn('const row = $("<tr>")', body)
+        self.assertIn('row.append($("<td>")', body)
+        self.assertNotIn('const list = $("<ul>")', body)
+        self.assertIn('times.tooltip({ items: "button[title]" })', body)
+        self.assertIn("deposit required:", body)
+        self.assertIn(".text(event.time)", body)
 
     def test_availability_lists_the_guests_active_holds(self) -> None:
         held = SimpleNamespace(dt=datetime(2026, 10, 1, tzinfo=timezone.utc))
@@ -840,6 +848,10 @@ class BookingActionTest(unittest.TestCase):
             ),
             dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
             duration_minutes=60,
+            price=12500,
+            deposit=2500,
+            currency="EUR",
+            reservation_expires_at=datetime(2026, 9, 30, 1, tzinfo=timezone.utc),
         )
 
         body = render_template(
@@ -859,8 +871,54 @@ class BookingActionTest(unittest.TestCase):
         self.assertEqual(body.count("required>"), 2)
         self.assertEqual(body.count("checked"), 1)
         self.assertIn('type="checkbox"', body)
+        self.assertIn("Total price: EUR 125.00", body)
+        self.assertIn("Deposit required:", body)
+        self.assertIn("EUR 25.00", body)
         self.assertNotIn("Reserved until", body)
         self.assertNotIn("Cancel hold", body)
+
+    def test_payment_step_displays_pay_now_and_pay_later(self) -> None:
+        event = SimpleNamespace(
+            id=ObjectId(),
+            event_type=SimpleNamespace(name="Tandem"),
+            dt=datetime(2026, 9, 30, tzinfo=timezone.utc),
+            duration_minutes=60,
+            price=12500,
+            deposit=2500,
+            currency="EUR",
+            reservation_expires_at=datetime(2026, 9, 30, 1, tzinfo=timezone.utc),
+        )
+
+        body = render_template(
+            "booking_checkout.html",
+            event=event,
+            step="payment",
+            held=True,
+            publishable_key="pk_test",
+            client_secret="secret",
+            payment_ready=False,
+            payment_intent="pi_1",
+            local_timezone=ZoneInfo("UTC"),
+        )[2].decode()
+
+        self.assertIn("Pay now: EUR 25.00", body)
+        self.assertIn("Pay later: EUR 100.00", body)
+
+        event.deposit = None
+        body = render_template(
+            "booking_checkout.html",
+            event=event,
+            step="payment",
+            held=True,
+            publishable_key="pk_test",
+            client_secret="secret",
+            payment_ready=False,
+            payment_intent="pi_1",
+            local_timezone=ZoneInfo("UTC"),
+        )[2].decode()
+
+        self.assertIn("Pay now: EUR 125.00", body)
+        self.assertIn("Pay later: EUR 0.00", body)
 
     def test_capture_provider_error_is_reported_and_releases_claim(self) -> None:
         now = datetime(2026, 9, 30, 6, tzinfo=timezone.utc)

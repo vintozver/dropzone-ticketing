@@ -65,6 +65,7 @@
         };
         const dateKey = date => $.datepicker.formatDate("yy-mm-dd", date);
         const times = $("#available-times");
+        times.tooltip({ items: "button[title]" });
 
         $("#availability-calendar").datepicker({
           defaultDate: parseDate({{ start_date|tojson }}),
@@ -80,17 +81,19 @@
           },
           onSelect: value => {
             const day = availability[value];
-            const list = $("<ul>");
+            const row = $("<tr>");
             day.events.forEach(event => {
               const form = $("<form>", { method: "post", action: "/book/hold" });
               form.append($("<input>", { type: "hidden", name: "event_id", value: event.id }));
-              form.append($("<button>", { type: "submit" }).text(
-                `${event.time} (${event.duration_minutes} minutes) — ${event.currency} ${event.price}`
-              ));
-              list.append($("<li>").append(form));
+              const deposit = event.deposit === null ? event.price : event.deposit;
+              form.append($("<button>", {
+                type: "submit",
+                title: `Total: ${event.currency} ${event.price}; deposit required: ${event.currency} ${deposit}`
+              }).text(event.time));
+              row.append($("<td>").append(form));
             });
             times.find("h3").text($.datepicker.formatDate("DD, yy-mm-dd", parseDate(value)));
-            times.find("div").empty().append(list);
+            times.find("div").empty().append($("<table>").append(row));
             times.prop("hidden", false);
           }
         });
